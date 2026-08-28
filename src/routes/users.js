@@ -38,7 +38,7 @@ router.get("/", async (req, res) => {
      FROM users u
      LEFT JOIN ecoles ec ON ec.id = u.ecole_id
      LEFT JOIN enseignant_classes enc ON enc.user_id = u.id
-     LEFT JOIN classes c ON c.id = enc.classe_id
+     LEFT JOIN classes c ON c.id = enc.classe_id AND c.ecole_id IS NOT DISTINCT FROM u.ecole_id
      WHERE ${filtreEcole}
      GROUP BY u.id, ec.nom
      ORDER BY u.created_at DESC`,
@@ -161,12 +161,33 @@ router.patch("/:id/role", async (req, res) => {
 // PATCH /api/users/:id/ecole  { ecole_id } — rattache un compte à une école (réservé au Super-administrateur)
 router.patch("/:id/ecole", requireRole("super_admin"), async (req, res) => {
   const { ecole_id } = req.body;
-  const { rows } = await pool.query(
-    "UPDATE users SET ecole_id = $1 WHERE id = $2 RETURNING id, nom, email, role, ecole_id, created_at",
-    [ecole_id || null, req.params.id]
-  );
-  if (!rows[0]) return res.status(404).json({ error: "Compte introuvable." });
-  res.json(rows[0]);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      "UPDATE users SET ecole_id = $1 WHERE id = $2 RETURNING id, nom, email, role, ecole_id, created_at",
+      [ecole_id || null, req.params.id]
+    );
+    if (!rows[0]) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Compte introuvable." }); }
+
+    // Un enseignant qui change d'école perd automatiquement ses rattachements aux classes
+    // de son ANCIENNE école — ils n'ont plus de sens et créeraient de la confusion sinon
+    // (classes invisibles mais toujours listées, élèves d'une autre école qui semblent liés à lui).
+    const { rowCount } = await client.query(
+      `DELETE FROM enseignant_classes ec
+       USING classes c
+       WHERE ec.classe_id = c.id AND ec.user_id = $1 AND (c.ecole_id IS DISTINCT FROM $2)`,
+      [req.params.id, ecole_id || null]
+    );
+
+    await client.query("COMMIT");
+    res.json({ ...rows[0], classes_detachees: rowCount });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 // POST /api/users/:id/classes  { classe_id }

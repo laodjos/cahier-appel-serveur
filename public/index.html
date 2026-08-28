@@ -952,6 +952,14 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function genererCleAgent(id) {
+    if (!window.confirm("Générer une nouvelle clé désactive l'ancienne — l'agent local devra être reconfiguré avec la nouvelle. Continuer ?")) return;
+    try {
+      const updated = await api(`/ecoles/${id}/generer-cle-agent`, { method: "POST" });
+      setEcoles((liste) => liste.map((x) => x.id === id ? updated : x));
+    } catch (e) { catchErr(e); }
+  }
+
   // -------------------- Scanner caméra réel --------------------
   useEffect(() => {
     if (appelMode !== "qr" || !scannerOn) return;
@@ -1806,18 +1814,29 @@ function App({ session, onLogout }) {
             <Card title="Écoles enregistrées">
               {ecoles.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucune école enregistrée pour l'instant.</div>}
               {ecoles.map((e, i) => (
-                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 18px", borderBottom: i < ecoles.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-                      {e.nom}
-                      {e.active && <span style={{ fontSize: 10, background: COLORS.successBg, color: COLORS.success, borderRadius: 999, padding: "2px 8px", fontWeight: 700 }}>ACTIVE</span>}
+                <div key={e.id} style={{ borderBottom: i < ecoles.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 18px" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+                        {e.nom}
+                        {e.active && <span style={{ fontSize: 10, background: COLORS.successBg, color: COLORS.success, borderRadius: 999, padding: "2px 8px", fontWeight: 700 }}>ACTIVE</span>}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginTop: 2 }}>
+                        {[e.ville, e.adresse, e.telephone, e.annee_scolaire].filter(Boolean).join(" · ") || "Aucun détail renseigné"}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginTop: 2 }}>
-                      {[e.ville, e.adresse, e.telephone, e.annee_scolaire].filter(Boolean).join(" · ") || "Aucun détail renseigné"}
-                    </div>
+                    <button onClick={() => commencerEditionEcole(e)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.settings} size={14} /></button>
+                    <button onClick={() => supprimerEcole(e.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
                   </div>
-                  <button onClick={() => commencerEditionEcole(e)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.settings} size={14} /></button>
-                  <button onClick={() => supprimerEcole(e.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
+                  <div style={{ padding: "0 18px 12px 18px", display: "flex", alignItems: "center", gap: 8, fontSize: 11.5 }}>
+                    <span style={{ color: COLORS.craieDim, flexShrink: 0 }}>Clé agent local :</span>
+                    {e.cle_agent ? (
+                      <code style={{ background: "rgba(246,242,231,0.06)", padding: "3px 8px", borderRadius: 6, fontSize: 11, color: COLORS.craie, wordBreak: "break-all" }}>{e.cle_agent}</code>
+                    ) : (
+                      <span style={{ color: COLORS.craieDim, fontStyle: "italic" }}>Aucune clé générée</span>
+                    )}
+                    <Button small variant="ghost" onClick={() => genererCleAgent(e.id)}>{e.cle_agent ? "Régénérer" : "Générer une clé agent"}</Button>
+                  </div>
                 </div>
               ))}
             </Card>
