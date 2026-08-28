@@ -70,4 +70,13 @@ router.delete("/:id", requireRole("super_admin"), async (req, res) => {
   res.status(204).send();
 });
 
+// POST /api/ecoles/:id/generer-cle-agent — génère (ou régénère) la clé secrète de l'agent local
+router.post("/:id/generer-cle-agent", requireRole("direction", "super_admin"), async (req, res) => {
+  const crypto = require("crypto");
+  const cle = crypto.randomBytes(24).toString("hex");
+  const { rows } = await pool.query("UPDATE ecoles SET cle_agent = $1 WHERE id = $2 RETURNING *", [cle, req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: "École introuvable." });
+  res.json(rows[0]);
+});
+
 module.exports = router;

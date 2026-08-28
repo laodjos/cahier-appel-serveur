@@ -15,6 +15,7 @@ const devicesRoutes = require("./routes/devices");
 const usersRoutes = require("./routes/users");
 const ecolesRoutes = require("./routes/ecoles");
 const joursNonScolairesRoutes = require("./routes/joursNonScolaires");
+const agentRoutes = require("./routes/agent");
 
 const { demarrerPollingLecteurs, demarrerEnvoiNotifications } = require("./jobs/scheduler");
 
@@ -54,6 +55,7 @@ app.use("/api/devices", devicesRoutes);
 app.use("/api/users", usersRoutes);
 app.use("/api/ecoles", ecolesRoutes);
 app.use("/api/jours-non-scolaires", joursNonScolairesRoutes);
+app.use("/api/agent", agentRoutes);
 
 // Gestion d'erreurs centralisée
 app.use((err, req, res, next) => {

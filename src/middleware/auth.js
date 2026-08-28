@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const { pool } = require("../config/db");
 
 function authRequired(req, res, next) {
   const header = req.headers.authorization || "";
@@ -23,4 +24,18 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { authRequired, requireRole };
+// Authentification du petit programme "agent" local (relais des lecteurs
+// biométriques) — pas de compte utilisateur, juste la clé secrète de l'école,
+// envoyée dans l'en-tête X-Agent-Key.
+async function authAgent(req, res, next) {
+  const cle = req.headers["x-agent-key"];
+  if (!cle) return res.status(401).json({ error: "En-tête X-Agent-Key manquant." });
+
+  const { rows } = await pool.query("SELECT * FROM ecoles WHERE cle_agent = $1", [cle]);
+  if (!rows[0]) return res.status(401).json({ error: "Clé d'agent invalide." });
+
+  req.ecoleAgent = rows[0];
+  next();
+}
+
+module.exports = { authRequired, requireRole, authAgent };

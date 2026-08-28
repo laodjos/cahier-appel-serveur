@@ -180,6 +180,13 @@ ALTER TABLE creneaux ADD CONSTRAINT creneaux_un_type_requis
   CHECK (jour_semaine IS NOT NULL OR date_exceptionnelle IS NOT NULL);
 
 -- --------------------------------------------------------------------------
+-- Clé secrète par école, utilisée par le petit programme "agent" local
+-- (installé sur un PC de l'école) pour transmettre au serveur central les
+-- pointages ZKTeco/Hikvision — sans avoir besoin d'un compte utilisateur.
+-- --------------------------------------------------------------------------
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS cle_agent TEXT UNIQUE;
+
+-- --------------------------------------------------------------------------
 -- Écoles — profil du/des établissement(s) utilisant l'application.
 -- --------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS ecoles (
