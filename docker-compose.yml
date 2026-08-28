@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  base_de_donnees:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cahier_appel
+      POSTGRES_USER: cahier_appel
+      POSTGRES_PASSWORD: cahier_appel_motdepasse
+    volumes:
+      - donnees_postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cahier_appel"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      base_de_donnees:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      CORS_ORIGIN: "*"
+      DATABASE_URL: postgres://cahier_appel:cahier_appel_motdepasse@base_de_donnees:5432/cahier_appel
+      JWT_SECRET: change_moi_avec_une_valeur_longue_et_aleatoire
+      JWT_EXPIRES_IN: 12h
+      QR_SECRET: change_moi_aussi_valeur_longue_et_aleatoire
+      NOTIFICATION_PROVIDER: expo
+      ZKTECO_POLL_INTERVAL_SECONDS: 15
+      HIKVISION_1_USER: admin
+      HIKVISION_1_PASSWORD: change_moi
+    ports:
+      - "4000:4000"
+
+volumes:
+  donnees_postgres:
