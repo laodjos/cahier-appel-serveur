@@ -313,6 +313,11 @@ function App({ session, onLogout }) {
   const estDirectionGenerale = role === "super_admin";
   const availableViews = NAV_BY_ROLE[role] || ["dashboard"];
   const [ecoleActiveId, setEcoleActiveId] = useState(() => localStorage.getItem("cahierAppelEcoleActive") || null);
+  // Référence toujours à jour de l'école consultée — permet de détecter et ignorer
+  // une réponse "en retard" du serveur qui arriverait APRÈS un changement d'école
+  // (et qui, sans cette protection, écraserait par erreur la bonne liste déjà affichée).
+  const ecoleActiveIdRef = useRef(ecoleActiveId);
+  useEffect(() => { ecoleActiveIdRef.current = ecoleActiveId; }, [ecoleActiveId]);
   const api = useApi(session.baseUrl, session.token, estDirectionGenerale ? ecoleActiveId : null);
 
   const [view, setView] = useState(availableViews[0]);
@@ -410,8 +415,9 @@ function App({ session, onLogout }) {
 
   // Chargement initial : classes + élèves + école active (pour l'en-tête)
   useEffect(() => {
-    api("/classes").then((rows) => { setClasses(rows); if (rows[0]) setSelectedClasseId(rows[0].id); }).catch(catchErr);
-    api("/students").then(setStudents).catch(catchErr);
+    const ecoleAuMoment = ecoleActiveId;
+    api("/classes").then((rows) => { if (ecoleActiveIdRef.current === ecoleAuMoment) { setClasses(rows); if (rows[0]) setSelectedClasseId(rows[0].id); } }).catch(catchErr);
+    api("/students").then((rows) => { if (ecoleActiveIdRef.current === ecoleAuMoment) setStudents(rows); }).catch(catchErr);
     api("/ecoles").then(setEcoles).catch(() => {});
   }, [api]);
 
@@ -435,6 +441,9 @@ function App({ session, onLogout }) {
   useEffect(() => {
     if (!availableViews.includes("dashboard") && !availableViews.includes("incidents")) return;
     const load = () => {
+      const ecoleAuMoment = ecoleActiveId;
+      const siEcoleInchangee = (fn) => (data) => { if (ecoleActiveIdRef.current === ecoleAuMoment) fn(data); };
+
       if (availableViews.includes("dashboard")) {
         api("/attendance/stats/today").then(setStats).catch(catchErr);
         api("/attendance/creneaux-sans-appel").then(setCreneauxSansAppel).catch(catchErr);
@@ -446,12 +455,12 @@ function App({ session, onLogout }) {
       }
       if (availableViews.includes("notif")) api("/notifications/journal").then(setNotifJournal).catch(catchErr);
       if (availableViews.includes("incidents")) {
-        api("/devices").then(setDevices).catch(catchErr);
+        api("/devices").then(siEcoleInchangee(setDevices)).catch(catchErr);
         api("/devices/incidents/journal").then(setIncidents).catch(catchErr);
       }
-      if (availableViews.includes("parametrage-lecteurs")) api("/devices").then(setDevices).catch(catchErr);
-      if (availableViews.includes("parametres") || availableViews.includes("enseignants")) api("/users").then(setUsers).catch(catchErr);
-      if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(setUsers).catch(catchErr);
+      if (availableViews.includes("parametrage-lecteurs")) api("/devices").then(siEcoleInchangee(setDevices)).catch(catchErr);
+      if (availableViews.includes("parametres") || availableViews.includes("enseignants")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
+      if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
       if (availableViews.includes("ecoles")) api("/ecoles").then(setEcoles).catch(catchErr);
     };
     load();

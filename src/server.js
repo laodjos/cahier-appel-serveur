@@ -66,6 +66,18 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`✔ Cahier d'Appel — backend démarré sur le port ${PORT}`);
-  demarrerPollingLecteurs();
+
+  // Le polling direct des lecteurs (ZKTeco/Hikvision) ne fonctionne QUE si ce
+  // serveur tourne sur le MÊME réseau local que les lecteurs — ce qui n'est plus
+  // le cas une fois hébergé sur internet (Render, etc.). Dans ce cas, c'est le
+  // petit programme "agent-local" qui s'en charge à la place, via /api/agent/*.
+  // Mets ACTIVER_POLLING_LOCAL=true dans les variables d'environnement UNIQUEMENT
+  // si ce serveur est installé directement sur le réseau de l'école.
+  if (process.env.ACTIVER_POLLING_LOCAL === "true") {
+    console.log("⏱  Polling local des lecteurs activé (ACTIVER_POLLING_LOCAL=true)");
+    demarrerPollingLecteurs();
+  } else {
+    console.log("ℹ  Polling local des lecteurs désactivé — utilise l'agent-local pour relayer les lecteurs biométriques.");
+  }
   demarrerEnvoiNotifications();
 });
