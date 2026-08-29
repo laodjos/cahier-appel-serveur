@@ -355,9 +355,10 @@ function App({ session, onLogout }) {
   const [newClasseEcoleId, setNewClasseEcoleId] = useState(null);
   const [newClasseVacation, setNewClasseVacation] = useState(null);
   const [resultatGenerationAuto, setResultatGenerationAuto] = useState(null);
+  const [inclureSamedi, setInclureSamedi] = useState(false);
   const [resultatImport, setResultatImport] = useState(null);
   const [resultatImportEnseignants, setResultatImportEnseignants] = useState(null);
-  const [newEleve, setNewEleve] = useState({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "" });
+  const [newEleve, setNewEleve] = useState({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "" });
   const [newCreneau, setNewCreneau] = useState({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "09:00", matiere: "", enseignant: "", estRattrapage: false, date_exceptionnelle: "", salle_id: null, est_pause: false });
   const [formError, setFormError] = useState("");
 
@@ -567,9 +568,9 @@ function App({ session, onLogout }) {
     if (!selectedClasseId) return setFormError("Sélectionne d'abord une classe.");
     if (!newEleve.parentTel.trim()) return setFormError("Le téléphone du parent/tuteur est obligatoire dès l'inscription.");
     try {
-      const created = await api("/students", { method: "POST", body: { matricule: newEleve.matricule.trim(), nom: newEleve.nom.trim(), classe_id: selectedClasseId, methode_biometrique: newEleve.methode_biometrique, parent_nom: newEleve.parentNom.trim(), parent_telephone: newEleve.parentTel.trim() } });
+      const created = await api("/students", { method: "POST", body: { matricule: newEleve.matricule.trim(), nom: newEleve.nom.trim(), classe_id: selectedClasseId, methode_biometrique: newEleve.methode_biometrique, parent_nom: newEleve.parentNom.trim(), parent_telephone: newEleve.parentTel.trim(), date_naissance: newEleve.date_naissance || null, lieu_naissance: newEleve.lieu_naissance.trim() || null } });
       await refreshStudents();
-      setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "" });
+      setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "" });
       setShowAddEleve(false);
     } catch (e) { setFormError(e.message); }
   }
@@ -609,7 +610,8 @@ function App({ session, onLogout }) {
   async function genererEmploiAuto() {
     setGlobalInfo("Génération en cours...");
     try {
-      const res = await api("/creneaux/generer-auto", { method: "POST", body: { classe_ids: [selectedClasseId] } });
+      const jours = inclureSamedi ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5];
+      const res = await api("/creneaux/generer-auto", { method: "POST", body: { classe_ids: [selectedClasseId], jours } });
       setResultatGenerationAuto(res);
       setGlobalInfo("");
       const fraiche = await api(`/creneaux?classe_id=${selectedClasseId}`);
@@ -793,6 +795,20 @@ function App({ session, onLogout }) {
       const updated = await api(`/students/${id}`, { method: "PATCH", body: { nom } });
       setDossierEleve((d) => d && d.id === id ? { ...d, nom: updated.nom } : d);
       await refreshStudents();
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changeDateNaissanceEleve(id, date_naissance) {
+    try {
+      const updated = await api(`/students/${id}`, { method: "PATCH", body: { date_naissance: date_naissance || "" } });
+      setDossierEleve((d) => d && d.id === id ? { ...d, date_naissance: updated.date_naissance } : d);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changeLieuNaissanceEleve(id, lieu_naissance) {
+    try {
+      const updated = await api(`/students/${id}`, { method: "PATCH", body: { lieu_naissance: lieu_naissance || "" } });
+      setDossierEleve((d) => d && d.id === id ? { ...d, lieu_naissance: updated.lieu_naissance } : d);
     } catch (e) { catchErr(e); }
   }
 
@@ -1206,6 +1222,9 @@ function App({ session, onLogout }) {
                       <div style={{ fontSize: 13, fontWeight: 500 }}>{c.classe_nom} · {c.matiere}</div>
                       <div style={{ fontSize: 11.5, color: COLORS.craieDim }}>{c.enseignant || "Enseignant non renseigné"} · {c.heure_debut?.slice(0,5)}–{c.heure_fin?.slice(0,5)}</div>
                     </div>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", borderRadius: 999, padding: "3px 9px", background: c.termine ? "rgba(196,90,74,0.15)" : "rgba(217,164,65,0.18)", color: c.termine ? COLORS.alert : COLORS.marker }}>
+                      {c.termine ? "Terminé" : "En cours — intervenir maintenant"}
+                    </span>
                   </div>
                 ))}
               </Card>
@@ -1344,7 +1363,7 @@ function App({ session, onLogout }) {
                   <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={handleImportFichier} />
                 </label>
               )}
-              {(role === "direction" || role === "surveillant") && <Button icon={P.users} onClick={() => { setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "" }); setShowAddEleve(true); setShowAddClasse(false); setFormError(""); }}>Ajouter un élève</Button>}
+              {(role === "direction" || role === "surveillant") && <Button icon={P.users} onClick={() => { setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "" }); setShowAddEleve(true); setShowAddClasse(false); setFormError(""); }}>Ajouter un élève</Button>}
             </div>
             {resultatImport && (
               <div style={{ background: resultatImport.erreurs.length > 0 ? COLORS.alertBg : COLORS.successBg, border: `1px solid ${resultatImport.erreurs.length > 0 ? COLORS.alert : COLORS.success}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 12.5 }}>
@@ -1396,6 +1415,10 @@ function App({ session, onLogout }) {
                   </Field>
                 </div>
                 <Field label="Nom complet"><input style={inputStyle} value={newEleve.nom} onChange={(e) => setNewEleve((v) => ({ ...v, nom: e.target.value }))} placeholder="ex. Aïcha Kouassi" /></Field>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Date de naissance"><input type="date" style={inputStyle} value={newEleve.date_naissance} onChange={(e) => setNewEleve((v) => ({ ...v, date_naissance: e.target.value }))} /></Field>
+                  <Field label="Lieu de naissance"><input style={inputStyle} value={newEleve.lieu_naissance} onChange={(e) => setNewEleve((v) => ({ ...v, lieu_naissance: e.target.value }))} placeholder="ex. Abidjan" /></Field>
+                </div>
                 <Field label="Méthode de pointage">
                   <select style={inputStyle} value={newEleve.methode_biometrique} onChange={(e) => setNewEleve((v) => ({ ...v, methode_biometrique: e.target.value }))}>
                     <option value="aucune">Aucune (badge QR seulement)</option><option value="empreinte">Empreinte digitale</option><option value="visage">Reconnaissance faciale</option>
@@ -1628,6 +1651,12 @@ function App({ session, onLogout }) {
             <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
               <SelectClasseParNiveau classes={classes} value={selectedClasseId} onChange={(e) => setSelectedClasseId(e.target.value)} style={inputStyle} />
               <div style={{ flex: 1 }} />
+              {role === "direction" && (
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: COLORS.craieDim, cursor: "pointer" }}>
+                  <input type="checkbox" checked={inclureSamedi} onChange={(e) => setInclureSamedi(e.target.checked)} />
+                  Inclure le samedi
+                </label>
+              )}
               {role === "direction" && <Button variant="ghost" icon={P.folder} onClick={genererEmploiAuto}>Générer automatiquement</Button>}
               {role === "direction" && <Button variant="ghost" icon={P.plus} onClick={() => { setNewCreneau((v) => ({ ...v, estRattrapage: true, date_exceptionnelle: new Date().toISOString().slice(0,10) })); setShowAddCreneau(true); setFormError(""); }}>Créneau de rattrapage</Button>}
               {role === "direction" && <Button icon={P.plus} onClick={() => { setNewCreneau((v) => ({ ...v, estRattrapage: false })); setShowAddCreneau((v) => !v); setFormError(""); }}>Ajouter un créneau</Button>}
@@ -2320,14 +2349,16 @@ function App({ session, onLogout }) {
                     ) : (
                       <div style={{ width: 56, height: 56, borderRadius: 10, background: COLORS.craieDim, color: COLORS.ardoiseDeep, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 18 }}>{initials(dossierEleve.nom)}</div>
                     )}
-                    <label style={{ position: "absolute", bottom: -4, right: -4, width: 22, height: 22, borderRadius: 999, background: COLORS.marker, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: `2px solid ${COLORS.ardoiseDeep}` }} title="Changer la photo">
-                      <Icon path={P.camera} size={11} color={COLORS.ardoiseDeep} />
-                      <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => handleUploadPhotoEleve(dossierEleve.id, e)} />
-                    </label>
+                    {role !== "enseignant" && (
+                      <label style={{ position: "absolute", bottom: -4, right: -4, width: 22, height: 22, borderRadius: 999, background: COLORS.marker, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: `2px solid ${COLORS.ardoiseDeep}` }} title="Changer la photo">
+                        <Icon path={P.camera} size={11} color={COLORS.ardoiseDeep} />
+                        <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => handleUploadPhotoEleve(dossierEleve.id, e)} />
+                      </label>
+                    )}
                   </div>
                   <div>
                     <div style={{ fontFamily: "'Fraunces', serif", fontSize: 19, fontWeight: 600 }}>
-                      <NomEditable valeur={dossierEleve.nom} onValider={(v) => changeEleveNom(dossierEleve.id, v)} tailleIcone={14} />
+                      {role === "enseignant" ? dossierEleve.nom : <NomEditable valeur={dossierEleve.nom} onValider={(v) => changeEleveNom(dossierEleve.id, v)} tailleIcone={14} />}
                     </div>
                     <div style={{ fontSize: 12, color: COLORS.craieDim, marginTop: 2 }}>{dossierEleve.classe_nom || "Sans classe"} {dossierEleve.classe_niveau ? `· ${dossierEleve.classe_niveau}` : ""}</div>
                   </div>
@@ -2339,6 +2370,27 @@ function App({ session, onLogout }) {
                 <div><span style={{ color: COLORS.craieDim }}>Matricule</span><div style={{ fontWeight: 600 }}>{dossierEleve.matricule}</div></div>
                 <div><span style={{ color: COLORS.craieDim }}>Méthode</span><div style={{ fontWeight: 600, textTransform: "capitalize" }}>{dossierEleve.methode_biometrique}</div></div>
                 <Button small variant="ghost" icon={P.scan} onClick={() => imprimerBadge(dossierEleve)}>Imprimer le badge</Button>
+              </div>
+
+              <div style={{ display: "flex", gap: 18, margin: "0 0 16px", fontSize: 12.5, alignItems: "center" }}>
+                <div>
+                  <span style={{ color: COLORS.craieDim }}>Date de naissance</span>
+                  {role === "enseignant" ? (
+                    <div style={{ fontWeight: 600 }}>{dossierEleve.date_naissance ? dossierEleve.date_naissance.slice(0, 10) : "Non renseignée"}</div>
+                  ) : (
+                    <div>
+                      <input type="date" style={{ ...inputStyle, fontSize: 12.5, padding: "4px 8px" }} defaultValue={dossierEleve.date_naissance ? dossierEleve.date_naissance.slice(0, 10) : ""} onBlur={(e) => changeDateNaissanceEleve(dossierEleve.id, e.target.value)} />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <span style={{ color: COLORS.craieDim }}>Lieu de naissance</span>
+                  {role === "enseignant" ? (
+                    <div style={{ fontWeight: 600 }}>{dossierEleve.lieu_naissance || "Non renseigné"}</div>
+                  ) : (
+                    <NomEditable valeur={dossierEleve.lieu_naissance || "Non renseigné"} onValider={(v) => changeLieuNaissanceEleve(dossierEleve.id, v === "Non renseigné" ? "" : v)} style={{ fontWeight: 600 }} />
+                  )}
+                </div>
               </div>
 
               <div style={{ fontSize: 12.5, fontWeight: 600, color: COLORS.marker, marginBottom: 8 }}>Parent(s) rattaché(s)</div>

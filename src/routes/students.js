@@ -52,7 +52,7 @@ router.get("/", async (req, res) => {
 
 // POST /api/students  { matricule, nom, classe_id, methode_biometrique }
 router.post("/", requireRole("direction", "surveillant"), async (req, res) => {
-  const { matricule, nom, classe_id, methode_biometrique, parent_nom, parent_telephone } = req.body;
+  const { matricule, nom, classe_id, methode_biometrique, parent_nom, parent_telephone, date_naissance, lieu_naissance } = req.body;
   if (!matricule || !nom) return res.status(400).json({ error: "Matricule et nom requis." });
   if (!parent_telephone || !parent_telephone.trim()) {
     return res.status(400).json({ error: "Le téléphone du parent/tuteur est requis dès l'inscription de l'élève." });
@@ -71,9 +71,9 @@ router.post("/", requireRole("direction", "surveillant"), async (req, res) => {
   try {
     await client.query("BEGIN");
     const { rows } = await client.query(
-      `INSERT INTO students (matricule, nom, classe_id, methode_biometrique)
-       VALUES ($1, $2, $3, COALESCE($4, 'aucune')) RETURNING *`,
-      [matricule, nom, classe_id || null, methode_biometrique]
+      `INSERT INTO students (matricule, nom, classe_id, methode_biometrique, date_naissance, lieu_naissance)
+       VALUES ($1, $2, $3, COALESCE($4, 'aucune'), $5, $6) RETURNING *`,
+      [matricule, nom, classe_id || null, methode_biometrique, date_naissance || null, lieu_naissance || null]
     );
     const student = rows[0];
 
@@ -177,17 +177,19 @@ router.get("/:id", async (req, res) => {
 
 // PATCH /api/students/:id  { nom?, matricule? } — correction du nom (et/ou du matricule) d'un élève
 router.patch("/:id", requireRole("direction", "surveillant", "super_admin"), async (req, res) => {
-  const { nom, matricule } = req.body;
-  if (!nom?.trim() && !matricule?.trim()) {
-    return res.status(400).json({ error: "Indique au moins un nom ou un matricule à corriger." });
+  const { nom, matricule, date_naissance, lieu_naissance } = req.body;
+  if (!nom?.trim() && !matricule?.trim() && date_naissance === undefined && lieu_naissance === undefined) {
+    return res.status(400).json({ error: "Indique au moins un champ à corriger." });
   }
   try {
     const { rows } = await pool.query(
       `UPDATE students SET
          nom = COALESCE(NULLIF($1, ''), nom),
-         matricule = COALESCE(NULLIF($2, ''), matricule)
-       WHERE id = $3 RETURNING *`,
-      [nom?.trim() || "", matricule?.trim() || "", req.params.id]
+         matricule = COALESCE(NULLIF($2, ''), matricule),
+         date_naissance = CASE WHEN $3::text IS NOT NULL THEN NULLIF($3, '')::date ELSE date_naissance END,
+         lieu_naissance = CASE WHEN $4::text IS NOT NULL THEN NULLIF($4, '') ELSE lieu_naissance END
+       WHERE id = $5 RETURNING *`,
+      [nom?.trim() || "", matricule?.trim() || "", date_naissance !== undefined ? date_naissance : null, lieu_naissance !== undefined ? lieu_naissance : null, req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: "Élève introuvable." });
     res.json(rows[0]);

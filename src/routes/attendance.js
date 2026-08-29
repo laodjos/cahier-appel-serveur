@@ -190,12 +190,18 @@ router.get("/creneaux-sans-appel", async (req, res) => {
 
   // Créneaux récurrents normaux (ignorés si jour férié) + créneaux de rattrapage
   // exceptionnels prévus CE jour précis (comptés même un jour férié — c'est tout
-  // l'intérêt d'un rattrapage volontaire).
+  // l'intérêt d'un rattrapage volontaire). Un créneau compte dès que son heure de
+  // début + 15 minutes de tolérance est dépassée — pas besoin d'attendre qu'il soit
+  // terminé pour alerter la Direction, pendant qu'il est encore temps d'agir
+  // (appeler l'enseignant, envoyer un remplaçant...).
   const paramsJour = [...params, jour];
   const { rows: creneauxDuJour } = await pool.query(
-    `SELECT cr.*, cl.nom AS classe_nom FROM creneaux cr
+    `SELECT cr.*, cl.nom AS classe_nom,
+            (cr.heure_fin < to_char(now(), 'HH24:MI')::time) AS termine
+     FROM creneaux cr
      JOIN classes cl ON cl.id = cr.classe_id
-     WHERE ${filtreEcole} AND cr.heure_fin < to_char(now(), 'HH24:MI')::time
+     WHERE ${filtreEcole}
+       AND (cr.heure_debut + interval '15 minutes') < to_char(now(), 'HH24:MI')::time
        AND cr.est_pause = false
        AND (
          (cr.jour_semaine = $1 AND cr.date_exceptionnelle IS NULL ${estFerie ? "AND FALSE" : ""})

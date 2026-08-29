@@ -237,11 +237,10 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
   }
 
   for (const classe of classesCibles) {
-    const slotsPossibles = [];
+    // Construit les créneaux disponibles pour CETTE classe, jour par jour.
+    const slotsParJour = {};
     for (const jour of jours) {
-      for (const s of genererCreneauxPossibles(classe.vacation)) {
-        slotsPossibles.push({ jour, ...s });
-      }
+      slotsParJour[jour] = genererCreneauxPossibles(classe.vacation).map((s) => ({ jour, ...s }));
     }
 
     // Enseignants rattachés à cette classe, avec leurs matières déclarées
@@ -252,6 +251,11 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
       [classe.id]
     );
 
+    // Compteur de rotation : chaque matière commence sa recherche sur un jour DIFFÉRENT
+    // (au lieu de toujours démarrer par le lundi) — répartit les matières sur toute la
+    // semaine au lieu de les entasser en début de semaine.
+    let rotation = 0;
+
     for (const ens of enseignants) {
       const matieres = ens.matieres.split(",").map((m) => m.trim()).filter(Boolean);
       for (const matiere of matieres) {
@@ -259,6 +263,13 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
         // par défaut passée en paramètre — s'il n'y en a pas, on garde l'ancien comportement.
         const heures = heuresPourMatiere(matiere, classe.niveau);
         const seancesCible = heures != null ? Math.max(1, Math.round(heures / (dureeMinutes / 60))) : seancesParMatiere;
+
+        // Reconstruit la liste des créneaux à essayer, dans un ORDRE DE JOURS qui tourne
+        // (ex. jours = [1,2,3,4,5] -> matière n°0 essaie 1,2,3,4,5 ; matière n°1 essaie
+        // 2,3,4,5,1 ; matière n°2 essaie 3,4,5,1,2 ; etc.)
+        const joursTournes = [...jours.slice(rotation % jours.length), ...jours.slice(0, rotation % jours.length)];
+        const slotsPossibles = joursTournes.flatMap((j) => slotsParJour[j]);
+        rotation++;
 
         let placees = 0;
         for (const slot of slotsPossibles) {
