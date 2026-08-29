@@ -239,10 +239,18 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
       const debut = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
       const finSlot = `${String(Math.floor((minutes + dureeMinutes) / 60)).padStart(2, "0")}:${String((minutes + dureeMinutes) % 60).padStart(2, "0")}`;
       // Ne propose jamais un créneau qui chevauche une récréation (matin OU après-midi
-      // selon la plage concernée) — elle reste libre pour tout le monde.
+      // selon la plage concernée). Au lieu de simplement ignorer ce créneau et avancer
+      // par pas fixe (ce qui laisserait un grand trou inutilisé autour d'une courte
+      // pause), on reprend directement à la fin exacte de la récréation.
       const chevaucheRecreMatin = recreMatinDebut && recreMatinFin && debut < recreMatinFin && finSlot > recreMatinDebut;
       const chevaucheRecreApresMidi = recreApresMidiDebut && recreApresMidiFin && debut < recreApresMidiFin && finSlot > recreApresMidiDebut;
-      if (!chevaucheRecreMatin && !chevaucheRecreApresMidi) slots.push({ debut, fin: finSlot });
+      if (chevaucheRecreMatin || chevaucheRecreApresMidi) {
+        const finRecre = chevaucheRecreMatin ? recreMatinFin : recreApresMidiFin;
+        const [hR, mR] = finRecre.split(":").map(Number);
+        minutes = hR * 60 + mR;
+        continue;
+      }
+      slots.push({ debut, fin: finSlot });
       minutes += dureeMinutes;
     }
     return slots;
