@@ -206,6 +206,9 @@ CREATE TABLE IF NOT EXISTS matieres (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (nom, ecole_id)
 );
+-- cycle NULL = commune aux deux cycles (ex. Mathématiques, Anglais) ;
+-- '1er_cycle' = collège (6ème à 3ème) uniquement ; '2nd_cycle' = lycée (2nde à Terminale) uniquement.
+ALTER TABLE matieres ADD COLUMN IF NOT EXISTS cycle TEXT CHECK (cycle IN ('1er_cycle', '2nd_cycle') OR cycle IS NULL);
 
 -- --------------------------------------------------------------------------
 -- Écoles — profil du/des établissement(s) utilisant l'application.

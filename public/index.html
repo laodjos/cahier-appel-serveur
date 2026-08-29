@@ -413,6 +413,7 @@ function App({ session, onLogout }) {
   const [horairesEdits, setHorairesEdits] = useState({});
   const [matieresListe, setMatieresListe] = useState([]);
   const [nouvelleMatiere, setNouvelleMatiere] = useState("");
+  const [nouvelleMatiereCycle, setNouvelleMatiereCycle] = useState("");
   const [ecoleFormError, setEcoleFormError] = useState("");
 
   const catchErr = (e) => setGlobalError(e.message);
@@ -988,9 +989,18 @@ function App({ session, onLogout }) {
   async function ajouterMatiere() {
     if (!nouvelleMatiere.trim()) return;
     try {
-      const created = await api("/matieres", { method: "POST", body: { nom: nouvelleMatiere.trim() } });
+      const created = await api("/matieres", { method: "POST", body: { nom: nouvelleMatiere.trim(), cycle: nouvelleMatiereCycle || null } });
       setMatieresListe((m) => [...m, created].sort((a, b) => a.nom.localeCompare(b.nom)));
-      setNouvelleMatiere("");
+      setNouvelleMatiere(""); setNouvelleMatiereCycle("");
+    } catch (e) { catchErr(e); }
+  }
+
+  async function genererMatieresParDefaut() {
+    try {
+      const res = await api("/matieres/generer-defaut", { method: "POST" });
+      if (res.creees.length > 0) setMatieresListe((m) => [...m, ...res.creees].sort((a, b) => a.nom.localeCompare(b.nom)));
+      setGlobalInfo(`${res.creees.length} matière(s) ajoutée(s) sur ${res.total_demandees} (les autres existaient déjà).`);
+      setTimeout(() => setGlobalInfo(""), 5000);
     } catch (e) { catchErr(e); }
   }
 
@@ -1978,18 +1988,42 @@ function App({ session, onLogout }) {
           <div>
             <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Enseignants</h1>
 
-            <Card title="Matières de l'établissement" style={{ marginBottom: 20 }}>
-              <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                {matieresListe.map((m) => (
-                  <span key={m.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(217,164,65,0.1)", color: COLORS.marker, borderRadius: 999, padding: "5px 10px 5px 12px", fontSize: 12 }}>
-                    {m.nom}
-                    <button onClick={() => supprimerMatiere(m.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.marker, display: "flex" }}><Icon path={P.x} size={12} /></button>
-                  </span>
-                ))}
-                {matieresListe.length === 0 && <span style={{ fontSize: 12, color: COLORS.craieDim }}>Aucune matière ajoutée pour l'instant.</span>}
-              </div>
-              <div style={{ padding: "0 14px 14px", display: "flex", gap: 8 }}>
-                <input style={{ ...inputStyle, flex: 1 }} value={nouvelleMatiere} onChange={(e) => setNouvelleMatiere(e.target.value)} placeholder="ex. Mathématiques" onKeyDown={(e) => e.key === "Enter" && ajouterMatiere()} />
+            <Card
+              title="Matières de l'établissement"
+              style={{ marginBottom: 20 }}
+              right={<Button small variant="ghost" icon={P.folder} onClick={genererMatieresParDefaut}>Générer une liste de base</Button>}
+            >
+              {[
+                { cle: null, label: "Communes (Collège et Lycée)" },
+                { cle: "1er_cycle", label: "1er cycle uniquement (Collège : 6ème → 3ème)" },
+                { cle: "2nd_cycle", label: "2nd cycle uniquement (Lycée : 2nde → Terminale)" },
+              ].map((groupe) => {
+                const items = matieresListe.filter((m) => (m.cycle || null) === groupe.cle);
+                if (items.length === 0) return null;
+                return (
+                  <div key={groupe.label} style={{ padding: "12px 14px 4px" }}>
+                    <div style={{ fontSize: 10.5, color: COLORS.craieDim, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>{groupe.label}</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {items.map((m) => (
+                        <span key={m.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(217,164,65,0.1)", color: COLORS.marker, borderRadius: 999, padding: "5px 10px 5px 12px", fontSize: 12 }}>
+                          {m.nom}
+                          <button onClick={() => supprimerMatiere(m.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.marker, display: "flex" }}><Icon path={P.x} size={12} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              {matieresListe.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucune matière ajoutée pour l'instant.</div>}
+              <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}`, marginTop: 10 }}>
+                <Field label="Nouvelle matière"><input style={inputStyle} value={nouvelleMatiere} onChange={(e) => setNouvelleMatiere(e.target.value)} placeholder="ex. Mathématiques" onKeyDown={(e) => e.key === "Enter" && ajouterMatiere()} /></Field>
+                <Field label="Cycle concerné">
+                  <select style={inputStyle} value={nouvelleMatiereCycle} onChange={(e) => setNouvelleMatiereCycle(e.target.value)}>
+                    <option value="">Commune (Collège + Lycée)</option>
+                    <option value="1er_cycle">1er cycle uniquement (Collège)</option>
+                    <option value="2nd_cycle">2nd cycle uniquement (Lycée)</option>
+                  </select>
+                </Field>
                 <Button small icon={P.plus} onClick={ajouterMatiere}>Ajouter</Button>
               </div>
             </Card>
