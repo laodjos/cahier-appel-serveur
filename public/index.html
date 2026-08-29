@@ -417,7 +417,7 @@ function App({ session, onLogout }) {
   const [nouvelleMatiere, setNouvelleMatiere] = useState("");
   const [nouvelleMatiereCycle, setNouvelleMatiereCycle] = useState("");
   const [volumesHoraires, setVolumesHoraires] = useState([]);
-  const [nouveauVolume, setNouveauVolume] = useState({ matiere_id: "", niveau: "", cycle: "", heures_semaine: "" });
+  const [nouveauVolume, setNouveauVolume] = useState({ matiere_id: "", classe_id: "", niveau: "", cycle: "", heures_semaine: "" });
   const [sallesListe, setSallesListe] = useState([]);
   const [nouvelleSalle, setNouvelleSalle] = useState("");
   const [ecoleFormError, setEcoleFormError] = useState("");
@@ -1123,16 +1123,17 @@ function App({ session, onLogout }) {
   }
 
   async function ajouterVolumeHoraire() {
-    if (!nouveauVolume.matiere_id || !nouveauVolume.heures_semaine || (!nouveauVolume.niveau && !nouveauVolume.cycle)) {
-      setGlobalError("Choisis une matière, un nombre d'heures, et un niveau OU un cycle.");
+    if (!nouveauVolume.matiere_id || !nouveauVolume.heures_semaine || (!nouveauVolume.classe_id && !nouveauVolume.niveau && !nouveauVolume.cycle)) {
+      setGlobalError("Choisis une matière, un nombre d'heures, et une classe, un niveau OU un cycle.");
       setTimeout(() => setGlobalError(""), 4000);
       return;
     }
     try {
       const created = await api("/volumes-horaires", { method: "POST", body: nouveauVolume });
       const matiereNom = matieresListe.find((m) => m.id === nouveauVolume.matiere_id)?.nom || "";
-      setVolumesHoraires((v) => [...v, { ...created, matiere_nom: matiereNom }]);
-      setNouveauVolume({ matiere_id: "", niveau: "", cycle: "", heures_semaine: "" });
+      const classeNom = classes.find((c) => c.id === nouveauVolume.classe_id)?.nom || null;
+      setVolumesHoraires((v) => [...v, { ...created, matiere_nom: matiereNom, classe_nom: classeNom }]);
+      setNouveauVolume({ matiere_id: "", classe_id: "", niveau: "", cycle: "", heures_semaine: "" });
     } catch (e) { catchErr(e); }
   }
 
@@ -2236,13 +2237,15 @@ function App({ session, onLogout }) {
 
             <Card title="Volume horaire hebdomadaire par matière" style={{ marginBottom: 20 }}>
               <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
-                Utilisé par "Générer automatiquement" pour savoir combien d'heures par semaine programmer pour chaque matière. Précise un niveau (ex. "6ème") pour un réglage exact, ou seulement un cycle pour une valeur par défaut qui s'applique à tous les niveaux de ce cycle sans réglage précis.
+                Utilisé par "Générer automatiquement" pour savoir combien d'heures par semaine programmer pour chaque matière. Du plus précis au plus général : une classe précise (ex. "6ème A") prévaut sur un niveau entier (ex. "6ème"), qui prévaut lui-même sur un cycle entier (valeur par défaut pour tous les niveaux de ce cycle sans réglage plus précis).
               </div>
               {volumesHoraires.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun volume horaire défini — la génération automatique utilisera alors le nombre de séances par défaut.</div>}
               {volumesHoraires.map((v, i) => (
                 <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 18px", borderBottom: i < volumesHoraires.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
                   <span style={{ fontWeight: 500, flex: 1 }}>{v.matiere_nom}</span>
-                  <span style={{ fontSize: 11.5, color: COLORS.craieDim, width: 160 }}>{v.niveau || (v.cycle === "1er_cycle" ? "1er cycle (défaut)" : v.cycle === "2nd_cycle" ? "2nd cycle (défaut)" : "—")}</span>
+                  <span style={{ fontSize: 11.5, color: COLORS.craieDim, width: 170 }}>
+                    {v.classe_nom ? `Classe : ${v.classe_nom}` : v.niveau || (v.cycle === "1er_cycle" ? "1er cycle (défaut)" : v.cycle === "2nd_cycle" ? "2nd cycle (défaut)" : "—")}
+                  </span>
                   <span style={{ fontSize: 12.5, color: COLORS.marker, fontWeight: 600, width: 60 }}>{v.heures_semaine} h</span>
                   <button onClick={() => supprimerVolumeHoraire(v.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
                 </div>
@@ -2254,14 +2257,20 @@ function App({ session, onLogout }) {
                     {matieresListe.map((m) => <option key={m.id} value={m.id}>{m.nom}</option>)}
                   </select>
                 </Field>
-                <Field label="Niveau précis (optionnel)">
-                  <select style={inputStyle} value={nouveauVolume.niveau} onChange={(e) => setNouveauVolume((v) => ({ ...v, niveau: e.target.value, cycle: e.target.value ? "" : v.cycle }))}>
-                    <option value="">— Aucun (utiliser le cycle) —</option>
+                <Field label="Classe précise (optionnel)">
+                  <select style={inputStyle} value={nouveauVolume.classe_id} onChange={(e) => setNouveauVolume((v) => ({ ...v, classe_id: e.target.value, niveau: e.target.value ? "" : v.niveau, cycle: e.target.value ? "" : v.cycle }))}>
+                    <option value="">— Aucune (utiliser le niveau/cycle) —</option>
+                    {classes.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                  </select>
+                </Field>
+                <Field label="Ou niveau entier">
+                  <select style={inputStyle} value={nouveauVolume.niveau} onChange={(e) => setNouveauVolume((v) => ({ ...v, niveau: e.target.value, classe_id: e.target.value ? "" : v.classe_id, cycle: e.target.value ? "" : v.cycle }))} disabled={!!nouveauVolume.classe_id}>
+                    <option value="">— Aucun —</option>
                     {["6ème","5ème","4ème","3ème","2nde","1ère","Terminale"].map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </Field>
                 <Field label="Ou cycle entier">
-                  <select style={inputStyle} value={nouveauVolume.cycle} onChange={(e) => setNouveauVolume((v) => ({ ...v, cycle: e.target.value, niveau: e.target.value ? "" : v.niveau }))} disabled={!!nouveauVolume.niveau}>
+                  <select style={inputStyle} value={nouveauVolume.cycle} onChange={(e) => setNouveauVolume((v) => ({ ...v, cycle: e.target.value, classe_id: e.target.value ? "" : v.classe_id, niveau: e.target.value ? "" : v.niveau }))} disabled={!!nouveauVolume.classe_id || !!nouveauVolume.niveau}>
                     <option value="">—</option>
                     <option value="1er_cycle">1er cycle (Collège)</option>
                     <option value="2nd_cycle">2nd cycle (Lycée)</option>

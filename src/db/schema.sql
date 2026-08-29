@@ -209,6 +209,9 @@ CREATE TABLE IF NOT EXISTS volumes_horaires (
   heures_semaine NUMERIC NOT NULL CHECK (heures_semaine > 0),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Rattachement optionnel à UNE classe précise (ex. "6ème A" seulement, pas tout le
+-- niveau 6ème) — priorité la plus fine : classe précise > niveau > cycle.
+ALTER TABLE volumes_horaires ADD COLUMN IF NOT EXISTS classe_id UUID REFERENCES classes(id) ON DELETE CASCADE;
 
 -- --------------------------------------------------------------------------
 -- Pauses / récréations : un créneau peut être marqué comme une pause (pas un

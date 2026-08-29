@@ -306,11 +306,14 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
      WHERE ${ecoleGeneration ? "vh.ecole_id = $1" : "TRUE"}`,
     ecoleGeneration ? [ecoleGeneration] : []
   );
-  function heuresPourMatiere(nomMatiere, niveau) {
-    const parNiveau = volumesRows.find((v) => v.matiere_nom === nomMatiere && v.niveau === niveau);
+  function heuresPourMatiere(nomMatiere, niveau, classeId) {
+    // Priorité du plus précis au plus général : classe exacte > niveau > cycle.
+    const parClasse = volumesRows.find((v) => v.matiere_nom === nomMatiere && v.classe_id === classeId);
+    if (parClasse) return Number(parClasse.heures_semaine);
+    const parNiveau = volumesRows.find((v) => v.matiere_nom === nomMatiere && !v.classe_id && v.niveau === niveau);
     if (parNiveau) return Number(parNiveau.heures_semaine);
     const cycle = cycleDeNiveau(niveau);
-    const parCycle = volumesRows.find((v) => v.matiere_nom === nomMatiere && !v.niveau && v.cycle === cycle);
+    const parCycle = volumesRows.find((v) => v.matiere_nom === nomMatiere && !v.classe_id && !v.niveau && v.cycle === cycle);
     if (parCycle) return Number(parCycle.heures_semaine);
     return null; // aucun volume déclaré — on retombe sur seances_par_matiere par défaut
   }
@@ -384,7 +387,7 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
       for (const matiere of matieres) {
         // Le volume horaire déclaré (par niveau, sinon par cycle) prévaut sur la valeur
         // par défaut passée en paramètre — s'il n'y en a pas, on garde l'ancien comportement.
-        const heures = heuresPourMatiere(matiere, classe.niveau);
+        const heures = heuresPourMatiere(matiere, classe.niveau, classe.id);
         const seancesCible = heures != null ? Math.max(1, Math.round(heures / (dureeMinutes / 60))) : seancesParMatiere;
 
         // Fait tourner le POINT DE DÉPART dans la liste complète de la semaine (pas

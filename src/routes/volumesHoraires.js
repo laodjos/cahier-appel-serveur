@@ -17,28 +17,33 @@ router.get("/", async (req, res) => {
   const ecoleId = ecoleEffective(req);
   if (ecoleId) { params.push(ecoleId); filtre = `vh.ecole_id = $${params.length}`; }
   const { rows } = await pool.query(
-    `SELECT vh.*, m.nom AS matiere_nom FROM volumes_horaires vh
+    `SELECT vh.*, m.nom AS matiere_nom, c.nom AS classe_nom FROM volumes_horaires vh
      JOIN matieres m ON m.id = vh.matiere_id
+     LEFT JOIN classes c ON c.id = vh.classe_id
      WHERE ${filtre}
-     ORDER BY m.nom, vh.niveau NULLS LAST`,
+     ORDER BY m.nom, c.nom NULLS LAST, vh.niveau NULLS LAST`,
     params
   );
   res.json(rows);
 });
 
-// POST /api/volumes-horaires  { matiere_id, niveau?, cycle?, heures_semaine }
-// Un niveau précis (ex. "6ème") prévaut toujours sur une valeur de cycle par défaut.
+// POST /api/volumes-horaires  { matiere_id, classe_id?, niveau?, cycle?, heures_semaine }
+// Priorité du plus précis au plus général : classe_id > niveau > cycle.
 router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
-  const { matiere_id, niveau, cycle, heures_semaine } = req.body;
+  const { matiere_id, classe_id, niveau, cycle, heures_semaine } = req.body;
   if (!matiere_id || !heures_semaine) return res.status(400).json({ error: "matiere_id et heures_semaine sont requis." });
-  if (!niveau && !cycle) return res.status(400).json({ error: "Précise un niveau précis, ou au moins un cycle." });
+  if (!classe_id && !niveau && !cycle) return res.status(400).json({ error: "Précise une classe, un niveau, ou au moins un cycle." });
   const ecoleId = ecoleEffective(req);
   if (!ecoleId) return res.status(400).json({ error: "Choisis d'abord une école." });
 
+  const classeCible = classe_id || null;
+  const niveauCible = classeCible ? null : (niveau || null);
+  const cycleCible = (classeCible || niveauCible) ? null : (cycle || null);
+
   const { rows } = await pool.query(
-    `INSERT INTO volumes_horaires (ecole_id, matiere_id, niveau, cycle, heures_semaine)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [ecoleId, matiere_id, niveau || null, niveau ? null : (cycle || null), heures_semaine]
+    `INSERT INTO volumes_horaires (ecole_id, matiere_id, classe_id, niveau, cycle, heures_semaine)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [ecoleId, matiere_id, classeCible, niveauCible, cycleCible, heures_semaine]
   );
   res.status(201).json(rows[0]);
 });
