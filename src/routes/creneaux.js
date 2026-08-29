@@ -382,7 +382,7 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
 
     // Enseignants rattachés à cette classe, avec leurs matières déclarées
     const { rows: enseignants } = await pool.query(
-      `SELECT u.nom, u.matieres FROM users u
+      `SELECT u.id, u.nom, u.matieres FROM users u
        JOIN enseignant_classes ec ON ec.user_id = u.id
        WHERE ec.classe_id = $1 AND u.matieres IS NOT NULL`,
       [classe.id]
@@ -394,6 +394,20 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
     let rotation = 0;
 
     for (const ens of enseignants) {
+      // Disponibilités déclarées pour CET enseignant (surtout utile pour les vacataires) —
+      // s'il n'en a AUCUNE, il est considéré disponible en permanence (comportement par
+      // défaut, ne change rien pour les enseignants déjà configurés sans disponibilités).
+      const { rows: disponibilites } = await pool.query(
+        "SELECT jour_semaine, heure_debut, heure_fin FROM disponibilites_enseignants WHERE user_id = $1",
+        [ens.id]
+      );
+      function estDisponible(jour, debut, fin) {
+        if (disponibilites.length === 0) return true; // aucune contrainte déclarée
+        return disponibilites.some((d) =>
+          d.jour_semaine === jour && d.heure_debut.slice(0, 5) <= debut && fin <= d.heure_fin.slice(0, 5)
+        );
+      }
+
       const matieres = ens.matieres.split(",").map((m) => m.trim()).filter(Boolean);
       for (const matiere of matieres) {
         // Le volume horaire déclaré (par classe précise, sinon niveau, sinon cycle) prévaut
@@ -416,6 +430,7 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
               const clefClasse = `${classe.id}|${slot.jour}|${slot.debut}`;
               const clefEnseignant = `${ens.nom}|${slot.jour}|${slot.debut}`;
               if (occupeClasse.has(clefClasse) || occupeEnseignant.has(clefEnseignant)) continue;
+              if (!estDisponible(slot.jour, slot.debut, slot.fin)) continue; // hors des disponibilités déclarées
 
               // Cherche une salle libre à ce créneau précis (au mieux — si aucune salle
               // n'est déclarée pour l'école, le créneau est simplement créé sans salle).

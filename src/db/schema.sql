@@ -194,11 +194,27 @@ CREATE TABLE IF NOT EXISTS salles (
 ALTER TABLE creneaux ADD COLUMN IF NOT EXISTS salle_id UUID REFERENCES salles(id);
 
 -- --------------------------------------------------------------------------
--- Volume horaire hebdomadaire par matière — soit pour un niveau précis
--- (ex. "6ème"), soit pour tout un cycle (niveau NULL, cycle renseigné) comme
--- valeur par défaut si aucun niveau précis n'est défini. Utilisé par la
--- génération automatique de l'emploi du temps pour savoir combien de séances
--- programmer par semaine.
+-- Disponibilités déclarées d'un enseignant (utile surtout pour les vacataires,
+-- qui ne sont pas forcément libres toute la semaine). Un enseignant SANS aucune
+-- ligne ici est considéré disponible en permanence (comportement par défaut,
+-- pour ne rien changer aux enseignants déjà configurés) — dès qu'au moins une
+-- disponibilité est déclarée, la génération automatique ne le programme plus
+-- que dans ces créneaux-là.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS disponibilites_enseignants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  jour_semaine SMALLINT NOT NULL CHECK (jour_semaine BETWEEN 1 AND 7),
+  heure_debut TIME NOT NULL,
+  heure_fin TIME NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- --------------------------------------------------------------------------
+-- Volumes horaires par matière — soit pour un niveau précis (ex. "6ème"), soit
+-- pour tout un cycle (niveau NULL, cycle renseigné) comme valeur par défaut si
+-- aucun niveau précis n'est défini. Utilisé par la génération automatique de
+-- l'emploi du temps pour savoir combien de séances programmer par semaine.
 -- --------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS volumes_horaires (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

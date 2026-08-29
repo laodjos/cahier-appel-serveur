@@ -395,6 +395,9 @@ function App({ session, onLogout }) {
   // Rattachement enseignant ↔ classes
   const [gestionClassesUser, setGestionClassesUser] = useState(null);
   const [gestionMatieresUser, setGestionMatieresUser] = useState(null);
+  const [gestionDisponibilitesUser, setGestionDisponibilitesUser] = useState(null);
+  const [disponibilitesUser, setDisponibilitesUser] = useState([]);
+  const [nouvelleDispo, setNouvelleDispo] = useState({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "12:00" });
 
   // Paramétrage des lecteurs biométriques
   const [showAddDevice, setShowAddDevice] = useState(false);
@@ -834,6 +837,29 @@ function App({ session, onLogout }) {
     try {
       const updated = await api(`/users/${id}/matieres`, { method: "PATCH", body: { matieres: matieres === "—" ? "" : matieres } });
       setUsers((u) => u.map((x) => x.id === id ? updated : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ouvrirDisponibilitesUser(u) {
+    setGestionDisponibilitesUser(u);
+    try {
+      const res = await api(`/disponibilites?user_id=${u.id}`);
+      setDisponibilitesUser(res);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ajouterDisponibilite() {
+    if (!gestionDisponibilitesUser) return;
+    try {
+      const created = await api("/disponibilites", { method: "POST", body: { user_id: gestionDisponibilitesUser.id, ...nouvelleDispo, jour_semaine: Number(nouvelleDispo.jour_semaine) } });
+      setDisponibilitesUser((d) => [...d, created].sort((a, b) => a.jour_semaine - b.jour_semaine || a.heure_debut.localeCompare(b.heure_debut)));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerDisponibilite(id) {
+    try {
+      await api(`/disponibilites/${id}`, { method: "DELETE" });
+      setDisponibilitesUser((d) => d.filter((x) => x.id !== id));
     } catch (e) { catchErr(e); }
   }
 
@@ -2375,12 +2401,12 @@ function App({ session, onLogout }) {
             )}
 
             <Card title="Liste des enseignants">
-              <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1.3fr 0.9fr 1.3fr auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
-                <span>Nom</span><span>Classes</span><span>Statut</span><span>Matières</span><span></span>
+              <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1.1fr 0.8fr 1.1fr 1fr auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
+                <span>Nom</span><span>Classes</span><span>Statut</span><span>Matières</span><span>Disponibilités</span><span></span>
               </div>
               {users.filter((u) => u.role === "enseignant").length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun enseignant pour l'instant.</div>}
               {users.filter((u) => u.role === "enseignant").map((u, i, arr) => (
-                <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1.3fr 1.3fr 0.9fr 1.3fr auto", alignItems: "center", padding: "10px 18px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1.1fr 1.1fr 0.8fr 1.1fr 1fr auto", alignItems: "center", padding: "10px 18px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
                   <NomEditable valeur={u.nom} onValider={(v) => changeUserNom(u.id, v)} style={{ fontWeight: 500 }} />
                   <button onClick={() => setGestionClassesUser(u)} style={{ background: "transparent", border: "none", cursor: "pointer", color: (u.classes_rattachees || []).length ? COLORS.craie : COLORS.craieDim, fontSize: 12, textAlign: "left", padding: 0 }}>
                     {(u.classes_rattachees || []).length === 0 ? "Aucune — cliquer" : (u.classes_rattachees || []).map((c) => c.nom).join(", ")}
@@ -2392,6 +2418,17 @@ function App({ session, onLogout }) {
                   ) : <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>Non renseigné</span>}
                   <button onClick={() => setGestionMatieresUser(u)} style={{ background: "transparent", border: "none", cursor: "pointer", color: u.matieres ? COLORS.craie : COLORS.craieDim, fontSize: 12, textAlign: "left", padding: 0 }}>
                     {u.matieres || "— cliquer pour choisir"}
+                  </button>
+                  <button
+                    onClick={() => ouvrirDisponibilitesUser(u)}
+                    style={{
+                      background: u.statut_emploi === "vacataire" ? "rgba(217,164,65,0.15)" : "transparent",
+                      border: u.statut_emploi === "vacataire" ? `1px solid ${COLORS.marker}` : "none",
+                      borderRadius: 6, padding: u.statut_emploi === "vacataire" ? "5px 8px" : 0,
+                      cursor: "pointer", color: u.statut_emploi === "vacataire" ? COLORS.marker : COLORS.craieDim, fontSize: 12, textAlign: "left", fontWeight: u.statut_emploi === "vacataire" ? 600 : 400,
+                    }}
+                  >
+                    {u.statut_emploi === "vacataire" ? "⚠ Renseigner" : "Toujours disponible"}
                   </button>
                   <button onClick={() => removeUser(u.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
                 </div>
@@ -2449,6 +2486,40 @@ function App({ session, onLogout }) {
                 );
               })}
               {matieresListe.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucune matière créée pour l'instant — ajoute-en depuis la page "Enseignants".</div>}
+            </div>
+          </div>
+        )}
+
+        {gestionDisponibilitesUser && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setGestionDisponibilitesUser(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 420, maxHeight: "85vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Disponibilités de {gestionDisponibilitesUser.nom}</span>
+                <button onClick={() => setGestionDisponibilitesUser(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+              </div>
+              <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginBottom: 14 }}>
+                Indique les créneaux où cet enseignant PEUT enseigner (utile surtout pour un vacataire qui n'est pas libre toute la semaine). <strong>Si aucune disponibilité n'est ajoutée, il est considéré disponible en permanence.</strong> Dès qu'au moins une ligne est ajoutée, "Générer automatiquement" ne le programmera plus que dans ces créneaux-là.
+              </div>
+
+              {disponibilitesUser.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim, marginBottom: 14, fontStyle: "italic" }}>Aucune restriction — disponible en permanence.</div>}
+              {disponibilitesUser.map((d, i, arr) => (
+                <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                  <span style={{ fontWeight: 500, width: 90 }}>{JOURS[d.jour_semaine - 1]}</span>
+                  <span style={{ color: COLORS.craieDim, flex: 1 }}>{d.heure_debut?.slice(0,5)} – {d.heure_fin?.slice(0,5)}</span>
+                  <button onClick={() => supprimerDisponibilite(d.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
+                </div>
+              ))}
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 14, paddingTop: 14, borderTop: `1px solid ${COLORS.line}` }}>
+                <Field label="Jour">
+                  <select style={inputStyle} value={nouvelleDispo.jour_semaine} onChange={(e) => setNouvelleDispo((v) => ({ ...v, jour_semaine: e.target.value }))}>
+                    {JOURS.map((j, i) => <option key={j} value={i + 1}>{j}</option>)}
+                  </select>
+                </Field>
+                <Field label="De"><input type="time" style={inputStyle} value={nouvelleDispo.heure_debut} onChange={(e) => setNouvelleDispo((v) => ({ ...v, heure_debut: e.target.value }))} /></Field>
+                <Field label="À"><input type="time" style={inputStyle} value={nouvelleDispo.heure_fin} onChange={(e) => setNouvelleDispo((v) => ({ ...v, heure_fin: e.target.value }))} /></Field>
+                <Button small icon={P.plus} onClick={ajouterDisponibilite}>Ajouter</Button>
+              </div>
             </div>
           </div>
         )}
