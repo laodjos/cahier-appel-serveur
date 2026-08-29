@@ -103,10 +103,20 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
   const dureeMinutes = req.body.duree_minutes || 55;
   const seancesParMatiere = req.body.seances_par_matiere || 2;
 
+  // Récupère les horaires de démarrage propres à l'école (configurés dans "Écoles"),
+  // au lieu d'horaires fixes identiques pour tout le monde.
+  const ecoleIdPourHoraires = ecoleEffective(req);
+  const { rows: ecoleRows } = await pool.query(
+    "SELECT heure_debut_matin, heure_fin_matin, heure_debut_apresmidi, heure_fin_apresmidi FROM ecoles WHERE id = $1",
+    [ecoleIdPourHoraires]
+  );
+  const horaires = ecoleRows[0] || {};
+  const fmt = (t, defaut) => (t ? t.toString().slice(0, 5) : defaut);
+
   const PLAGES = {
-    matin: { debut: "07:30", fin: "12:30" },
-    apres_midi: { debut: "13:00", fin: "18:00" },
-    null: { debut: "07:30", fin: "17:00" },
+    matin: { debut: fmt(horaires.heure_debut_matin, "07:30"), fin: fmt(horaires.heure_fin_matin, "12:30") },
+    apres_midi: { debut: fmt(horaires.heure_debut_apresmidi, "13:00"), fin: fmt(horaires.heure_fin_apresmidi, "18:00") },
+    null: { debut: fmt(horaires.heure_debut_matin, "07:30"), fin: fmt(horaires.heure_fin_apresmidi, "17:00") },
   };
 
   function genererCreneauxPossibles(vacation) {

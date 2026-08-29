@@ -187,6 +187,27 @@ ALTER TABLE creneaux ADD CONSTRAINT creneaux_un_type_requis
 ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS cle_agent TEXT UNIQUE;
 
 -- --------------------------------------------------------------------------
+-- Horaires de démarrage des cours, propres à chaque école — utilisés par
+-- la génération automatique de l'emploi du temps (au lieu d'horaires fixes).
+-- --------------------------------------------------------------------------
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS heure_debut_matin TIME DEFAULT '07:30';
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS heure_fin_matin TIME DEFAULT '12:30';
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS heure_debut_apresmidi TIME DEFAULT '13:00';
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS heure_fin_apresmidi TIME DEFAULT '18:00';
+
+-- --------------------------------------------------------------------------
+-- Matières prédéfinies par école — évite de retaper le nom d'une matière à
+-- chaque fois ; les enseignants choisissent dans cette liste au lieu de taper.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS matieres (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nom TEXT NOT NULL,
+  ecole_id UUID REFERENCES ecoles(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (nom, ecole_id)
+);
+
+-- --------------------------------------------------------------------------
 -- Écoles — profil du/des établissement(s) utilisant l'application.
 -- --------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS ecoles (

@@ -392,6 +392,7 @@ function App({ session, onLogout }) {
 
   // Rattachement enseignant ↔ classes
   const [gestionClassesUser, setGestionClassesUser] = useState(null);
+  const [gestionMatieresUser, setGestionMatieresUser] = useState(null);
 
   // Paramétrage des lecteurs biométriques
   const [showAddDevice, setShowAddDevice] = useState(false);
@@ -409,6 +410,9 @@ function App({ session, onLogout }) {
   const [showAddEcole, setShowAddEcole] = useState(false);
   const [editingEcoleId, setEditingEcoleId] = useState(null);
   const [newEcole, setNewEcole] = useState({ nom: "", adresse: "", ville: "", telephone: "", annee_scolaire: "", active: false });
+  const [horairesEdits, setHorairesEdits] = useState({});
+  const [matieresListe, setMatieresListe] = useState([]);
+  const [nouvelleMatiere, setNouvelleMatiere] = useState("");
   const [ecoleFormError, setEcoleFormError] = useState("");
 
   const catchErr = (e) => setGlobalError(e.message);
@@ -460,6 +464,7 @@ function App({ session, onLogout }) {
       }
       if (availableViews.includes("parametrage-lecteurs")) api("/devices").then(siEcoleInchangee(setDevices)).catch(catchErr);
       if (availableViews.includes("parametres") || availableViews.includes("enseignants")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
+      if (availableViews.includes("enseignants")) api("/matieres").then(siEcoleInchangee(setMatieresListe)).catch(catchErr);
       if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
       if (availableViews.includes("ecoles")) api("/ecoles").then(setEcoles).catch(catchErr);
     };
@@ -967,6 +972,41 @@ function App({ session, onLogout }) {
       const updated = await api(`/ecoles/${id}/generer-cle-agent`, { method: "POST" });
       setEcoles((liste) => liste.map((x) => x.id === id ? updated : x));
     } catch (e) { catchErr(e); }
+  }
+
+  async function enregistrerHoraires(id) {
+    const edit = horairesEdits[id] || {};
+    try {
+      const updated = await api(`/ecoles/${id}/horaires`, { method: "PATCH", body: edit });
+      setEcoles((liste) => liste.map((x) => x.id === id ? updated : x));
+      setHorairesEdits((v) => { const cp = { ...v }; delete cp[id]; return cp; });
+      setGlobalInfo("Horaires enregistrés.");
+      setTimeout(() => setGlobalInfo(""), 4000);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ajouterMatiere() {
+    if (!nouvelleMatiere.trim()) return;
+    try {
+      const created = await api("/matieres", { method: "POST", body: { nom: nouvelleMatiere.trim() } });
+      setMatieresListe((m) => [...m, created].sort((a, b) => a.nom.localeCompare(b.nom)));
+      setNouvelleMatiere("");
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerMatiere(id) {
+    try {
+      await api(`/matieres/${id}`, { method: "DELETE" });
+      setMatieresListe((m) => m.filter((x) => x.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  // Coche/décoche une matière dans la liste "matieres" (texte séparé par virgules) d'un enseignant
+  function toggleMatiereEnseignant(matieresActuelles, nomMatiere) {
+    const liste = (matieresActuelles || "").split(",").map((m) => m.trim()).filter(Boolean);
+    const dejaPresente = liste.includes(nomMatiere);
+    const nouvelleListe = dejaPresente ? liste.filter((m) => m !== nomMatiere) : [...liste, nomMatiere];
+    return nouvelleListe.join(", ");
   }
 
   // -------------------- Scanner caméra réel --------------------
@@ -1693,8 +1733,19 @@ function App({ session, onLogout }) {
                 </div>
                 {newUser.role === "enseignant" && (
                   <div style={{ display: "flex", gap: 12 }}>
-                    <Field label="Matières enseignées (séparées par des virgules)">
-                      <input style={inputStyle} value={newUserMatieres} onChange={(e) => setNewUserMatieres(e.target.value)} placeholder="ex. Mathématiques, Physique-Chimie" />
+                    <Field label="Matières enseignées">
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, background: COLORS.ardoise, border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "10px 12px" }}>
+                        {matieresListe.length === 0 && <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>Aucune matière définie (voir la page "Enseignants").</span>}
+                        {matieresListe.map((m) => {
+                          const coche = newUserMatieres.split(",").map((x) => x.trim()).includes(m.nom);
+                          return (
+                            <label key={m.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer" }}>
+                              <input type="checkbox" checked={coche} onChange={() => setNewUserMatieres((val) => toggleMatiereEnseignant(val, m.nom))} />
+                              {m.nom}
+                            </label>
+                          );
+                        })}
+                      </div>
                     </Field>
                     <Field label="Statut">
                       <div style={{ display: "flex", gap: 14, alignItems: "center", height: 34 }}>
@@ -1755,7 +1806,9 @@ function App({ session, onLogout }) {
                   {u.role === "enseignant" && (
                     <div style={{ padding: "0 18px 12px 18px", display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 11, color: COLORS.craieDim, flexShrink: 0 }}>Matières :</span>
-                      <NomEditable valeur={u.matieres || "Non renseignées"} onValider={(v) => changeUserMatieres(u.id, v === "Non renseignées" ? "" : v)} style={{ fontSize: 12, color: u.matieres ? COLORS.craie : COLORS.craieDim }} />
+                      <button onClick={() => setGestionMatieresUser(u)} style={{ background: "transparent", border: "none", cursor: "pointer", color: u.matieres ? COLORS.craie : COLORS.craieDim, fontSize: 12, textAlign: "left", padding: 0 }}>
+                        {u.matieres || "Non renseignées — cliquer pour choisir"}
+                      </button>
                     </div>
                   )}
                   {u.role === "enseignant" && (
@@ -1846,6 +1899,13 @@ function App({ session, onLogout }) {
                     )}
                     <Button small variant="ghost" onClick={() => genererCleAgent(e.id)}>{e.cle_agent ? "Régénérer" : "Générer une clé agent"}</Button>
                   </div>
+                  <div style={{ padding: "0 18px 14px 18px", display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap", fontSize: 11.5 }}>
+                    <Field label="Début matin"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_debut_matin ?? (e.heure_debut_matin || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_debut_matin: ev.target.value } }))} /></Field>
+                    <Field label="Fin matin"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_fin_matin ?? (e.heure_fin_matin || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_fin_matin: ev.target.value } }))} /></Field>
+                    <Field label="Début après-midi"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_debut_apresmidi ?? (e.heure_debut_apresmidi || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_debut_apresmidi: ev.target.value } }))} /></Field>
+                    <Field label="Fin après-midi"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_fin_apresmidi ?? (e.heure_fin_apresmidi || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_fin_apresmidi: ev.target.value } }))} /></Field>
+                    <Button small icon={P.check} onClick={() => enregistrerHoraires(e.id)}>Enregistrer les horaires</Button>
+                  </div>
                 </div>
               ))}
             </Card>
@@ -1917,6 +1977,23 @@ function App({ session, onLogout }) {
         {view === "enseignants" && (
           <div>
             <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Enseignants</h1>
+
+            <Card title="Matières de l'établissement" style={{ marginBottom: 20 }}>
+              <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                {matieresListe.map((m) => (
+                  <span key={m.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(217,164,65,0.1)", color: COLORS.marker, borderRadius: 999, padding: "5px 10px 5px 12px", fontSize: 12 }}>
+                    {m.nom}
+                    <button onClick={() => supprimerMatiere(m.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.marker, display: "flex" }}><Icon path={P.x} size={12} /></button>
+                  </span>
+                ))}
+                {matieresListe.length === 0 && <span style={{ fontSize: 12, color: COLORS.craieDim }}>Aucune matière ajoutée pour l'instant.</span>}
+              </div>
+              <div style={{ padding: "0 14px 14px", display: "flex", gap: 8 }}>
+                <input style={{ ...inputStyle, flex: 1 }} value={nouvelleMatiere} onChange={(e) => setNouvelleMatiere(e.target.value)} placeholder="ex. Mathématiques" onKeyDown={(e) => e.key === "Enter" && ajouterMatiere()} />
+                <Button small icon={P.plus} onClick={ajouterMatiere}>Ajouter</Button>
+              </div>
+            </Card>
+
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
               <Button variant="ghost" icon={P.folder} onClick={exporterEnseignants}>Exporter</Button>
               <label style={{ display: "inline-flex", alignItems: "center", gap: 7, borderRadius: 9, padding: "9px 15px", fontWeight: 600, fontSize: 12.5, cursor: "pointer", background: "rgba(246,242,231,0.06)", border: `1px solid ${COLORS.line}`, color: COLORS.craie }}>
@@ -1957,8 +2034,21 @@ function App({ session, onLogout }) {
                 </div>
                 <div style={{ display: "flex", gap: 12 }}>
                   <Field label="Mot de passe (6 caractères min.)"><input type="password" style={inputStyle} value={newUser.mot_de_passe} onChange={(e) => setNewUser((v) => ({ ...v, mot_de_passe: e.target.value }))} /></Field>
-                  <Field label="Matières enseignées (séparées par des virgules)"><input style={inputStyle} value={newUserMatieres} onChange={(e) => setNewUserMatieres(e.target.value)} placeholder="ex. Mathématiques, Physique-Chimie" /></Field>
                 </div>
+                <Field label="Matières enseignées">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, background: COLORS.ardoise, border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "10px 12px" }}>
+                    {matieresListe.length === 0 && <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>Aucune matière définie — ajoute-en depuis la carte "Matières de l'établissement" ci-dessus.</span>}
+                    {matieresListe.map((m) => {
+                      const coche = newUserMatieres.split(",").map((x) => x.trim()).includes(m.nom);
+                      return (
+                        <label key={m.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer" }}>
+                          <input type="checkbox" checked={coche} onChange={() => setNewUserMatieres((val) => toggleMatiereEnseignant(val, m.nom))} />
+                          {m.nom}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </Field>
                 <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
                   <span style={{ fontSize: 12, color: COLORS.craieDim }}>Statut :</span>
                   <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer" }}>
@@ -1997,7 +2087,9 @@ function App({ session, onLogout }) {
                       {u.statut_emploi === "permanent" ? "Permanent" : "Vacataire"}
                     </span>
                   ) : <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>Non renseigné</span>}
-                  <NomEditable valeur={u.matieres || "—"} onValider={(v) => changeUserMatieres(u.id, v)} style={{ color: COLORS.craieDim, fontSize: 12 }} />
+                  <button onClick={() => setGestionMatieresUser(u)} style={{ background: "transparent", border: "none", cursor: "pointer", color: u.matieres ? COLORS.craie : COLORS.craieDim, fontSize: 12, textAlign: "left", padding: 0 }}>
+                    {u.matieres || "— cliquer pour choisir"}
+                  </button>
                   <button onClick={() => removeUser(u.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
                 </div>
               ))}
@@ -2024,6 +2116,36 @@ function App({ session, onLogout }) {
                 );
               })}
               {classes.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucune classe créée pour l'instant.</div>}
+            </div>
+          </div>
+        )}
+
+        {gestionMatieresUser && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setGestionMatieresUser(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 380, maxHeight: "80vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Matières de {gestionMatieresUser.nom}</span>
+                <button onClick={() => setGestionMatieresUser(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+              </div>
+              <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginBottom: 14 }}>Coche les matières que cet enseignant donne — la liste vient des matières ajoutées pour l'établissement.</div>
+              {matieresListe.map((m) => {
+                const coche = (gestionMatieresUser.matieres || "").split(",").map((x) => x.trim()).includes(m.nom);
+                return (
+                  <label key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", cursor: "pointer", borderBottom: `1px solid ${COLORS.line}` }}>
+                    <input
+                      type="checkbox"
+                      checked={coche}
+                      onChange={async () => {
+                        const nouvelles = toggleMatiereEnseignant(gestionMatieresUser.matieres, m.nom);
+                        await changeUserMatieres(gestionMatieresUser.id, nouvelles);
+                        setGestionMatieresUser((u) => u ? { ...u, matieres: nouvelles } : u);
+                      }}
+                    />
+                    <span style={{ fontSize: 13 }}>{m.nom}</span>
+                  </label>
+                );
+              })}
+              {matieresListe.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucune matière créée pour l'instant — ajoute-en depuis la page "Enseignants".</div>}
             </div>
           </div>
         )}

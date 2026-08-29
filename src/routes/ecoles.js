@@ -79,4 +79,24 @@ router.post("/:id/generer-cle-agent", requireRole("direction", "super_admin"), a
   res.json(rows[0]);
 });
 
+// PATCH /api/ecoles/:id/horaires — modifie les horaires de démarrage des cours.
+// Accessible à la Direction, mais UNIQUEMENT pour sa propre école.
+router.patch("/:id/horaires", requireRole("direction", "super_admin"), async (req, res) => {
+  if (req.user.role === "direction" && req.user.ecole_id !== req.params.id) {
+    return res.status(403).json({ error: "Tu ne peux modifier que les horaires de ta propre école." });
+  }
+  const { heure_debut_matin, heure_fin_matin, heure_debut_apresmidi, heure_fin_apresmidi } = req.body;
+  const { rows } = await pool.query(
+    `UPDATE ecoles SET
+       heure_debut_matin = COALESCE($1, heure_debut_matin),
+       heure_fin_matin = COALESCE($2, heure_fin_matin),
+       heure_debut_apresmidi = COALESCE($3, heure_debut_apresmidi),
+       heure_fin_apresmidi = COALESCE($4, heure_fin_apresmidi)
+     WHERE id = $5 RETURNING *`,
+    [heure_debut_matin || null, heure_fin_matin || null, heure_debut_apresmidi || null, heure_fin_apresmidi || null, req.params.id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "École introuvable." });
+  res.json(rows[0]);
+});
+
 module.exports = router;
