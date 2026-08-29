@@ -133,11 +133,9 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
   const PLAGES = {
     matin: { debut: fmt(horaires.heure_debut_matin, "07:30"), fin: fmt(horaires.heure_fin_matin, "12:30") },
     apres_midi: { debut: fmt(horaires.heure_debut_apresmidi, "13:00"), fin: fmt(horaires.heure_fin_apresmidi, "18:00") },
-    null: { debut: fmt(horaires.heure_debut_matin, "07:30"), fin: fmt(horaires.heure_fin_apresmidi, "17:00") },
   };
 
-  function genererCreneauxPossibles(vacation) {
-    const plage = PLAGES[vacation || "null"];
+  function genererSlotsPourPlage(plage) {
     const [hD, mD] = plage.debut.split(":").map(Number);
     const [hF, mF] = plage.fin.split(":").map(Number);
     let minutes = hD * 60 + mD;
@@ -152,6 +150,15 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
       minutes += dureeMinutes;
     }
     return slots;
+  }
+
+  function genererCreneauxPossibles(vacation) {
+    // Une classe en "matin" ou "après-midi" (double vacation) ne reçoit que sa propre plage.
+    // Une classe en journée normale (vacation vide) reçoit les DEUX blocs séparément —
+    // jamais un seul bloc continu qui traverserait la pause déjeuner sans s'arrêter.
+    if (vacation === "matin") return genererSlotsPourPlage(PLAGES.matin);
+    if (vacation === "apres_midi") return genererSlotsPourPlage(PLAGES.apres_midi);
+    return [...genererSlotsPourPlage(PLAGES.matin), ...genererSlotsPourPlage(PLAGES.apres_midi)];
   }
 
   // Récupère les classes ciblées, de l'école de l'utilisateur uniquement
@@ -229,6 +236,28 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
           `INSERT INTO creneaux (classe_id, jour_semaine, heure_debut, heure_fin, matiere, est_pause)
            VALUES ($1,$2,$3,$4,'Récréation', true) RETURNING *`,
           [classe.id, jour, recreDebut, recreFin]
+        );
+        occupeClasse.add(clefClasse);
+        creees.push(rows[0]);
+      }
+    }
+  }
+
+  // Insère de la même façon une pause déjeuner visible entre le matin et l'après-midi,
+  // pour les classes en journée normale uniquement (une classe en simple vacation
+  // matin OU après-midi n'a pas cette coupure à afficher, elle finit sa journée avant).
+  const dejeunerDebut = fmt(horaires.heure_fin_matin, "12:30");
+  const dejeunerFin = fmt(horaires.heure_debut_apresmidi, "13:00");
+  if (dejeunerDebut !== dejeunerFin) {
+    for (const classe of classesCibles) {
+      if (classe.vacation) continue; // classes à vacation simple : pas de pause déjeuner à marquer
+      for (const jour of jours) {
+        const clefClasse = `${classe.id}|${jour}|${dejeunerDebut}`;
+        if (occupeClasse.has(clefClasse)) continue;
+        const { rows } = await pool.query(
+          `INSERT INTO creneaux (classe_id, jour_semaine, heure_debut, heure_fin, matiere, est_pause)
+           VALUES ($1,$2,$3,$4,'Pause déjeuner', true) RETURNING *`,
+          [classe.id, jour, dejeunerDebut, dejeunerFin]
         );
         occupeClasse.add(clefClasse);
         creees.push(rows[0]);
