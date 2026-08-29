@@ -419,6 +419,9 @@ function App({ session, onLogout }) {
   const [matieresListe, setMatieresListe] = useState([]);
   const [nouvelleMatiere, setNouvelleMatiere] = useState("");
   const [nouvelleMatiereCycle, setNouvelleMatiereCycle] = useState("");
+  const [nouvelleMatiereCategorie, setNouvelleMatiereCategorie] = useState("");
+  const [nouvelleMatiereDureeDouble, setNouvelleMatiereDureeDouble] = useState(false);
+  const [editionMatiere, setEditionMatiere] = useState(null);
   const [volumesHoraires, setVolumesHoraires] = useState([]);
   const [nouveauVolume, setNouveauVolume] = useState({ matiere_id: "", classe_id: "", niveau: "", cycle: "", heures_semaine: "" });
   const [sallesListe, setSallesListe] = useState([]);
@@ -1110,9 +1113,9 @@ function App({ session, onLogout }) {
   async function ajouterMatiere() {
     if (!nouvelleMatiere.trim()) return;
     try {
-      const created = await api("/matieres", { method: "POST", body: { nom: nouvelleMatiere.trim(), cycle: nouvelleMatiereCycle || null } });
+      const created = await api("/matieres", { method: "POST", body: { nom: nouvelleMatiere.trim(), cycle: nouvelleMatiereCycle || null, categorie: nouvelleMatiereCategorie || null, duree_double: nouvelleMatiereDureeDouble } });
       setMatieresListe((m) => [...m, created].sort((a, b) => a.nom.localeCompare(b.nom)));
-      setNouvelleMatiere(""); setNouvelleMatiereCycle("");
+      setNouvelleMatiere(""); setNouvelleMatiereCycle(""); setNouvelleMatiereCategorie(""); setNouvelleMatiereDureeDouble(false);
     } catch (e) { catchErr(e); }
   }
 
@@ -1145,6 +1148,14 @@ function App({ session, onLogout }) {
     try {
       await api(`/matieres/${id}`, { method: "DELETE" });
       setMatieresListe((m) => m.filter((x) => x.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function enregistrerReglagesMatiere(id, patch) {
+    try {
+      const updated = await api(`/matieres/${id}`, { method: "PATCH", body: patch });
+      setMatieresListe((m) => m.map((x) => x.id === id ? updated : x));
+      setEditionMatiere(updated);
     } catch (e) { catchErr(e); }
   }
 
@@ -2258,6 +2269,10 @@ function App({ session, onLogout }) {
                       {items.map((m) => (
                         <span key={m.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(217,164,65,0.1)", color: COLORS.marker, borderRadius: 999, padding: "5px 10px 5px 12px", fontSize: 12 }}>
                           {m.nom}
+                          {m.categorie === "scientifique" && <span title="Scientifique" style={{ fontSize: 10 }}>🔬</span>}
+                          {m.categorie === "litteraire" && <span title="Littéraire" style={{ fontSize: 10 }}>📖</span>}
+                          {m.duree_double && <span title="2h d'affilée" style={{ fontSize: 10 }}>⏱️</span>}
+                          <button onClick={() => setEditionMatiere(m)} title="Réglages" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.marker, display: "flex" }}><Icon path={P.settings} size={11} /></button>
                           <button onClick={() => supprimerMatiere(m.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.marker, display: "flex" }}><Icon path={P.x} size={12} /></button>
                         </span>
                       ))}
@@ -2275,6 +2290,17 @@ function App({ session, onLogout }) {
                     <option value="2nd_cycle">2nd cycle uniquement (Lycée)</option>
                   </select>
                 </Field>
+                <Field label="Catégorie">
+                  <select style={inputStyle} value={nouvelleMatiereCategorie} onChange={(e) => setNouvelleMatiereCategorie(e.target.value)}>
+                    <option value="">Aucune contrainte</option>
+                    <option value="scientifique">Scientifique</option>
+                    <option value="litteraire">Littéraire</option>
+                  </select>
+                </Field>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: COLORS.craieDim, cursor: "pointer", paddingBottom: 8 }}>
+                  <input type="checkbox" checked={nouvelleMatiereDureeDouble} onChange={(e) => setNouvelleMatiereDureeDouble(e.target.checked)} />
+                  Toujours 2h d'affilée (ex. EPS)
+                </label>
                 <Button small icon={P.plus} onClick={ajouterMatiere}>Ajouter</Button>
               </div>
             </Card>
@@ -2461,6 +2487,28 @@ function App({ session, onLogout }) {
                 );
               })}
               {classes.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucune classe créée pour l'instant.</div>}
+            </div>
+          </div>
+        )}
+
+        {editionMatiere && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setEditionMatiere(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 340 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Réglages — {editionMatiere.nom}</span>
+                <button onClick={() => setEditionMatiere(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+              </div>
+              <Field label="Catégorie (empêche deux matières de la même catégorie de se suivre)">
+                <select style={inputStyle} value={editionMatiere.categorie || ""} onChange={(e) => enregistrerReglagesMatiere(editionMatiere.id, { categorie: e.target.value })}>
+                  <option value="">Aucune contrainte</option>
+                  <option value="scientifique">Scientifique</option>
+                  <option value="litteraire">Littéraire</option>
+                </select>
+              </Field>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", marginTop: 14 }}>
+                <input type="checkbox" checked={!!editionMatiere.duree_double} onChange={(e) => enregistrerReglagesMatiere(editionMatiere.id, { duree_double: e.target.checked })} />
+                Toujours programmer sur 2h d'affilée (ex. EPS)
+              </label>
             </div>
           </div>
         )}

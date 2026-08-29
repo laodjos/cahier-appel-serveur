@@ -20,20 +20,26 @@ router.get("/", async (req, res) => {
   res.json(rows);
 });
 
-// POST /api/matieres  { nom, cycle? }  — cycle : "1er_cycle", "2nd_cycle", ou absent (commune aux deux)
+// POST /api/matieres  { nom, cycle?, categorie?, duree_double? }
+// cycle : "1er_cycle", "2nd_cycle", ou absent (commune aux deux)
+// categorie : "scientifique", "litteraire", ou absente (aucune contrainte d'enchaînement)
+// duree_double : true si cette matière doit toujours être programmée sur 2h d'affilée (ex. EPS)
 router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
-  const { nom, cycle } = req.body;
+  const { nom, cycle, categorie, duree_double } = req.body;
   if (!nom || !nom.trim()) return res.status(400).json({ error: "Le nom de la matière est requis." });
   if (cycle && !["1er_cycle", "2nd_cycle"].includes(cycle)) {
     return res.status(400).json({ error: "Cycle invalide (1er_cycle ou 2nd_cycle)." });
+  }
+  if (categorie && !["scientifique", "litteraire"].includes(categorie)) {
+    return res.status(400).json({ error: "Catégorie invalide (scientifique ou litteraire)." });
   }
   const ecoleId = ecoleEffective(req);
   if (!ecoleId) return res.status(400).json({ error: "Choisis d'abord une école." });
 
   try {
     const { rows } = await pool.query(
-      "INSERT INTO matieres (nom, ecole_id, cycle) VALUES ($1, $2, $3) RETURNING *",
-      [nom.trim(), ecoleId, cycle || null]
+      "INSERT INTO matieres (nom, ecole_id, cycle, categorie, duree_double) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [nom.trim(), ecoleId, cycle || null, categorie || null, !!duree_double]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -80,6 +86,23 @@ router.post("/generer-defaut", requireRole("direction", "super_admin"), async (r
     if (rows[0]) creees.push(rows[0]);
   }
   res.status(201).json({ creees, total_demandees: MATIERES_PAR_DEFAUT.length });
+});
+
+// PATCH /api/matieres/:id  { categorie?, duree_double? }
+router.patch("/:id", requireRole("direction", "super_admin"), async (req, res) => {
+  const { categorie, duree_double } = req.body;
+  if (categorie !== undefined && categorie && !["scientifique", "litteraire"].includes(categorie)) {
+    return res.status(400).json({ error: "Catégorie invalide (scientifique ou litteraire)." });
+  }
+  const { rows } = await pool.query(
+    `UPDATE matieres SET
+       categorie = CASE WHEN $1::text IS NOT NULL THEN NULLIF($1, '') ELSE categorie END,
+       duree_double = COALESCE($2, duree_double)
+     WHERE id = $3 RETURNING *`,
+    [categorie !== undefined ? (categorie || "") : null, duree_double !== undefined ? duree_double : null, req.params.id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Matière introuvable." });
+  res.json(rows[0]);
 });
 
 // DELETE /api/matieres/:id

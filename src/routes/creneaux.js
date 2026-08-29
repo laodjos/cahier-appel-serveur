@@ -344,6 +344,36 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
     return null; // aucun volume déclaré — on retombe sur seances_par_matiere par défaut
   }
 
+  // Informations des matières de cette école : catégorie (scientifique/littéraire —
+  // pour ne jamais faire se suivre deux matières de la même catégorie), et si la
+  // matière doit toujours être programmée sur 2h d'affilée en un seul bloc (ex. EPS).
+  const { rows: matieresRows } = await pool.query(
+    `SELECT nom, categorie, duree_double FROM matieres WHERE ${ecoleGeneration ? "ecole_id = $1" : "TRUE"}`,
+    ecoleGeneration ? [ecoleGeneration] : []
+  );
+  const infoMatiereParNom = new Map(matieresRows.map((m) => [normalise(m.nom), m]));
+  function infoMatiere(nom) { return infoMatiereParNom.get(normalise(nom)) || {}; }
+
+  // Empêche deux matières de la MÊME catégorie de se suivre directement dans la
+  // journée d'une classe — repère les créneaux déjà posés (existants + ceux créés
+  // pendant cette génération) juste avant/après le créneau candidat.
+  const blocsParClasseJour = new Map(); // clé "classeId|jour" -> [{debut, fin, categorie}]
+  function ajouterBloc(classeId, jour, debut, fin, categorie) {
+    const cle = `${classeId}|${jour}`;
+    if (!blocsParClasseJour.has(cle)) blocsParClasseJour.set(cle, []);
+    blocsParClasseJour.get(cle).push({ debut, fin, categorie: categorie || null });
+  }
+  function categorieVoisineConflit(classeId, jour, debut, fin, categorie) {
+    if (!categorie) return false; // matière sans catégorie déclarée -> aucune contrainte
+    const blocs = blocsParClasseJour.get(`${classeId}|${jour}`) || [];
+    return blocs.some((b) => b.categorie === categorie && (b.fin === debut || b.debut === fin));
+  }
+  for (const c of existants) {
+    const heureDebutCourte = c.heure_debut?.slice(0, 5);
+    const heureFinCourte = c.heure_fin?.slice(0, 5);
+    ajouterBloc(c.classe_id, c.jour_semaine, heureDebutCourte, heureFinCourte, infoMatiere(c.matiere).categorie);
+  }
+
   // Insère automatiquement la récréation dans chaque classe générée, un jour donné —
   // celle du matin pour les classes qui ont classe le matin (vacation "matin" ou
   // journée normale), celle de l'après-midi pour celles qui ont classe l'après-midi
@@ -448,10 +478,19 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
 
       const matieres = ens.matieres.split(",").map((m) => m.trim()).filter(Boolean);
       for (const matiere of matieres) {
+        const infoM = infoMatiere(matiere);
+        const categorieMatiere = infoM.categorie || null;
+        const estDureeDouble = !!infoM.duree_double;
+
         // Le volume horaire déclaré (par classe précise, sinon niveau, sinon cycle) prévaut
         // sur la valeur par défaut passée en paramètre — s'il n'y en a pas, on garde l'ancien comportement.
         const heures = heuresPourMatiere(matiere, classe.niveau, classe.id);
-        const seancesTotal = heures != null ? Math.max(1, Math.round(heures / (dureeMinutes / 60))) : seancesParMatiere;
+        // Pour une matière à durée double (ex. EPS), chaque "séance" dure 2× la durée
+        // normale — le nombre de séances visé se calcule donc sur cette base-là.
+        const dureeUneSeance = estDureeDouble ? dureeMinutes * 2 : dureeMinutes;
+        const seancesTotal = heures != null
+          ? Math.max(1, Math.round(heures / (dureeUneSeance / 60)))
+          : (estDureeDouble ? Math.max(1, Math.round(seancesParMatiere / 2)) : seancesParMatiere);
 
         // Répartition entre les enseignants qui partagent cette matière pour cette classe.
         const partageants = enseignantsParMatiere[matiere] || [ens.nom];
@@ -472,11 +511,58 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
             if ((placeesParJour[jour] || 0) > tour) continue; // ce jour a déjà eu sa part pour ce tour
 
             const slotsDuJour = slotsParJour[jour] || [];
+
+            if (estDureeDouble) {
+              // Cherche DEUX créneaux consécutifs libres (le second commence exactement
+              // quand le premier finit) pour former un seul bloc de 2h — jamais fractionné.
+              let place = false;
+              for (let k = 0; k < slotsDuJour.length - 1 && !place; k++) {
+                const s1 = slotsDuJour[k];
+                const s2 = slotsDuJour[k + 1];
+                if (s1.fin !== s2.debut) continue; // pas vraiment consécutifs (ex. de part et d'autre d'une récré)
+
+                const clefClasse1 = `${classe.id}|${jour}|${s1.debut}`;
+                const clefClasse2 = `${classe.id}|${jour}|${s2.debut}`;
+                const clefEns1 = `${ens.nom}|${jour}|${s1.debut}`;
+                const clefEns2 = `${ens.nom}|${jour}|${s2.debut}`;
+                if (occupeClasse.has(clefClasse1) || occupeClasse.has(clefClasse2)) continue;
+                if (occupeEnseignant.has(clefEns1) || occupeEnseignant.has(clefEns2)) continue;
+                if (!estDisponible(jour, s1.debut, s1.fin) || !estDisponible(jour, s2.debut, s2.fin)) continue;
+                if (categorieVoisineConflit(classe.id, jour, s1.debut, s2.fin, categorieMatiere)) continue;
+
+                let salleChoisie = null;
+                for (const salle of sallesEcole) {
+                  const libre1 = !occupeSalle.has(`${salle.id}|${jour}|${s1.debut}`);
+                  const libre2 = !occupeSalle.has(`${salle.id}|${jour}|${s2.debut}`);
+                  if (libre1 && libre2) { salleChoisie = salle; break; }
+                }
+
+                const { rows } = await pool.query(
+                  `INSERT INTO creneaux (classe_id, jour_semaine, heure_debut, heure_fin, matiere, enseignant, salle_id)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+                  [classe.id, jour, s1.debut, s2.fin, matiere, ens.nom, salleChoisie?.id || null]
+                );
+                occupeClasse.add(clefClasse1); occupeClasse.add(clefClasse2);
+                occupeEnseignant.add(clefEns1); occupeEnseignant.add(clefEns2);
+                if (salleChoisie) {
+                  occupeSalle.add(`${salleChoisie.id}|${jour}|${s1.debut}`);
+                  occupeSalle.add(`${salleChoisie.id}|${jour}|${s2.debut}`);
+                }
+                ajouterBloc(classe.id, jour, s1.debut, s2.fin, categorieMatiere);
+                creees.push(rows[0]);
+                placees++;
+                placeesParJour[jour] = (placeesParJour[jour] || 0) + 1;
+                place = true;
+              }
+              continue; // passe au jour suivant (place=true ou aucune paire trouvée ce jour)
+            }
+
             for (const slot of slotsDuJour) {
               const clefClasse = `${classe.id}|${slot.jour}|${slot.debut}`;
               const clefEnseignant = `${ens.nom}|${slot.jour}|${slot.debut}`;
               if (occupeClasse.has(clefClasse) || occupeEnseignant.has(clefEnseignant)) continue;
               if (!estDisponible(slot.jour, slot.debut, slot.fin)) continue; // hors des disponibilités déclarées
+              if (categorieVoisineConflit(classe.id, slot.jour, slot.debut, slot.fin, categorieMatiere)) continue; // matière de même catégorie juste avant/après
 
               // Cherche une salle libre à ce créneau précis (au mieux — si aucune salle
               // n'est déclarée pour l'école, le créneau est simplement créé sans salle).
@@ -494,6 +580,7 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
               occupeClasse.add(clefClasse);
               occupeEnseignant.add(clefEnseignant);
               if (salleChoisie) occupeSalle.add(`${salleChoisie.id}|${slot.jour}|${slot.debut}`);
+              ajouterBloc(classe.id, slot.jour, slot.debut, slot.fin, categorieMatiere);
               creees.push(rows[0]);
               placees++;
               placeesParJour[jour] = (placeesParJour[jour] || 0) + 1;

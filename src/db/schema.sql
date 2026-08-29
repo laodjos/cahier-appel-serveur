@@ -292,6 +292,12 @@ CREATE TABLE IF NOT EXISTS matieres (
 -- cycle NULL = commune aux deux cycles (ex. Mathématiques, Anglais) ;
 -- '1er_cycle' = collège (6ème à 3ème) uniquement ; '2nd_cycle' = lycée (2nde à Terminale) uniquement.
 ALTER TABLE matieres ADD COLUMN IF NOT EXISTS cycle TEXT CHECK (cycle IN ('1er_cycle', '2nd_cycle') OR cycle IS NULL);
+-- Catégorie utilisée pour éviter que deux matières scientifiques (ou deux littéraires)
+-- se suivent directement dans l'emploi du temps d'une classe.
+ALTER TABLE matieres ADD COLUMN IF NOT EXISTS categorie TEXT CHECK (categorie IN ('scientifique', 'litteraire') OR categorie IS NULL);
+-- Certaines matières (ex. EPS) doivent toujours être programmées sur 2 heures
+-- d'affilée en un seul bloc, jamais fractionnées sur des jours séparés.
+ALTER TABLE matieres ADD COLUMN IF NOT EXISTS duree_double BOOLEAN NOT NULL DEFAULT false;
 
 -- --------------------------------------------------------------------------
 -- Écoles — profil du/des établissement(s) utilisant l'application.
