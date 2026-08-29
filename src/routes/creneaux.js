@@ -299,21 +299,25 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
     return null;
   }
 
-  // Volumes horaires déclarés pour cette école — { "NomMatiere|niveau" -> heures, "NomMatiere|cycle" -> heures }
+  // Volumes horaires déclarés pour cette école
   const { rows: volumesRows } = await pool.query(
-    `SELECT vh.niveau, vh.cycle, vh.heures_semaine, m.nom AS matiere_nom
+    `SELECT vh.classe_id, vh.niveau, vh.cycle, vh.heures_semaine, m.nom AS matiere_nom
      FROM volumes_horaires vh JOIN matieres m ON m.id = vh.matiere_id
      WHERE ${ecoleGeneration ? "vh.ecole_id = $1" : "TRUE"}`,
     ecoleGeneration ? [ecoleGeneration] : []
   );
+  // Comparaison tolérante aux espaces/majuscules — évite qu'une simple différence de
+  // casse ou d'espace entre le nom déclaré chez l'enseignant et celui de la matière
+  // fasse silencieusement échouer la correspondance.
+  const normalise = (s) => (s || "").trim().toLowerCase();
   function heuresPourMatiere(nomMatiere, niveau, classeId) {
     // Priorité du plus précis au plus général : classe exacte > niveau > cycle.
-    const parClasse = volumesRows.find((v) => v.matiere_nom === nomMatiere && v.classe_id === classeId);
+    const parClasse = volumesRows.find((v) => normalise(v.matiere_nom) === normalise(nomMatiere) && v.classe_id === classeId);
     if (parClasse) return Number(parClasse.heures_semaine);
-    const parNiveau = volumesRows.find((v) => v.matiere_nom === nomMatiere && !v.classe_id && v.niveau === niveau);
+    const parNiveau = volumesRows.find((v) => normalise(v.matiere_nom) === normalise(nomMatiere) && !v.classe_id && normalise(v.niveau) === normalise(niveau));
     if (parNiveau) return Number(parNiveau.heures_semaine);
     const cycle = cycleDeNiveau(niveau);
-    const parCycle = volumesRows.find((v) => v.matiere_nom === nomMatiere && !v.classe_id && !v.niveau && v.cycle === cycle);
+    const parCycle = volumesRows.find((v) => normalise(v.matiere_nom) === normalise(nomMatiere) && !v.classe_id && !v.niveau && v.cycle === cycle);
     if (parCycle) return Number(parCycle.heures_semaine);
     return null; // aucun volume déclaré — on retombe sur seances_par_matiere par défaut
   }
