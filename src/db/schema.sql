@@ -165,6 +165,7 @@ ALTER TABLE classes ADD COLUMN IF NOT EXISTS niveau TEXT;
 -- --------------------------------------------------------------------------
 ALTER TABLE users ADD COLUMN IF NOT EXISTS matieres TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS statut_emploi TEXT CHECK (statut_emploi IN ('permanent', 'vacataire') OR statut_emploi IS NULL);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS taux_horaire NUMERIC;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS photo_url TEXT;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS date_naissance DATE;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS lieu_naissance TEXT;

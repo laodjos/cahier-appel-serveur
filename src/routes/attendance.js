@@ -297,4 +297,109 @@ router.get("/suivi-enseignants", async (req, res) => {
   res.json({ debut, fin, enseignants: resultat });
 });
 
+// --------------------------------------------------------------------------
+// GET /api/attendance/paye-enseignants?debut=YYYY-MM-DD&fin=YYYY-MM-DD
+// Calcule la paie de chaque enseignant sur une période : heures RÉELLEMENT
+// travaillées (appel fait) × son taux horaire — les heures sans appel (absence,
+// déjà repérées par /suivi-enseignants) ne sont jamais payées. Un enseignant
+// sans taux horaire renseigné apparaît quand même, avec le montant marqué
+// comme non calculable, pour qu'il ne soit pas oublié du rapport.
+// --------------------------------------------------------------------------
+router.get("/paye-enseignants", async (req, res) => {
+  const aujourdHui = new Date().toISOString().slice(0, 10);
+  const debut = req.query.debut || aujourdHui.slice(0, 8) + "01";
+  const fin = req.query.fin || aujourdHui;
+
+  const params = [];
+  let filtreEcole = "TRUE";
+  const ecoleId = ecoleEffective(req);
+  if (ecoleId) { params.push(ecoleId); filtreEcole = `cl.ecole_id = $${params.length}`; }
+
+  const { rows: creneauxEcole } = await pool.query(
+    `SELECT cr.*, cl.nom AS classe_nom FROM creneaux cr JOIN classes cl ON cl.id = cr.classe_id WHERE ${filtreEcole} AND cr.enseignant IS NOT NULL AND cr.est_pause = false`,
+    params
+  );
+  const { rows: joursFeries } = await pool.query(
+    "SELECT date FROM jours_non_scolaires WHERE date BETWEEN $1 AND $2", [debut, fin]
+  );
+  const feriesSet = new Set(joursFeries.map((j) => j.date.toISOString().slice(0, 10)));
+
+  // Taux horaire et statut de chaque enseignant (recherche par nom, comme le reste
+  // du système de créneaux qui stocke le nom de l'enseignant en texte libre).
+  const paramsProfs = [];
+  let filtreEcoleProfs = "TRUE";
+  if (ecoleId) { paramsProfs.push(ecoleId); filtreEcoleProfs = `ecole_id = $${paramsProfs.length}`; }
+  const { rows: profs } = await pool.query(
+    `SELECT nom, taux_horaire, statut_emploi FROM users WHERE role = 'enseignant' AND ${filtreEcoleProfs}`,
+    paramsProfs
+  );
+  const infoProfParNom = new Map(profs.map((p) => [p.nom, p]));
+
+  const parEnseignant = {};
+  const maintenant = new Date();
+
+  let curseur = new Date(debut + "T00:00:00");
+  const dateFin = new Date(fin + "T00:00:00");
+  while (curseur <= dateFin) {
+    const jourStr = curseur.toISOString().slice(0, 10);
+    const jourSemaineCurseur = curseur.getDay() || 7;
+    const estFerie = feriesSet.has(jourStr);
+
+    for (const cr of creneauxEcole) {
+      const estRecurrentDuJour = cr.jour_semaine === jourSemaineCurseur && !cr.date_exceptionnelle && !estFerie;
+      const estRattrapageDuJour = cr.date_exceptionnelle && cr.date_exceptionnelle.toISOString().slice(0, 10) === jourStr;
+      if (!estRecurrentDuJour && !estRattrapageDuJour) continue;
+
+      const finCreneauDatetime = new Date(`${jourStr}T${cr.heure_fin}`);
+      if (finCreneauDatetime > maintenant) continue; // pas encore terminé — pas encore comptabilisable
+
+      if (!parEnseignant[cr.enseignant]) {
+        const info = infoProfParNom.get(cr.enseignant) || {};
+        parEnseignant[cr.enseignant] = {
+          enseignant: cr.enseignant,
+          statut_emploi: info.statut_emploi || null,
+          taux_horaire: info.taux_horaire != null ? Number(info.taux_horaire) : null,
+          minutes_travaillees: 0,
+          minutes_manquees: 0,
+        };
+      }
+
+      const { rows } = await pool.query(
+        `SELECT COUNT(*) AS total FROM attendance_events ae
+         JOIN students s ON s.id = ae.student_id
+         WHERE s.classe_id = $1 AND ae.creneau_id = $2 AND ae.horodatage::date = $3`,
+        [cr.classe_id, cr.id, jourStr]
+      );
+
+      const [hD, mD] = cr.heure_debut.split(":").map(Number);
+      const [hF, mF] = cr.heure_fin.split(":").map(Number);
+      const duree = (hF * 60 + mF) - (hD * 60 + mD);
+
+      if (Number(rows[0].total) > 0) parEnseignant[cr.enseignant].minutes_travaillees += duree;
+      else parEnseignant[cr.enseignant].minutes_manquees += duree;
+    }
+    curseur.setDate(curseur.getDate() + 1);
+  }
+
+  const resultat = Object.values(parEnseignant)
+    .map((e) => {
+      const heures_travaillees = Math.round((e.minutes_travaillees / 60) * 100) / 100;
+      const heures_manquees = Math.round((e.minutes_manquees / 60) * 100) / 100;
+      const montant_a_payer = e.taux_horaire != null ? Math.round(heures_travaillees * e.taux_horaire) : null;
+      return {
+        enseignant: e.enseignant,
+        statut_emploi: e.statut_emploi,
+        taux_horaire: e.taux_horaire,
+        heures_travaillees,
+        heures_manquees,
+        montant_a_payer,
+      };
+    })
+    .sort((a, b) => (b.montant_a_payer || 0) - (a.montant_a_payer || 0));
+
+  const total_a_payer = resultat.reduce((somme, e) => somme + (e.montant_a_payer || 0), 0);
+
+  res.json({ debut, fin, enseignants: resultat, total_a_payer });
+});
+
 module.exports = router;

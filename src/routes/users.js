@@ -114,6 +114,22 @@ router.patch("/:id/matieres", async (req, res) => {
 });
 
 // PATCH /api/users/:id/statut-emploi  { statut_emploi } — "permanent" ou "vacataire"
+// PATCH /api/users/:id/taux-horaire  { taux_horaire } — pour le calcul de la paie à l'heure
+router.patch("/:id/taux-horaire", requireRole("direction", "super_admin"), async (req, res) => {
+  const { taux_horaire } = req.body;
+  if (taux_horaire !== null && taux_horaire !== undefined && (isNaN(taux_horaire) || Number(taux_horaire) < 0)) {
+    return res.status(400).json({ error: "Le taux horaire doit être un nombre positif." });
+  }
+  const params = [taux_horaire === "" || taux_horaire === undefined ? null : taux_horaire, req.params.id];
+  const filtreEcole = clauseEcole(req, params, "ecole_id");
+  const { rows } = await pool.query(
+    `UPDATE users SET taux_horaire = $1 WHERE id = $2 AND ${filtreEcole} RETURNING id, nom, email, role, matieres, statut_emploi, taux_horaire, ecole_id, created_at`,
+    params
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Compte introuvable (ou hors de ton école)." });
+  res.json(rows[0]);
+});
+
 router.patch("/:id/statut-emploi", async (req, res) => {
   const { statut_emploi } = req.body;
   if (statut_emploi && !["permanent", "vacataire"].includes(statut_emploi)) {

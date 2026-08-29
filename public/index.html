@@ -331,6 +331,7 @@ function App({ session, onLogout }) {
   const [stats, setStats] = useState({ present: 0, retard: 0, absent: 0, total_eleves: 0 });
   const [creneauxSansAppel, setCreneauxSansAppel] = useState([]);
   const [suiviEnseignants, setSuiviEnseignants] = useState([]);
+  const [payeEnseignants, setPayeEnseignants] = useState([]);
   const [suiviEnseignantsDebut, setSuiviEnseignantsDebut] = useState(() => new Date().toISOString().slice(0, 8) + "01");
   const [suiviEnseignantsFin, setSuiviEnseignantsFin] = useState(() => new Date().toISOString().slice(0, 10));
   const [enseignantDetailOuvert, setEnseignantDetailOuvert] = useState(null);
@@ -468,6 +469,7 @@ function App({ session, onLogout }) {
       if (availableViews.includes("absenteisme")) {
         api("/attendance/absenteisme?seuil=3").then(setAbsenteisme).catch(catchErr);
         if (view === "absenteisme" && suiviEnseignants.length === 0) chargerSuiviEnseignants();
+        if (view === "absenteisme" && payeEnseignants.length === 0) chargerPayeEnseignants();
         if (view === "absenteisme" && feriesCI2026Charges === null) chargerJoursFeries();
       }
       if (availableViews.includes("notif")) api("/notifications/journal").then(setNotifJournal).catch(catchErr);
@@ -719,6 +721,52 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function chargerPayeEnseignants() {
+    try {
+      const res = await api(`/attendance/paye-enseignants?debut=${suiviEnseignantsDebut}&fin=${suiviEnseignantsFin}`);
+      setPayeEnseignants(res.enseignants);
+    } catch (e) { catchErr(e); }
+  }
+
+  function exporterPayePdf() {
+    const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
+    const total = payeEnseignants.reduce((s, e) => s + (e.montant_a_payer || 0), 0);
+    const lignes = payeEnseignants.map((e) => `
+      <tr>
+        <td>${e.enseignant}</td>
+        <td>${e.statut_emploi === "permanent" ? "Permanent" : e.statut_emploi === "vacataire" ? "Vacataire" : "—"}</td>
+        <td style="text-align:right">${e.heures_travaillees} h</td>
+        <td style="text-align:right; color:#b33;">${e.heures_manquees > 0 ? e.heures_manquees + " h" : "—"}</td>
+        <td style="text-align:right">${e.taux_horaire != null ? e.taux_horaire + " F" : "—"}</td>
+        <td style="text-align:right; font-weight:bold;">${e.montant_a_payer != null ? e.montant_a_payer.toLocaleString("fr-FR") + " F" : "Taux manquant"}</td>
+      </tr>`).join("");
+
+    const fenetre = window.open("", "_blank", "width=850,height=900");
+    fenetre.document.write(`
+      <html><head><title>Paie des enseignants — ${suiviEnseignantsDebut} au ${suiviEnseignantsFin}</title>
+      <style>
+        @page { size: A4 landscape; margin: 14mm; }
+        body { font-family: Arial, sans-serif; color: #222; }
+        h1 { font-size: 18px; margin-bottom: 2px; }
+        .sous-titre { font-size: 12px; color: #666; margin-bottom: 18px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+        th, td { padding: 8px 10px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: #f0ece0; text-transform: uppercase; font-size: 10.5px; }
+        tfoot td { font-weight: bold; font-size: 14px; border-top: 2px solid #333; }
+      </style></head>
+      <body onload="window.print()">
+        <h1>Paie des enseignants</h1>
+        <div class="sous-titre">${ecoleNom} · Période du ${suiviEnseignantsDebut} au ${suiviEnseignantsFin}</div>
+        <table>
+          <thead><tr><th>Enseignant</th><th>Statut</th><th>Heures travaillées</th><th>Heures manquées</th><th>Taux/h</th><th>Montant à payer</th></tr></thead>
+          <tbody>${lignes || '<tr><td colspan="6">Aucune donnée pour cette période.</td></tr>'}</tbody>
+          <tfoot><tr><td colspan="5" style="text-align:right">TOTAL À PAYER</td><td style="text-align:right">${total.toLocaleString("fr-FR")} F</td></tr></tfoot>
+        </table>
+      </body></html>
+    `);
+    fenetre.document.close();
+  }
+
   async function chargerJoursFeries() {
     try {
       const res = await api("/jours-non-scolaires?annee=2026");
@@ -824,6 +872,15 @@ function App({ session, onLogout }) {
   async function changeStatutEmploi(id, statut_emploi) {
     try {
       const updated = await api(`/users/${id}/statut-emploi`, { method: "PATCH", body: { statut_emploi } });
+      setUsers((u) => u.map((x) => x.id === id ? updated : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changeTauxHoraire(id, valeurTexte) {
+    const nombre = parseFloat(valeurTexte.replace(/[^\d.,]/g, "").replace(",", "."));
+    if (isNaN(nombre)) return;
+    try {
+      const updated = await api(`/users/${id}/taux-horaire`, { method: "PATCH", body: { taux_horaire: nombre } });
       setUsers((u) => u.map((x) => x.id === id ? updated : x));
     } catch (e) { catchErr(e); }
   }
@@ -1719,6 +1776,48 @@ function App({ session, onLogout }) {
 
             {(role === "direction" || role === "super_admin") && (
               <Card
+                title="Paie des enseignants (heures réellement travaillées)"
+                style={{ marginTop: 20 }}
+                right={
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="date" style={{ ...inputStyle, fontSize: 11.5, padding: "5px 8px" }} value={suiviEnseignantsDebut} onChange={(e) => setSuiviEnseignantsDebut(e.target.value)} />
+                    <span style={{ fontSize: 11, color: COLORS.craieDim }}>→</span>
+                    <input type="date" style={{ ...inputStyle, fontSize: 11.5, padding: "5px 8px" }} value={suiviEnseignantsFin} onChange={(e) => setSuiviEnseignantsFin(e.target.value)} />
+                    <Button small variant="ghost" onClick={chargerPayeEnseignants}>Actualiser</Button>
+                    <Button small variant="ghost" onClick={exporterPayePdf}>Exporter en PDF</Button>
+                  </div>
+                }
+              >
+                <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                  Calculée sur les heures où l'appel a réellement été fait — les créneaux "sans appel" ci-dessus ne sont jamais payés. Renseigne le taux horaire de chaque enseignant dans la page "Enseignants" pour que le montant se calcule automatiquement.
+                </div>
+                {payeEnseignants.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Clique "Actualiser" pour charger la paie de la période choisie.</div>}
+                {payeEnseignants.map((e, i) => (
+                  <div key={e.enseignant} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: i < payeEnseignants.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{e.enseignant}</div>
+                      <div style={{ fontSize: 11, color: COLORS.craieDim }}>
+                        {e.statut_emploi === "permanent" ? "Permanent" : e.statut_emploi === "vacataire" ? "Vacataire" : "Statut non renseigné"}
+                        {e.taux_horaire != null ? ` · ${e.taux_horaire} F/h` : " · Taux horaire non renseigné"}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 12, color: COLORS.success }}>{e.heures_travaillees} h travaillées</span>
+                    {e.heures_manquees > 0 && <span style={{ fontSize: 12, color: COLORS.alert }}>{e.heures_manquees} h manquées</span>}
+                    <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.marker, minWidth: 110, textAlign: "right" }}>
+                      {e.montant_a_payer != null ? `${e.montant_a_payer.toLocaleString("fr-FR")} F` : "Taux manquant"}
+                    </span>
+                  </div>
+                ))}
+                {payeEnseignants.length > 0 && (
+                  <div style={{ display: "flex", justifyContent: "flex-end", padding: "14px 18px", borderTop: `2px solid ${COLORS.line}`, fontSize: 15, fontWeight: 700, color: COLORS.marker }}>
+                    Total à payer : {payeEnseignants.reduce((s, e) => s + (e.montant_a_payer || 0), 0).toLocaleString("fr-FR")} F
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {(role === "direction" || role === "super_admin") && (
+              <Card
                 title="Jours fériés et non scolaires"
                 style={{ marginTop: 20 }}
                 right={
@@ -2432,12 +2531,12 @@ function App({ session, onLogout }) {
             )}
 
             <Card title="Liste des enseignants">
-              <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1.1fr 0.8fr 1.1fr 1fr auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
-                <span>Nom</span><span>Classes</span><span>Statut</span><span>Matières</span><span>Disponibilités</span><span></span>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 0.7fr 1fr 0.9fr 0.8fr auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
+                <span>Nom</span><span>Classes</span><span>Statut</span><span>Matières</span><span>Disponibilités</span><span>Taux/h</span><span></span>
               </div>
               {users.filter((u) => u.role === "enseignant").length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun enseignant pour l'instant.</div>}
               {users.filter((u) => u.role === "enseignant").map((u, i, arr) => (
-                <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1.1fr 1.1fr 0.8fr 1.1fr 1fr auto", alignItems: "center", padding: "10px 18px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 0.7fr 1fr 0.9fr 0.8fr auto", alignItems: "center", padding: "10px 18px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
                   <NomEditable valeur={u.nom} onValider={(v) => changeUserNom(u.id, v)} style={{ fontWeight: 500 }} />
                   <button onClick={() => setGestionClassesUser(u)} style={{ background: "transparent", border: "none", cursor: "pointer", color: (u.classes_rattachees || []).length ? COLORS.craie : COLORS.craieDim, fontSize: 12, textAlign: "left", padding: 0 }}>
                     {(u.classes_rattachees || []).length === 0 ? "Aucune — cliquer" : (u.classes_rattachees || []).map((c) => c.nom).join(", ")}
@@ -2461,6 +2560,7 @@ function App({ session, onLogout }) {
                   >
                     {u.statut_emploi === "vacataire" ? "⚠ Renseigner" : "Toujours disponible"}
                   </button>
+                  <NomEditable valeur={u.taux_horaire != null ? `${u.taux_horaire} F` : "— définir"} onValider={(v) => changeTauxHoraire(u.id, v)} style={{ fontSize: 12, color: u.taux_horaire != null ? COLORS.craie : COLORS.craieDim }} />
                   <button onClick={() => removeUser(u.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
                 </div>
               ))}
