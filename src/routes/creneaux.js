@@ -1,13 +1,74 @@
 const express = require("express");
+const multer = require("multer");
+const XLSX = require("xlsx");
 const { pool } = require("../config/db");
 const { authRequired, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
 router.use(authRequired);
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 function ecoleEffective(req) {
   if (req.user.ecole_id) return req.user.ecole_id;
   return req.query?.ecole_id || req.body?.ecole_id || null;
+}
+
+// Logique de création partagée entre la saisie manuelle (POST /) et l'import en masse —
+// vérifie les chevauchements (classe, enseignant, salle) puis insère si tout est ok.
+// Renvoie { creneau } en cas de succès, ou { erreur } sinon (jamais les deux).
+async function creerCreneauValide({ classe_id, jour_semaine, date_exceptionnelle, heure_debut, heure_fin, matiere, enseignant, salle_id, est_pause }) {
+  if (!classe_id || (!jour_semaine && !date_exceptionnelle) || !heure_debut || !heure_fin || !matiere) {
+    return { erreur: "classe_id, (jour_semaine OU date_exceptionnelle), heure_debut, heure_fin et matiere sont requis." };
+  }
+  if (heure_fin <= heure_debut) {
+    return { erreur: "L'heure de fin doit être après l'heure de début." };
+  }
+
+  const filtreJour = date_exceptionnelle ? "date_exceptionnelle = $2" : "jour_semaine = $2";
+  const valeurJour = date_exceptionnelle || jour_semaine;
+
+  const { rows: chevaucheClasse } = await pool.query(
+    `SELECT id, matiere FROM creneaux
+     WHERE classe_id = $1 AND ${filtreJour}
+       AND heure_debut < $4 AND heure_fin > $3`,
+    [classe_id, valeurJour, heure_debut, heure_fin]
+  );
+  if (chevaucheClasse.length > 0) {
+    return { erreur: `Cette classe a déjà "${chevaucheClasse[0].matiere}" sur ce créneau — chevauchement impossible.` };
+  }
+
+  if (enseignant && enseignant.trim()) {
+    const { rows: chevaucheEnseignant } = await pool.query(
+      `SELECT cr.id, cr.matiere, cl.nom AS classe_nom FROM creneaux cr
+       JOIN classes cl ON cl.id = cr.classe_id
+       WHERE cr.enseignant = $1 AND ${filtreJour.replace("date_exceptionnelle", "cr.date_exceptionnelle").replace("jour_semaine", "cr.jour_semaine")}
+         AND cr.heure_debut < $4 AND cr.heure_fin > $3`,
+      [enseignant.trim(), valeurJour, heure_debut, heure_fin]
+    );
+    if (chevaucheEnseignant.length > 0) {
+      return { erreur: `${enseignant} donne déjà "${chevaucheEnseignant[0].matiere}" en ${chevaucheEnseignant[0].classe_nom} sur ce créneau.` };
+    }
+  }
+
+  if (salle_id) {
+    const { rows: chevaucheSalle } = await pool.query(
+      `SELECT cr.id, cr.matiere, cl.nom AS classe_nom FROM creneaux cr
+       JOIN classes cl ON cl.id = cr.classe_id
+       WHERE cr.salle_id = $1 AND ${filtreJour.replace("date_exceptionnelle", "cr.date_exceptionnelle").replace("jour_semaine", "cr.jour_semaine")}
+         AND cr.heure_debut < $4 AND cr.heure_fin > $3`,
+      [salle_id, valeurJour, heure_debut, heure_fin]
+    );
+    if (chevaucheSalle.length > 0) {
+      return { erreur: `Cette salle est déjà occupée par "${chevaucheSalle[0].matiere}" (${chevaucheSalle[0].classe_nom}) sur ce créneau.` };
+    }
+  }
+
+  const { rows } = await pool.query(
+    `INSERT INTO creneaux (classe_id, jour_semaine, date_exceptionnelle, heure_debut, heure_fin, matiere, enseignant, salle_id, est_pause)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    [classe_id, jour_semaine || null, date_exceptionnelle || null, heure_debut, heure_fin, matiere, enseignant || null, salle_id || null, !!est_pause]
+  );
+  return { creneau: rows[0] };
 }
 
 // GET /api/creneaux?classe_id=...
@@ -24,13 +85,26 @@ router.get("/", async (req, res) => {
 
 // POST /api/creneaux  { classe_id, jour_semaine, heure_debut, heure_fin, matiere, enseignant }
 router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
-  const { classe_id, jour_semaine, date_exceptionnelle, heure_debut, heure_fin, matiere, enseignant, salle_id, est_pause } = req.body;
-  if (!classe_id || (!jour_semaine && !date_exceptionnelle) || !heure_debut || !heure_fin || !matiere) {
-    return res.status(400).json({ error: "classe_id, (jour_semaine OU date_exceptionnelle), heure_debut, heure_fin et matiere sont requis." });
+  const { classe_id } = req.body;
+  if (req.user.ecole_id && classe_id) {
+    const { rows } = await pool.query("SELECT ecole_id FROM classes WHERE id = $1", [classe_id]);
+    if (!rows[0] || rows[0].ecole_id !== req.user.ecole_id) {
+      return res.status(403).json({ error: "Cette classe n'appartient pas à ton école." });
+    }
   }
-  if (heure_fin <= heure_debut) {
-    return res.status(400).json({ error: "L'heure de fin doit être après l'heure de début." });
-  }
+  const resultat = await creerCreneauValide(req.body);
+  if (resultat.erreur) return res.status(409).json({ error: resultat.erreur });
+  res.status(201).json(resultat.creneau);
+});
+
+// POST /api/creneaux/import  (fichier Excel/CSV + champ classe_id)
+// Colonnes attendues : jour (nom en français, ex. "Lundi"), heure_debut (HH:MM),
+// heure_fin (HH:MM), matiere, enseignant (optionnel), salle (optionnel, nom exact).
+router.post("/import", requireRole("direction", "super_admin"), upload.single("fichier"), async (req, res) => {
+  const { classe_id } = req.body;
+  if (!req.file) return res.status(400).json({ error: "Aucun fichier reçu (champ \"fichier\" attendu)." });
+  if (!classe_id) return res.status(400).json({ error: "classe_id requis." });
+
   if (req.user.ecole_id) {
     const { rows } = await pool.query("SELECT ecole_id FROM classes WHERE id = $1", [classe_id]);
     if (!rows[0] || rows[0].ecole_id !== req.user.ecole_id) {
@@ -38,54 +112,70 @@ router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
     }
   }
 
-  // Un vrai créneau ne doit jamais se chevaucher avec un autre — la comparaison se fait
-  // soit sur le même jour de la semaine (créneau récurrent), soit sur la même date exacte
-  // (créneau de rattrapage), selon lequel des deux a été fourni.
-  const filtreJour = date_exceptionnelle ? "date_exceptionnelle = $2" : "jour_semaine = $2";
-  const valeurJour = date_exceptionnelle || jour_semaine;
-
-  const { rows: chevaucheClasse } = await pool.query(
-    `SELECT id, matiere FROM creneaux
-     WHERE classe_id = $1 AND ${filtreJour}
-       AND heure_debut < $4 AND heure_fin > $3`,
-    [classe_id, valeurJour, heure_debut, heure_fin]
-  );
-  if (chevaucheClasse.length > 0) {
-    return res.status(409).json({ error: `Cette classe a déjà "${chevaucheClasse[0].matiere}" sur ce créneau — chevauchement impossible.` });
+  let lignes;
+  try {
+    const classeur = XLSX.read(req.file.buffer, { type: "buffer" });
+    const feuille = classeur.Sheets[classeur.SheetNames[0]];
+    lignes = XLSX.utils.sheet_to_json(feuille, { defval: "" });
+  } catch {
+    return res.status(400).json({ error: "Fichier illisible — vérifie que c'est bien un .xlsx ou .csv valide." });
   }
+  if (lignes.length === 0) return res.status(400).json({ error: "Le fichier ne contient aucune ligne de données." });
 
-  if (enseignant && enseignant.trim()) {
-    const { rows: chevaucheEnseignant } = await pool.query(
-      `SELECT cr.id, cr.matiere, cl.nom AS classe_nom FROM creneaux cr
-       JOIN classes cl ON cl.id = cr.classe_id
-       WHERE cr.enseignant = $1 AND ${filtreJour.replace("date_exceptionnelle", "cr.date_exceptionnelle").replace("jour_semaine", "cr.jour_semaine")}
-         AND cr.heure_debut < $4 AND cr.heure_fin > $3`,
-      [enseignant.trim(), valeurJour, heure_debut, heure_fin]
-    );
-    if (chevaucheEnseignant.length > 0) {
-      return res.status(409).json({ error: `${enseignant} donne déjà "${chevaucheEnseignant[0].matiere}" en ${chevaucheEnseignant[0].classe_nom} sur ce créneau.` });
+  const JOURS_NOMS = { "lundi": 1, "mardi": 2, "mercredi": 3, "jeudi": 4, "vendredi": 5, "samedi": 6, "dimanche": 7 };
+
+  function normaliserCle(k) {
+    return k.toString().trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+  function valeur(ligne, ...cles) {
+    const entree = Object.entries(ligne).find(([k]) => cles.includes(normaliserCle(k)));
+    return entree ? String(entree[1]).trim() : "";
+  }
+  function formatHeure(v) {
+    // Excel peut donner une heure sous forme de fraction de journée (ex. 0.354166...) plutôt qu'un texte
+    if (typeof v === "number") {
+      const minutesTotal = Math.round(v * 24 * 60);
+      return `${String(Math.floor(minutesTotal / 60)).padStart(2, "0")}:${String(minutesTotal % 60).padStart(2, "0")}`;
     }
+    return v.trim();
   }
 
-  if (salle_id) {
-    const { rows: chevaucheSalle } = await pool.query(
-      `SELECT cr.id, cr.matiere, cl.nom AS classe_nom FROM creneaux cr
-       JOIN classes cl ON cl.id = cr.classe_id
-       WHERE cr.salle_id = $1 AND ${filtreJour.replace("date_exceptionnelle", "cr.date_exceptionnelle").replace("jour_semaine", "cr.jour_semaine")}
-         AND cr.heure_debut < $4 AND cr.heure_fin > $3`,
-      [salle_id, valeurJour, heure_debut, heure_fin]
-    );
-    if (chevaucheSalle.length > 0) {
-      return res.status(409).json({ error: `Cette salle est déjà occupée par "${chevaucheSalle[0].matiere}" (${chevaucheSalle[0].classe_nom}) sur ce créneau.` });
+  const { rows: sallesEcole } = await pool.query("SELECT id, nom FROM salles WHERE ecole_id = $1", [req.user.ecole_id || null]);
+  const salleParNom = new Map(sallesEcole.map((s) => [s.nom.trim().toLowerCase(), s.id]));
+
+  const crees = [];
+  const erreurs = [];
+
+  for (let i = 0; i < lignes.length; i++) {
+    const ligne = lignes[i];
+    const numeroLigne = i + 2;
+
+    const jourTexte = valeur(ligne, "jour").toLowerCase();
+    const heureDebut = formatHeure(valeur(ligne, "heure_debut", "heure debut", "debut") || ligne["heure_debut"] || "");
+    const heureFin = formatHeure(valeur(ligne, "heure_fin", "heure fin", "fin") || ligne["heure_fin"] || "");
+    const matiere = valeur(ligne, "matiere", "matière");
+    const enseignant = valeur(ligne, "enseignant");
+    const salleTexte = valeur(ligne, "salle");
+
+    const jourNum = JOURS_NOMS[jourTexte];
+    if (!jourNum) { erreurs.push({ ligne: numeroLigne, raison: `Jour "${jourTexte}" invalide (attendu : Lundi, Mardi, ... Dimanche).` }); continue; }
+    if (!heureDebut || !heureFin || !matiere) { erreurs.push({ ligne: numeroLigne, raison: "heure_debut, heure_fin et matiere sont requis." }); continue; }
+
+    let salle_id = null;
+    if (salleTexte) {
+      salle_id = salleParNom.get(salleTexte.toLowerCase()) || null;
+      if (!salle_id) { erreurs.push({ ligne: numeroLigne, raison: `Salle "${salleTexte}" introuvable.` }); continue; }
     }
+
+    const resultat = await creerCreneauValide({
+      classe_id, jour_semaine: jourNum, heure_debut: heureDebut, heure_fin: heureFin,
+      matiere, enseignant: enseignant || null, salle_id,
+    });
+    if (resultat.erreur) erreurs.push({ ligne: numeroLigne, raison: resultat.erreur });
+    else crees.push(resultat.creneau);
   }
 
-  const { rows } = await pool.query(
-    `INSERT INTO creneaux (classe_id, jour_semaine, date_exceptionnelle, heure_debut, heure_fin, matiere, enseignant, salle_id, est_pause)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-    [classe_id, jour_semaine || null, date_exceptionnelle || null, heure_debut, heure_fin, matiere, enseignant || null, salle_id || null, !!est_pause]
-  );
-  res.status(201).json(rows[0]);
+  res.status(201).json({ total_lignes: lignes.length, crees: crees.length, erreurs, details_crees: crees });
 });
 
 // DELETE /api/creneaux/:id

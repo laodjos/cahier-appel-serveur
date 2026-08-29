@@ -355,6 +355,7 @@ function App({ session, onLogout }) {
   const [newClasseEcoleId, setNewClasseEcoleId] = useState(null);
   const [newClasseVacation, setNewClasseVacation] = useState(null);
   const [resultatGenerationAuto, setResultatGenerationAuto] = useState(null);
+  const [resultatImportCreneaux, setResultatImportCreneaux] = useState(null);
   const [inclureSamedi, setInclureSamedi] = useState(false);
   const [resultatImport, setResultatImport] = useState(null);
   const [resultatImportEnseignants, setResultatImportEnseignants] = useState(null);
@@ -607,6 +608,58 @@ function App({ session, onLogout }) {
     setCreneaux((c) => c.filter((x) => x.id !== id));
   }
 
+  function exporterEmploiPdf() {
+    const nomClasse = classeSelectionnee?.nom || "";
+    const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
+    const parJour = {};
+    for (const c of creneaux) {
+      if (!parJour[c.jour_semaine]) parJour[c.jour_semaine] = [];
+      parJour[c.jour_semaine].push(c);
+    }
+    Object.values(parJour).forEach((liste) => liste.sort((a, b) => a.heure_debut.localeCompare(b.heure_debut)));
+
+    const lignesParJour = JOURS.map((nomJour, i) => {
+      const jourNum = i + 1;
+      const items = parJour[jourNum] || [];
+      if (items.length === 0) return "";
+      return `
+        <div class="jour">
+          <div class="jour-titre">${nomJour}</div>
+          ${items.map((c) => `
+            <div class="creneau ${c.est_pause ? "pause" : ""}">
+              <span class="heure">${c.heure_debut?.slice(0,5)}–${c.heure_fin?.slice(0,5)}</span>
+              <span class="matiere">${c.matiere}</span>
+              <span class="detail">${c.enseignant || ""}${c.salle_nom ? " · " + c.salle_nom : ""}</span>
+            </div>
+          `).join("")}
+        </div>`;
+    }).join("");
+
+    const fenetre = window.open("", "_blank", "width=800,height=900");
+    fenetre.document.write(`
+      <html><head><title>Emploi du temps — ${nomClasse}</title>
+      <style>
+        @page { size: A4 portrait; margin: 14mm; }
+        body { font-family: Arial, sans-serif; color: #222; }
+        h1 { font-size: 18px; margin-bottom: 2px; }
+        .sous-titre { font-size: 12px; color: #666; margin-bottom: 18px; }
+        .jour { margin-bottom: 14px; break-inside: avoid; }
+        .jour-titre { font-size: 13px; font-weight: bold; text-transform: uppercase; background: #f0ece0; padding: 4px 8px; border-radius: 4px; margin-bottom: 4px; }
+        .creneau { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-bottom: 1px solid #eee; font-size: 12px; }
+        .creneau.pause { color: #6b8f76; font-style: italic; }
+        .heure { width: 100px; flex-shrink: 0; color: #555; }
+        .matiere { flex: 1; font-weight: 600; }
+        .detail { color: #777; font-size: 11px; }
+      </style></head>
+      <body onload="window.print()">
+        <h1>Emploi du temps — ${nomClasse}</h1>
+        <div class="sous-titre">${ecoleNom}</div>
+        ${lignesParJour || "<p>Aucun créneau enregistré pour cette classe.</p>"}
+      </body></html>
+    `);
+    fenetre.document.close();
+  }
+
   async function genererEmploiAuto() {
     setGlobalInfo("Génération en cours...");
     try {
@@ -617,6 +670,24 @@ function App({ session, onLogout }) {
       const fraiche = await api(`/creneaux?classe_id=${selectedClasseId}`);
       setCreneaux(fraiche);
     } catch (e) { catchErr(e); setGlobalInfo(""); }
+  }
+
+  async function handleImportCreneaux(e) {
+    const fichier = e.target.files?.[0];
+    e.target.value = "";
+    if (!fichier) return;
+    if (!selectedClasseId) { setGlobalError("Sélectionne d'abord une classe."); setTimeout(() => setGlobalError(""), 4000); return; }
+    setGlobalInfo("Import en cours...");
+    try {
+      const formData = new FormData();
+      formData.append("fichier", fichier);
+      formData.append("classe_id", selectedClasseId);
+      const res = await api("/creneaux/import", { method: "POST", body: formData });
+      setResultatImportCreneaux(res);
+      setGlobalInfo("");
+      const fraiche = await api(`/creneaux?classe_id=${selectedClasseId}`);
+      setCreneaux(fraiche);
+    } catch (err) { catchErr(err); setGlobalInfo(""); }
   }
 
   async function manualToggle(studentId, statut) {
@@ -1658,9 +1729,28 @@ function App({ session, onLogout }) {
                 </label>
               )}
               {role === "direction" && <Button variant="ghost" icon={P.folder} onClick={genererEmploiAuto}>Générer automatiquement</Button>}
+              <Button small variant="ghost" onClick={exporterEmploiPdf}>Exporter en PDF</Button>
+              {role === "direction" && (
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 7, borderRadius: 9, padding: "9px 15px", fontWeight: 600, fontSize: 12.5, cursor: "pointer", background: "rgba(246,242,231,0.06)", border: `1px solid ${COLORS.line}`, color: COLORS.craie }}>
+                  <Icon path={P.upload} size={14} />
+                  Importer (Excel/CSV)
+                  <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={handleImportCreneaux} />
+                </label>
+              )}
               {role === "direction" && <Button variant="ghost" icon={P.plus} onClick={() => { setNewCreneau((v) => ({ ...v, estRattrapage: true, date_exceptionnelle: new Date().toISOString().slice(0,10) })); setShowAddCreneau(true); setFormError(""); }}>Créneau de rattrapage</Button>}
               {role === "direction" && <Button icon={P.plus} onClick={() => { setNewCreneau((v) => ({ ...v, estRattrapage: false })); setShowAddCreneau((v) => !v); setFormError(""); }}>Ajouter un créneau</Button>}
             </div>
+            {resultatImportCreneaux && (
+              <div style={{ background: resultatImportCreneaux.erreurs.length > 0 ? COLORS.alertBg : COLORS.successBg, border: `1px solid ${resultatImportCreneaux.erreurs.length > 0 ? COLORS.alert : COLORS.success}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 12.5 }}>
+                <div style={{ color: COLORS.craie, fontWeight: 600, marginBottom: 4 }}>{resultatImportCreneaux.crees} créneau(x) importé(s) sur {resultatImportCreneaux.total_lignes} ligne(s).</div>
+                {resultatImportCreneaux.erreurs.length > 0 && (
+                  <ul style={{ margin: "6px 0 0 18px", padding: 0, color: COLORS.alert }}>
+                    {resultatImportCreneaux.erreurs.map((e, i) => <li key={i}>Ligne {e.ligne} : {e.raison}</li>)}
+                  </ul>
+                )}
+                <button onClick={() => setResultatImportCreneaux(null)} style={{ marginTop: 8, background: "transparent", border: "none", color: COLORS.craie, cursor: "pointer", fontSize: 11.5, textDecoration: "underline" }}>Fermer</button>
+              </div>
+            )}
             {resultatGenerationAuto && (
               <div style={{ background: COLORS.successBg, border: `1px solid ${COLORS.success}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 12.5 }}>
                 <div style={{ color: COLORS.success, fontWeight: 600, marginBottom: 4 }}>{resultatGenerationAuto.creees} créneau(x) créé(s) automatiquement.</div>
