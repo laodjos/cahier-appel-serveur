@@ -212,13 +212,17 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
   // au lieu d'horaires fixes identiques pour tout le monde.
   const ecoleIdPourHoraires = ecoleEffective(req);
   const { rows: ecoleRows } = await pool.query(
-    "SELECT heure_debut_matin, heure_fin_matin, heure_debut_apresmidi, heure_fin_apresmidi, heure_debut_recre, heure_fin_recre FROM ecoles WHERE id = $1",
+    `SELECT heure_debut_matin, heure_fin_matin, heure_debut_apresmidi, heure_fin_apresmidi,
+            heure_debut_recre, heure_fin_recre, heure_debut_recre_apresmidi, heure_fin_recre_apresmidi
+     FROM ecoles WHERE id = $1`,
     [ecoleIdPourHoraires]
   );
   const horaires = ecoleRows[0] || {};
   const fmt = (t, defaut) => (t ? t.toString().slice(0, 5) : defaut);
-  const recreDebut = horaires.heure_debut_recre ? fmt(horaires.heure_debut_recre) : null;
-  const recreFin = horaires.heure_fin_recre ? fmt(horaires.heure_fin_recre) : null;
+  const recreMatinDebut = horaires.heure_debut_recre ? fmt(horaires.heure_debut_recre) : null;
+  const recreMatinFin = horaires.heure_fin_recre ? fmt(horaires.heure_fin_recre) : null;
+  const recreApresMidiDebut = horaires.heure_debut_recre_apresmidi ? fmt(horaires.heure_debut_recre_apresmidi) : null;
+  const recreApresMidiFin = horaires.heure_fin_recre_apresmidi ? fmt(horaires.heure_fin_recre_apresmidi) : null;
 
   const PLAGES = {
     matin: { debut: fmt(horaires.heure_debut_matin, "07:30"), fin: fmt(horaires.heure_fin_matin, "12:30") },
@@ -234,9 +238,11 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
     while (minutes + dureeMinutes <= finMinutes) {
       const debut = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
       const finSlot = `${String(Math.floor((minutes + dureeMinutes) / 60)).padStart(2, "0")}:${String((minutes + dureeMinutes) % 60).padStart(2, "0")}`;
-      // Ne propose jamais un créneau qui chevauche la récréation — elle reste libre pour tout le monde.
-      const chevaucheRecre = recreDebut && recreFin && debut < recreFin && finSlot > recreDebut;
-      if (!chevaucheRecre) slots.push({ debut, fin: finSlot });
+      // Ne propose jamais un créneau qui chevauche une récréation (matin OU après-midi
+      // selon la plage concernée) — elle reste libre pour tout le monde.
+      const chevaucheRecreMatin = recreMatinDebut && recreMatinFin && debut < recreMatinFin && finSlot > recreMatinDebut;
+      const chevaucheRecreApresMidi = recreApresMidiDebut && recreApresMidiFin && debut < recreApresMidiFin && finSlot > recreApresMidiDebut;
+      if (!chevaucheRecreMatin && !chevaucheRecreApresMidi) slots.push({ debut, fin: finSlot });
       minutes += dureeMinutes;
     }
     return slots;
@@ -330,17 +336,28 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
     return null; // aucun volume déclaré — on retombe sur seances_par_matiere par défaut
   }
 
-  // Insère automatiquement une récréation dans chaque classe générée, un jour donné,
-  // si l'école en a une configurée — occupe le créneau pour que rien d'autre n'y soit placé.
-  if (recreDebut && recreFin) {
-    for (const classe of classesCibles) {
+  // Insère automatiquement la récréation dans chaque classe générée, un jour donné —
+  // celle du matin pour les classes qui ont classe le matin (vacation "matin" ou
+  // journée normale), celle de l'après-midi pour celles qui ont classe l'après-midi
+  // (vacation "apres_midi" ou journée normale). Une classe en vacation "matin" ne
+  // reçoit JAMAIS la récréation d'après-midi, et inversement — elle n'est
+  // physiquement pas présente à ce moment-là.
+  for (const classe of classesCibles) {
+    const recresApplicables = [];
+    if ((classe.vacation === "matin" || !classe.vacation) && recreMatinDebut && recreMatinFin) {
+      recresApplicables.push({ debut: recreMatinDebut, fin: recreMatinFin });
+    }
+    if ((classe.vacation === "apres_midi" || !classe.vacation) && recreApresMidiDebut && recreApresMidiFin) {
+      recresApplicables.push({ debut: recreApresMidiDebut, fin: recreApresMidiFin });
+    }
+    for (const recre of recresApplicables) {
       for (const jour of jours) {
-        const clefClasse = `${classe.id}|${jour}|${recreDebut}`;
+        const clefClasse = `${classe.id}|${jour}|${recre.debut}`;
         if (occupeClasse.has(clefClasse)) continue; // déjà une récréation (ou autre chose) à cette heure
         const { rows } = await pool.query(
           `INSERT INTO creneaux (classe_id, jour_semaine, heure_debut, heure_fin, matiere, est_pause)
            VALUES ($1,$2,$3,$4,'Récréation', true) RETURNING *`,
-          [classe.id, jour, recreDebut, recreFin]
+          [classe.id, jour, recre.debut, recre.fin]
         );
         occupeClasse.add(clefClasse);
         creees.push(rows[0]);
@@ -388,6 +405,19 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
       [classe.id]
     );
 
+    // Si PLUSIEURS enseignants de cette classe partagent la même matière (ex. un
+    // vacataire vient compléter un permanent), le volume horaire total de cette
+    // matière est RÉPARTI entre eux — pas dupliqué en entier pour chacun. Les
+    // premiers de la liste reçoivent l'éventuelle séance restante en cas de
+    // répartition non ronde (ex. 5h pour 2 enseignants -> 3h et 2h).
+    const enseignantsParMatiere = {};
+    for (const e of enseignants) {
+      for (const m of e.matieres.split(",").map((x) => x.trim()).filter(Boolean)) {
+        if (!enseignantsParMatiere[m]) enseignantsParMatiere[m] = [];
+        enseignantsParMatiere[m].push(e.nom);
+      }
+    }
+
     // Compteur de rotation : chaque matière commence sa recherche sur un JOUR DIFFÉRENT
     // (au lieu de toujours démarrer par le lundi) — répartit les matières sur toute la
     // semaine au lieu de les entasser en début de semaine.
@@ -413,7 +443,15 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
         // Le volume horaire déclaré (par classe précise, sinon niveau, sinon cycle) prévaut
         // sur la valeur par défaut passée en paramètre — s'il n'y en a pas, on garde l'ancien comportement.
         const heures = heuresPourMatiere(matiere, classe.niveau, classe.id);
-        const seancesCible = heures != null ? Math.max(1, Math.round(heures / (dureeMinutes / 60))) : seancesParMatiere;
+        const seancesTotal = heures != null ? Math.max(1, Math.round(heures / (dureeMinutes / 60))) : seancesParMatiere;
+
+        // Répartition entre les enseignants qui partagent cette matière pour cette classe.
+        const partageants = enseignantsParMatiere[matiere] || [ens.nom];
+        const nbPartageants = partageants.length;
+        const indexEnseignant = partageants.indexOf(ens.nom);
+        const part = Math.floor(seancesTotal / nbPartageants);
+        const reste = seancesTotal % nbPartageants;
+        const seancesCible = part + (indexEnseignant < reste ? 1 : 0);
 
         let placees = 0;
         const placeesParJour = {}; // jour -> nombre de séances de CETTE matière déjà casées aujourd'hui

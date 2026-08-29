@@ -238,6 +238,11 @@ ALTER TABLE volumes_horaires ADD COLUMN IF NOT EXISTS classe_id UUID REFERENCES 
 ALTER TABLE creneaux ADD COLUMN IF NOT EXISTS est_pause BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS heure_debut_recre TIME;
 ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS heure_fin_recre TIME;
+-- Récréation propre à la vacation d'après-midi — nécessaire pour les écoles en
+-- double vacation, où la récréation du matin (ci-dessus) ne concerne que les
+-- classes qui commencent le matin, pas celles qui ne viennent que l'après-midi.
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS heure_debut_recre_apresmidi TIME;
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS heure_fin_recre_apresmidi TIME;
 
 -- --------------------------------------------------------------------------
 -- Volume horaire hebdomadaire par matière — peut être précisé pour un niveau
