@@ -371,13 +371,13 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
   }
 
   for (const classe of classesCibles) {
-    // Construit TOUS les créneaux disponibles pour cette classe, semaine entière
-    // (matin ET après-midi de chaque jour, à la suite).
-    const tousLesSlots = [];
+    // Construit les créneaux disponibles pour cette classe, REGROUPÉS PAR JOUR — pour
+    // pouvoir répartir "au maximum 1 séance de chaque matière par jour" avant d'en
+    // autoriser une deuxième le même jour (une classe n'a pas besoin de 3h d'affilée
+    // de la même matière, mieux vaut étaler sur plusieurs jours différents).
+    const slotsParJour = {};
     for (const jour of jours) {
-      for (const s of genererCreneauxPossibles(classe.vacation)) {
-        tousLesSlots.push({ jour, ...s });
-      }
+      slotsParJour[jour] = genererCreneauxPossibles(classe.vacation).map((s) => ({ jour, ...s }));
     }
 
     // Enseignants rattachés à cette classe, avec leurs matières déclarées
@@ -388,52 +388,60 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
       [classe.id]
     );
 
-    // Compteur de rotation : chaque matière commence sa recherche à un POINT DIFFÉRENT
-    // de la semaine entière (matin ou après-midi, n'importe quel jour) — au lieu de
-    // toujours démarrer par le lundi matin. Ça évite que tout s'entasse le matin des
-    // premiers jours en laissant les après-midis systématiquement vides.
+    // Compteur de rotation : chaque matière commence sa recherche sur un JOUR DIFFÉRENT
+    // (au lieu de toujours démarrer par le lundi) — répartit les matières sur toute la
+    // semaine au lieu de les entasser en début de semaine.
     let rotation = 0;
 
     for (const ens of enseignants) {
       const matieres = ens.matieres.split(",").map((m) => m.trim()).filter(Boolean);
       for (const matiere of matieres) {
-        // Le volume horaire déclaré (par niveau, sinon par cycle) prévaut sur la valeur
-        // par défaut passée en paramètre — s'il n'y en a pas, on garde l'ancien comportement.
+        // Le volume horaire déclaré (par classe précise, sinon niveau, sinon cycle) prévaut
+        // sur la valeur par défaut passée en paramètre — s'il n'y en a pas, on garde l'ancien comportement.
         const heures = heuresPourMatiere(matiere, classe.niveau, classe.id);
         const seancesCible = heures != null ? Math.max(1, Math.round(heures / (dureeMinutes / 60))) : seancesParMatiere;
 
-        // Fait tourner le POINT DE DÉPART dans la liste complète de la semaine (pas
-        // seulement l'ordre des jours) — répartit vraiment matin ET après-midi.
-        const decalage = tousLesSlots.length ? rotation % tousLesSlots.length : 0;
-        const slotsPossibles = [...tousLesSlots.slice(decalage), ...tousLesSlots.slice(0, decalage)];
-        rotation += 3; // pas arbitraire : avance assez pour toucher des créneaux différents à chaque matière
-
         let placees = 0;
-        for (const slot of slotsPossibles) {
-          if (placees >= seancesCible) break;
-          const clefClasse = `${classe.id}|${slot.jour}|${slot.debut}`;
-          const clefEnseignant = `${ens.nom}|${slot.jour}|${slot.debut}`;
-          if (occupeClasse.has(clefClasse) || occupeEnseignant.has(clefEnseignant)) continue;
+        const placeesParJour = {}; // jour -> nombre de séances de CETTE matière déjà casées aujourd'hui
+        // "tour" 0 : au plus 1 séance par jour sur toute la semaine ; si le nombre de
+        // séances visé dépasse le nombre de jours disponibles, "tour" 1 autorise une
+        // 2ème séance par jour (sur des jours différents en priorité), etc.
+        for (let tour = 0; placees < seancesCible && tour < jours.length + 2; tour++) {
+          for (let i = 0; i < jours.length && placees < seancesCible; i++) {
+            const jour = jours[(rotation + i) % jours.length];
+            if ((placeesParJour[jour] || 0) > tour) continue; // ce jour a déjà eu sa part pour ce tour
 
-          // Cherche une salle libre à ce créneau précis (au mieux — si aucune salle
-          // n'est déclarée pour l'école, le créneau est simplement créé sans salle).
-          let salleChoisie = null;
-          for (const salle of sallesEcole) {
-            const clefSalle = `${salle.id}|${slot.jour}|${slot.debut}`;
-            if (!occupeSalle.has(clefSalle)) { salleChoisie = salle; break; }
+            const slotsDuJour = slotsParJour[jour] || [];
+            for (const slot of slotsDuJour) {
+              const clefClasse = `${classe.id}|${slot.jour}|${slot.debut}`;
+              const clefEnseignant = `${ens.nom}|${slot.jour}|${slot.debut}`;
+              if (occupeClasse.has(clefClasse) || occupeEnseignant.has(clefEnseignant)) continue;
+
+              // Cherche une salle libre à ce créneau précis (au mieux — si aucune salle
+              // n'est déclarée pour l'école, le créneau est simplement créé sans salle).
+              let salleChoisie = null;
+              for (const salle of sallesEcole) {
+                const clefSalle = `${salle.id}|${slot.jour}|${slot.debut}`;
+                if (!occupeSalle.has(clefSalle)) { salleChoisie = salle; break; }
+              }
+
+              const { rows } = await pool.query(
+                `INSERT INTO creneaux (classe_id, jour_semaine, heure_debut, heure_fin, matiere, enseignant, salle_id)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+                [classe.id, slot.jour, slot.debut, slot.fin, matiere, ens.nom, salleChoisie?.id || null]
+              );
+              occupeClasse.add(clefClasse);
+              occupeEnseignant.add(clefEnseignant);
+              if (salleChoisie) occupeSalle.add(`${salleChoisie.id}|${slot.jour}|${slot.debut}`);
+              creees.push(rows[0]);
+              placees++;
+              placeesParJour[jour] = (placeesParJour[jour] || 0) + 1;
+              break; // une seule séance placée pour ce jour à ce tour — passe au jour suivant
+            }
           }
-
-          const { rows } = await pool.query(
-            `INSERT INTO creneaux (classe_id, jour_semaine, heure_debut, heure_fin, matiere, enseignant, salle_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-            [classe.id, slot.jour, slot.debut, slot.fin, matiere, ens.nom, salleChoisie?.id || null]
-          );
-          occupeClasse.add(clefClasse);
-          occupeEnseignant.add(clefEnseignant);
-          if (salleChoisie) occupeSalle.add(`${salleChoisie.id}|${slot.jour}|${slot.debut}`);
-          creees.push(rows[0]);
-          placees++;
         }
+        rotation++; // la matière suivante démarre sur un jour différent
+
         if (placees < seancesCible) {
           nonPlanifiees.push({ classe: classe.nom, matiere, enseignant: ens.nom, manquantes: seancesCible - placees });
         }
