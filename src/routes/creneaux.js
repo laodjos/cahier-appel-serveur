@@ -237,10 +237,13 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
   }
 
   for (const classe of classesCibles) {
-    // Construit les créneaux disponibles pour CETTE classe, jour par jour.
-    const slotsParJour = {};
+    // Construit TOUS les créneaux disponibles pour cette classe, semaine entière
+    // (matin ET après-midi de chaque jour, à la suite).
+    const tousLesSlots = [];
     for (const jour of jours) {
-      slotsParJour[jour] = genererCreneauxPossibles(classe.vacation).map((s) => ({ jour, ...s }));
+      for (const s of genererCreneauxPossibles(classe.vacation)) {
+        tousLesSlots.push({ jour, ...s });
+      }
     }
 
     // Enseignants rattachés à cette classe, avec leurs matières déclarées
@@ -251,9 +254,10 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
       [classe.id]
     );
 
-    // Compteur de rotation : chaque matière commence sa recherche sur un jour DIFFÉRENT
-    // (au lieu de toujours démarrer par le lundi) — répartit les matières sur toute la
-    // semaine au lieu de les entasser en début de semaine.
+    // Compteur de rotation : chaque matière commence sa recherche à un POINT DIFFÉRENT
+    // de la semaine entière (matin ou après-midi, n'importe quel jour) — au lieu de
+    // toujours démarrer par le lundi matin. Ça évite que tout s'entasse le matin des
+    // premiers jours en laissant les après-midis systématiquement vides.
     let rotation = 0;
 
     for (const ens of enseignants) {
@@ -264,12 +268,11 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
         const heures = heuresPourMatiere(matiere, classe.niveau);
         const seancesCible = heures != null ? Math.max(1, Math.round(heures / (dureeMinutes / 60))) : seancesParMatiere;
 
-        // Reconstruit la liste des créneaux à essayer, dans un ORDRE DE JOURS qui tourne
-        // (ex. jours = [1,2,3,4,5] -> matière n°0 essaie 1,2,3,4,5 ; matière n°1 essaie
-        // 2,3,4,5,1 ; matière n°2 essaie 3,4,5,1,2 ; etc.)
-        const joursTournes = [...jours.slice(rotation % jours.length), ...jours.slice(0, rotation % jours.length)];
-        const slotsPossibles = joursTournes.flatMap((j) => slotsParJour[j]);
-        rotation++;
+        // Fait tourner le POINT DE DÉPART dans la liste complète de la semaine (pas
+        // seulement l'ordre des jours) — répartit vraiment matin ET après-midi.
+        const decalage = tousLesSlots.length ? rotation % tousLesSlots.length : 0;
+        const slotsPossibles = [...tousLesSlots.slice(decalage), ...tousLesSlots.slice(0, decalage)];
+        rotation += 3; // pas arbitraire : avance assez pour toucher des créneaux différents à chaque matière
 
         let placees = 0;
         for (const slot of slotsPossibles) {
