@@ -1122,6 +1122,19 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function genererVolumesOfficiels() {
+    try {
+      const res = await api("/volumes-horaires/generer-officiel-1er-cycle", { method: "POST" });
+      if (res.creees.length > 0) {
+        setVolumesHoraires((v) => [...v, ...res.creees]);
+        const fraicheMatieres = await api("/matieres");
+        setMatieresListe(fraicheMatieres);
+      }
+      setGlobalInfo(`${res.creees.length} matière(s) préremplie(s) pour le 1er cycle (Anglais, Arts Plastiques/Éd. Musicale, EDHC, EPS). Le reste du tableau (Français, Mathématiques, L.V.2, Histoire-Géo, et tout le lycée) doit être saisi à la main — vérifie bien contre ta circulaire officielle.`);
+      setTimeout(() => setGlobalInfo(""), 10000);
+    } catch (e) { catchErr(e); }
+  }
+
   async function ajouterVolumeHoraire() {
     if (!nouveauVolume.matiere_id || !nouveauVolume.heures_semaine || (!nouveauVolume.classe_id && !nouveauVolume.niveau && !nouveauVolume.cycle)) {
       setGlobalError("Choisis une matière, un nombre d'heures, et une classe, un niveau OU un cycle.");
@@ -2238,6 +2251,9 @@ function App({ session, onLogout }) {
             <Card title="Volume horaire hebdomadaire par matière" style={{ marginBottom: 20 }}>
               <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
                 Utilisé par "Générer automatiquement" pour savoir combien d'heures par semaine programmer pour chaque matière. Du plus précis au plus général : une classe précise (ex. "6ème A") prévaut sur un niveau entier (ex. "6ème"), qui prévaut lui-même sur un cycle entier (valeur par défaut pour tous les niveaux de ce cycle sans réglage plus précis).
+              </div>
+              <div style={{ padding: "10px 18px", display: "flex", justifyContent: "flex-end" }}>
+                <Button small variant="ghost" icon={P.folder} onClick={genererVolumesOfficiels}>Préremplir le 1er cycle (circulaire officielle)</Button>
               </div>
               {volumesHoraires.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun volume horaire défini — la génération automatique utilisera alors le nombre de séances par défaut.</div>}
               {volumesHoraires.map((v, i) => (
