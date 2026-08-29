@@ -175,6 +175,21 @@ ALTER TABLE students ADD COLUMN IF NOT EXISTS photo_url TEXT;
 -- --------------------------------------------------------------------------
 ALTER TABLE creneaux ALTER COLUMN jour_semaine DROP NOT NULL;
 ALTER TABLE creneaux ADD COLUMN IF NOT EXISTS date_exceptionnelle DATE;
+
+-- --------------------------------------------------------------------------
+-- Salles disponibles par école — permet à la génération automatique et à la
+-- saisie manuelle de créneaux d'éviter que deux classes se retrouvent dans
+-- la même salle au même moment.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS salles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nom TEXT NOT NULL,
+  ecole_id UUID REFERENCES ecoles(id),
+  capacite INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (nom, ecole_id)
+);
+ALTER TABLE creneaux ADD COLUMN IF NOT EXISTS salle_id UUID REFERENCES salles(id);
 ALTER TABLE creneaux DROP CONSTRAINT IF EXISTS creneaux_un_type_requis;
 ALTER TABLE creneaux ADD CONSTRAINT creneaux_un_type_requis
   CHECK (jour_semaine IS NOT NULL OR date_exceptionnelle IS NOT NULL);

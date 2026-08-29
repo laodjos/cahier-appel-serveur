@@ -14,7 +14,9 @@ function ecoleEffective(req) {
 router.get("/", async (req, res) => {
   const { classe_id } = req.query;
   const { rows } = await pool.query(
-    `SELECT * FROM creneaux WHERE classe_id = $1 ORDER BY jour_semaine, heure_debut`,
+    `SELECT cr.*, s.nom AS salle_nom FROM creneaux cr
+     LEFT JOIN salles s ON s.id = cr.salle_id
+     WHERE cr.classe_id = $1 ORDER BY cr.jour_semaine, cr.heure_debut`,
     [classe_id]
   );
   res.json(rows);
@@ -22,7 +24,7 @@ router.get("/", async (req, res) => {
 
 // POST /api/creneaux  { classe_id, jour_semaine, heure_debut, heure_fin, matiere, enseignant }
 router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
-  const { classe_id, jour_semaine, date_exceptionnelle, heure_debut, heure_fin, matiere, enseignant } = req.body;
+  const { classe_id, jour_semaine, date_exceptionnelle, heure_debut, heure_fin, matiere, enseignant, salle_id } = req.body;
   if (!classe_id || (!jour_semaine && !date_exceptionnelle) || !heure_debut || !heure_fin || !matiere) {
     return res.status(400).json({ error: "classe_id, (jour_semaine OU date_exceptionnelle), heure_debut, heure_fin et matiere sont requis." });
   }
@@ -65,10 +67,23 @@ router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
     }
   }
 
+  if (salle_id) {
+    const { rows: chevaucheSalle } = await pool.query(
+      `SELECT cr.id, cr.matiere, cl.nom AS classe_nom FROM creneaux cr
+       JOIN classes cl ON cl.id = cr.classe_id
+       WHERE cr.salle_id = $1 AND ${filtreJour.replace("date_exceptionnelle", "cr.date_exceptionnelle").replace("jour_semaine", "cr.jour_semaine")}
+         AND cr.heure_debut < $4 AND cr.heure_fin > $3`,
+      [salle_id, valeurJour, heure_debut, heure_fin]
+    );
+    if (chevaucheSalle.length > 0) {
+      return res.status(409).json({ error: `Cette salle est déjà occupée par "${chevaucheSalle[0].matiere}" (${chevaucheSalle[0].classe_nom}) sur ce créneau.` });
+    }
+  }
+
   const { rows } = await pool.query(
-    `INSERT INTO creneaux (classe_id, jour_semaine, date_exceptionnelle, heure_debut, heure_fin, matiere, enseignant)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-    [classe_id, jour_semaine || null, date_exceptionnelle || null, heure_debut, heure_fin, matiere, enseignant || null]
+    `INSERT INTO creneaux (classe_id, jour_semaine, date_exceptionnelle, heure_debut, heure_fin, matiere, enseignant, salle_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [classe_id, jour_semaine || null, date_exceptionnelle || null, heure_debut, heure_fin, matiere, enseignant || null, salle_id || null]
   );
   res.status(201).json(rows[0]);
 });
@@ -147,9 +162,17 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
   }
   const { rows: classesCibles } = await pool.query(`SELECT * FROM classes WHERE ${filtreClasses}`, paramsClasses);
 
-  // Occupation en mémoire pendant la génération : "jour-heure-classe" et "jour-heure-enseignant"
+  // Occupation en mémoire pendant la génération : "jour-heure-classe", "jour-heure-enseignant"
+  // et "jour-heure-salle" — une salle ne peut jamais accueillir deux classes en même temps.
   const occupeClasse = new Set();
   const occupeEnseignant = new Set();
+  const occupeSalle = new Set();
+
+  // Salles disponibles pour cette école (attribution "au mieux", en tournant sur la liste)
+  const paramsSalles = [];
+  let filtreEcoleSalles = "TRUE";
+  if (ecoleGeneration) { paramsSalles.push(ecoleGeneration); filtreEcoleSalles = "ecole_id = $1"; }
+  const { rows: sallesEcole } = await pool.query(`SELECT * FROM salles WHERE ${filtreEcoleSalles}`, paramsSalles);
 
   // Pré-charge les créneaux déjà existants (pour ne pas les écraser ni entrer en conflit avec eux)
   const { rows: existants } = await pool.query(
@@ -159,6 +182,7 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
   for (const c of existants) {
     occupeClasse.add(`${c.classe_id}|${c.jour_semaine}|${c.heure_debut}`);
     if (c.enseignant) occupeEnseignant.add(`${c.enseignant}|${c.jour_semaine}|${c.heure_debut}`);
+    if (c.salle_id) occupeSalle.add(`${c.salle_id}|${c.jour_semaine}|${c.heure_debut}`);
   }
 
   const creees = [];
@@ -190,13 +214,22 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
           const clefEnseignant = `${ens.nom}|${slot.jour}|${slot.debut}`;
           if (occupeClasse.has(clefClasse) || occupeEnseignant.has(clefEnseignant)) continue;
 
+          // Cherche une salle libre à ce créneau précis (au mieux — si aucune salle
+          // n'est déclarée pour l'école, le créneau est simplement créé sans salle).
+          let salleChoisie = null;
+          for (const salle of sallesEcole) {
+            const clefSalle = `${salle.id}|${slot.jour}|${slot.debut}`;
+            if (!occupeSalle.has(clefSalle)) { salleChoisie = salle; break; }
+          }
+
           const { rows } = await pool.query(
-            `INSERT INTO creneaux (classe_id, jour_semaine, heure_debut, heure_fin, matiere, enseignant)
-             VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-            [classe.id, slot.jour, slot.debut, slot.fin, matiere, ens.nom]
+            `INSERT INTO creneaux (classe_id, jour_semaine, heure_debut, heure_fin, matiere, enseignant, salle_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+            [classe.id, slot.jour, slot.debut, slot.fin, matiere, ens.nom, salleChoisie?.id || null]
           );
           occupeClasse.add(clefClasse);
           occupeEnseignant.add(clefEnseignant);
+          if (salleChoisie) occupeSalle.add(`${salleChoisie.id}|${slot.jour}|${slot.debut}`);
           creees.push(rows[0]);
           placees++;
         }

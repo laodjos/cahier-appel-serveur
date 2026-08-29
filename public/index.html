@@ -358,7 +358,7 @@ function App({ session, onLogout }) {
   const [resultatImport, setResultatImport] = useState(null);
   const [resultatImportEnseignants, setResultatImportEnseignants] = useState(null);
   const [newEleve, setNewEleve] = useState({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "" });
-  const [newCreneau, setNewCreneau] = useState({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "09:00", matiere: "", enseignant: "", estRattrapage: false, date_exceptionnelle: "" });
+  const [newCreneau, setNewCreneau] = useState({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "09:00", matiere: "", enseignant: "", estRattrapage: false, date_exceptionnelle: "", salle_id: null });
   const [formError, setFormError] = useState("");
 
   const [appelMode, setAppelMode] = useState("qr");
@@ -414,6 +414,8 @@ function App({ session, onLogout }) {
   const [matieresListe, setMatieresListe] = useState([]);
   const [nouvelleMatiere, setNouvelleMatiere] = useState("");
   const [nouvelleMatiereCycle, setNouvelleMatiereCycle] = useState("");
+  const [sallesListe, setSallesListe] = useState([]);
+  const [nouvelleSalle, setNouvelleSalle] = useState("");
   const [ecoleFormError, setEcoleFormError] = useState("");
 
   const catchErr = (e) => setGlobalError(e.message);
@@ -467,6 +469,7 @@ function App({ session, onLogout }) {
       if (availableViews.includes("parametres") || availableViews.includes("enseignants")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
       if (availableViews.includes("enseignants")) api("/matieres").then(siEcoleInchangee(setMatieresListe)).catch(catchErr);
       if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
+      if (availableViews.includes("emploi")) api("/salles").then(siEcoleInchangee(setSallesListe)).catch(catchErr);
       if (availableViews.includes("ecoles")) api("/ecoles").then(setEcoles).catch(catchErr);
     };
     load();
@@ -579,6 +582,7 @@ function App({ session, onLogout }) {
         heure_fin: newCreneau.heure_fin,
         matiere: newCreneau.matiere.trim(),
         enseignant: newCreneau.enseignant.trim(),
+        salle_id: newCreneau.salle_id || null,
       };
       if (newCreneau.estRattrapage) body.date_exceptionnelle = newCreneau.date_exceptionnelle;
       else body.jour_semaine = Number(newCreneau.jour_semaine);
@@ -588,7 +592,7 @@ function App({ session, onLogout }) {
       // (un rattrapage ponctuel n'apparaît pas dans la grille hebdomadaire habituelle).
       if (!newCreneau.estRattrapage) setCreneaux((c) => [...c, created]);
       else setGlobalInfo(`Rattrapage programmé le ${newCreneau.date_exceptionnelle} pour ${classeSelectionnee?.nom || "cette classe"}.`);
-      setNewCreneau({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "09:00", matiere: "", enseignant: "", estRattrapage: false, date_exceptionnelle: "" });
+      setNewCreneau({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "09:00", matiere: "", enseignant: "", estRattrapage: false, date_exceptionnelle: "", salle_id: null });
       setShowAddCreneau(false);
     } catch (e) { setFormError(e.message); }
   }
@@ -1001,6 +1005,22 @@ function App({ session, onLogout }) {
       if (res.creees.length > 0) setMatieresListe((m) => [...m, ...res.creees].sort((a, b) => a.nom.localeCompare(b.nom)));
       setGlobalInfo(`${res.creees.length} matière(s) ajoutée(s) sur ${res.total_demandees} (les autres existaient déjà).`);
       setTimeout(() => setGlobalInfo(""), 5000);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ajouterSalle() {
+    if (!nouvelleSalle.trim()) return;
+    try {
+      const created = await api("/salles", { method: "POST", body: { nom: nouvelleSalle.trim() } });
+      setSallesListe((s) => [...s, created].sort((a, b) => a.nom.localeCompare(b.nom)));
+      setNouvelleSalle("");
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerSalle(id) {
+    try {
+      await api(`/salles/${id}`, { method: "DELETE" });
+      setSallesListe((s) => s.filter((x) => x.id !== id));
     } catch (e) { catchErr(e); }
   }
 
@@ -1561,6 +1581,25 @@ function App({ session, onLogout }) {
         {view === "emploi" && (
           <div>
             <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Emploi du temps</h1>
+
+            {role === "direction" && (
+              <Card title="Salles disponibles" style={{ marginBottom: 16 }}>
+                <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  {sallesListe.map((s) => (
+                    <span key={s.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(217,164,65,0.1)", color: COLORS.marker, borderRadius: 999, padding: "5px 10px 5px 12px", fontSize: 12 }}>
+                      {s.nom}
+                      <button onClick={() => supprimerSalle(s.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.marker, display: "flex" }}><Icon path={P.x} size={12} /></button>
+                    </span>
+                  ))}
+                  {sallesListe.length === 0 && <span style={{ fontSize: 12, color: COLORS.craieDim }}>Aucune salle déclarée — la génération automatique fonctionnera quand même, juste sans vérifier les salles.</span>}
+                </div>
+                <div style={{ padding: "0 14px 14px", display: "flex", gap: 8 }}>
+                  <input style={{ ...inputStyle, flex: 1 }} value={nouvelleSalle} onChange={(e) => setNouvelleSalle(e.target.value)} placeholder="ex. Salle 12, Labo Sciences" onKeyDown={(e) => e.key === "Enter" && ajouterSalle()} />
+                  <Button small icon={P.plus} onClick={ajouterSalle}>Ajouter</Button>
+                </div>
+              </Card>
+            )}
+
             <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
               <SelectClasseParNiveau classes={classes} value={selectedClasseId} onChange={(e) => setSelectedClasseId(e.target.value)} style={inputStyle} />
               <div style={{ flex: 1 }} />
@@ -1625,6 +1664,12 @@ function App({ session, onLogout }) {
                     </div>
                   )}
                 </div>
+                <Field label="Salle (optionnel)">
+                  <select style={inputStyle} value={newCreneau.salle_id || ""} onChange={(e) => setNewCreneau((v) => ({ ...v, salle_id: e.target.value || null }))}>
+                    <option value="">— Aucune salle précisée —</option>
+                    {sallesListe.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+                  </select>
+                </Field>
               </FormPanel>
             )}
             <Card title={`Emploi du temps — ${classeSelectionnee?.nom || ""}`}>
@@ -1642,6 +1687,7 @@ function App({ session, onLogout }) {
                         <span style={{ fontSize: 12, color: COLORS.craieDim, width: 120, flexShrink: 0 }}>{c.heure_debut?.slice(0,5)}–{c.heure_fin?.slice(0,5)}</span>
                         <span style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{c.matiere}</span>
                         <span style={{ fontSize: 12, color: COLORS.craieDim }}>{c.enseignant}</span>
+                        {c.salle_nom && <span style={{ fontSize: 11, color: COLORS.marker, background: "rgba(217,164,65,0.1)", borderRadius: 6, padding: "2px 7px" }}>{c.salle_nom}</span>}
                         {role === "direction" && <button onClick={() => removeCreneau(c.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>}
                       </div>
                     ))}
