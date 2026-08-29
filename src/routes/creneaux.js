@@ -299,9 +299,11 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
   // quand aucun volume horaire n'est précisé pour ce niveau exact.
   const NIVEAUX_1ER_CYCLE = ["6ème", "5ème", "4ème", "3ème"];
   const NIVEAUX_2ND_CYCLE = ["2nde", "1ère", "Terminale"];
+  const normaliseSimple = (s) => (s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   function cycleDeNiveau(niveau) {
-    if (NIVEAUX_1ER_CYCLE.includes(niveau)) return "1er_cycle";
-    if (NIVEAUX_2ND_CYCLE.includes(niveau)) return "2nd_cycle";
+    const n = normaliseSimple(niveau);
+    if (NIVEAUX_1ER_CYCLE.some((x) => normaliseSimple(x) === n)) return "1er_cycle";
+    if (NIVEAUX_2ND_CYCLE.some((x) => normaliseSimple(x) === n)) return "2nd_cycle";
     return null;
   }
 
@@ -312,10 +314,10 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
      WHERE ${ecoleGeneration ? "vh.ecole_id = $1" : "TRUE"}`,
     ecoleGeneration ? [ecoleGeneration] : []
   );
-  // Comparaison tolérante aux espaces/majuscules — évite qu'une simple différence de
-  // casse ou d'espace entre le nom déclaré chez l'enseignant et celui de la matière
-  // fasse silencieusement échouer la correspondance.
-  const normalise = (s) => (s || "").trim().toLowerCase();
+  // Comparaison tolérante aux espaces, majuscules ET accents — évite qu'une simple
+  // différence de frappe (ex. "6EME" saisi sans accent au lieu de "6ème") empêche
+  // silencieusement la correspondance avec le volume horaire configuré.
+  const normalise = (s) => (s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   function heuresPourMatiere(nomMatiere, niveau, classeId) {
     // Priorité du plus précis au plus général : classe exacte > niveau > cycle.
     const parClasse = volumesRows.find((v) => normalise(v.matiere_nom) === normalise(nomMatiere) && v.classe_id === classeId);
