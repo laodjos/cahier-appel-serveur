@@ -281,9 +281,15 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
     ecoleGeneration ? [ecoleGeneration] : []
   );
   for (const c of existants) {
-    occupeClasse.add(`${c.classe_id}|${c.jour_semaine}|${c.heure_debut}`);
-    if (c.enseignant) occupeEnseignant.add(`${c.enseignant}|${c.jour_semaine}|${c.heure_debut}`);
-    if (c.salle_id) occupeSalle.add(`${c.salle_id}|${c.jour_semaine}|${c.heure_debut}`);
+    // PostgreSQL renvoie une colonne TIME au format "HH:MM:SS" (avec les secondes),
+    // alors que les nouveaux créneaux générés utilisent "HH:MM" (sans secondes) —
+    // sans cette normalisation, un créneau déjà créé lors d'un précédent clic sur
+    // "Générer automatiquement" n'était jamais reconnu comme occupé, et se retrouvait
+    // dupliqué à chaque nouveau clic.
+    const heureDebutCourte = c.heure_debut?.slice(0, 5);
+    occupeClasse.add(`${c.classe_id}|${c.jour_semaine}|${heureDebutCourte}`);
+    if (c.enseignant) occupeEnseignant.add(`${c.enseignant}|${c.jour_semaine}|${heureDebutCourte}`);
+    if (c.salle_id) occupeSalle.add(`${c.salle_id}|${c.jour_semaine}|${heureDebutCourte}`);
   }
 
   const creees = [];
