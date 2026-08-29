@@ -358,7 +358,7 @@ function App({ session, onLogout }) {
   const [resultatImport, setResultatImport] = useState(null);
   const [resultatImportEnseignants, setResultatImportEnseignants] = useState(null);
   const [newEleve, setNewEleve] = useState({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "" });
-  const [newCreneau, setNewCreneau] = useState({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "09:00", matiere: "", enseignant: "", estRattrapage: false, date_exceptionnelle: "", salle_id: null });
+  const [newCreneau, setNewCreneau] = useState({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "09:00", matiere: "", enseignant: "", estRattrapage: false, date_exceptionnelle: "", salle_id: null, est_pause: false });
   const [formError, setFormError] = useState("");
 
   const [appelMode, setAppelMode] = useState("qr");
@@ -414,6 +414,8 @@ function App({ session, onLogout }) {
   const [matieresListe, setMatieresListe] = useState([]);
   const [nouvelleMatiere, setNouvelleMatiere] = useState("");
   const [nouvelleMatiereCycle, setNouvelleMatiereCycle] = useState("");
+  const [volumesHoraires, setVolumesHoraires] = useState([]);
+  const [nouveauVolume, setNouveauVolume] = useState({ matiere_id: "", niveau: "", cycle: "", heures_semaine: "" });
   const [sallesListe, setSallesListe] = useState([]);
   const [nouvelleSalle, setNouvelleSalle] = useState("");
   const [ecoleFormError, setEcoleFormError] = useState("");
@@ -468,6 +470,7 @@ function App({ session, onLogout }) {
       if (availableViews.includes("parametrage-lecteurs")) api("/devices").then(siEcoleInchangee(setDevices)).catch(catchErr);
       if (availableViews.includes("parametres") || availableViews.includes("enseignants")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
       if (availableViews.includes("enseignants")) api("/matieres").then(siEcoleInchangee(setMatieresListe)).catch(catchErr);
+      if (availableViews.includes("enseignants")) api("/volumes-horaires").then(siEcoleInchangee(setVolumesHoraires)).catch(catchErr);
       if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
       if (availableViews.includes("emploi")) api("/salles").then(siEcoleInchangee(setSallesListe)).catch(catchErr);
       if (availableViews.includes("ecoles")) api("/ecoles").then(setEcoles).catch(catchErr);
@@ -583,6 +586,7 @@ function App({ session, onLogout }) {
         matiere: newCreneau.matiere.trim(),
         enseignant: newCreneau.enseignant.trim(),
         salle_id: newCreneau.salle_id || null,
+        est_pause: !!newCreneau.est_pause,
       };
       if (newCreneau.estRattrapage) body.date_exceptionnelle = newCreneau.date_exceptionnelle;
       else body.jour_semaine = Number(newCreneau.jour_semaine);
@@ -592,7 +596,7 @@ function App({ session, onLogout }) {
       // (un rattrapage ponctuel n'apparaît pas dans la grille hebdomadaire habituelle).
       if (!newCreneau.estRattrapage) setCreneaux((c) => [...c, created]);
       else setGlobalInfo(`Rattrapage programmé le ${newCreneau.date_exceptionnelle} pour ${classeSelectionnee?.nom || "cette classe"}.`);
-      setNewCreneau({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "09:00", matiere: "", enseignant: "", estRattrapage: false, date_exceptionnelle: "", salle_id: null });
+      setNewCreneau({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "09:00", matiere: "", enseignant: "", estRattrapage: false, date_exceptionnelle: "", salle_id: null, est_pause: false });
       setShowAddCreneau(false);
     } catch (e) { setFormError(e.message); }
   }
@@ -1028,6 +1032,27 @@ function App({ session, onLogout }) {
     try {
       await api(`/matieres/${id}`, { method: "DELETE" });
       setMatieresListe((m) => m.filter((x) => x.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ajouterVolumeHoraire() {
+    if (!nouveauVolume.matiere_id || !nouveauVolume.heures_semaine || (!nouveauVolume.niveau && !nouveauVolume.cycle)) {
+      setGlobalError("Choisis une matière, un nombre d'heures, et un niveau OU un cycle.");
+      setTimeout(() => setGlobalError(""), 4000);
+      return;
+    }
+    try {
+      const created = await api("/volumes-horaires", { method: "POST", body: nouveauVolume });
+      const matiereNom = matieresListe.find((m) => m.id === nouveauVolume.matiere_id)?.nom || "";
+      setVolumesHoraires((v) => [...v, { ...created, matiere_nom: matiereNom }]);
+      setNouveauVolume({ matiere_id: "", niveau: "", cycle: "", heures_semaine: "" });
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerVolumeHoraire(id) {
+    try {
+      await api(`/volumes-horaires/${id}`, { method: "DELETE" });
+      setVolumesHoraires((v) => v.filter((x) => x.id !== id));
     } catch (e) { catchErr(e); }
   }
 
@@ -1630,6 +1655,10 @@ function App({ session, onLogout }) {
                     Un créneau de rattrapage n'a lieu qu'une seule fois, à la date choisie — même un jour férié, il compte comme "travaillé" si l'appel est fait.
                   </div>
                 )}
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, cursor: "pointer" }}>
+                  <input type="checkbox" checked={!!newCreneau.est_pause} onChange={(e) => setNewCreneau((v) => ({ ...v, est_pause: e.target.checked, matiere: e.target.checked ? "Récréation" : (v.matiere === "Récréation" ? "" : v.matiere), enseignant: e.target.checked ? "" : v.enseignant }))} />
+                  Ceci est une pause / récréation (pas un cours — aucun appel ne sera attendu)
+                </label>
                 <div style={{ display: "flex", gap: 12 }}>
                   {newCreneau.estRattrapage ? (
                     <Field label="Date du rattrapage">
@@ -1645,6 +1674,15 @@ function App({ session, onLogout }) {
                   <Field label="Début"><input type="time" style={inputStyle} value={newCreneau.heure_debut} onChange={(e) => setNewCreneau((v) => ({ ...v, heure_debut: e.target.value }))} /></Field>
                   <Field label="Fin"><input type="time" style={inputStyle} value={newCreneau.heure_fin} onChange={(e) => setNewCreneau((v) => ({ ...v, heure_fin: e.target.value }))} /></Field>
                 </div>
+                {newCreneau.est_pause ? (
+                  <Field label="Libellé">
+                    <select style={inputStyle} value={newCreneau.matiere} onChange={(e) => setNewCreneau((v) => ({ ...v, matiere: e.target.value }))}>
+                      <option value="Récréation">Récréation</option>
+                      <option value="Pause café">Pause café</option>
+                      <option value="Pause déjeuner">Pause déjeuner</option>
+                    </select>
+                  </Field>
+                ) : (
                 <div style={{ display: "flex", gap: 12 }}>
                   <Field label="Matière"><input style={inputStyle} value={newCreneau.matiere} onChange={(e) => setNewCreneau((v) => ({ ...v, matiere: e.target.value }))} placeholder="ex. Musique" /></Field>
                   <Field label="Enseignant">
@@ -1664,6 +1702,7 @@ function App({ session, onLogout }) {
                     </div>
                   )}
                 </div>
+                )}
                 <Field label="Salle (optionnel)">
                   <select style={inputStyle} value={newCreneau.salle_id || ""} onChange={(e) => setNewCreneau((v) => ({ ...v, salle_id: e.target.value || null }))}>
                     <option value="">— Aucune salle précisée —</option>
@@ -1683,9 +1722,9 @@ function App({ session, onLogout }) {
                       {jour}
                     </div>
                     {creneauxDuJour.map((c, i) => (
-                      <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 18px 12px 30px", borderBottom: i < creneauxDuJour.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                      <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 18px 12px 30px", borderBottom: i < creneauxDuJour.length - 1 ? `1px solid ${COLORS.line}` : "none", background: c.est_pause ? "rgba(94,156,121,0.07)" : "transparent" }}>
                         <span style={{ fontSize: 12, color: COLORS.craieDim, width: 120, flexShrink: 0 }}>{c.heure_debut?.slice(0,5)}–{c.heure_fin?.slice(0,5)}</span>
-                        <span style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{c.matiere}</span>
+                        <span style={{ fontSize: 13, fontWeight: 500, flex: 1, color: c.est_pause ? COLORS.success : COLORS.craie, fontStyle: c.est_pause ? "italic" : "normal" }}>{c.matiere}{c.est_pause ? " ☕" : ""}</span>
                         <span style={{ fontSize: 12, color: COLORS.craieDim }}>{c.enseignant}</span>
                         {c.salle_nom && <span style={{ fontSize: 11, color: COLORS.marker, background: "rgba(217,164,65,0.1)", borderRadius: 6, padding: "2px 7px" }}>{c.salle_nom}</span>}
                         {role === "direction" && <button onClick={() => removeCreneau(c.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>}
@@ -1960,6 +1999,8 @@ function App({ session, onLogout }) {
                     <Field label="Fin matin"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_fin_matin ?? (e.heure_fin_matin || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_fin_matin: ev.target.value } }))} /></Field>
                     <Field label="Début après-midi"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_debut_apresmidi ?? (e.heure_debut_apresmidi || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_debut_apresmidi: ev.target.value } }))} /></Field>
                     <Field label="Fin après-midi"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_fin_apresmidi ?? (e.heure_fin_apresmidi || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_fin_apresmidi: ev.target.value } }))} /></Field>
+                    <Field label="Début récréation"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_debut_recre ?? (e.heure_debut_recre || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_debut_recre: ev.target.value } }))} /></Field>
+                    <Field label="Fin récréation"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_fin_recre ?? (e.heure_fin_recre || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_fin_recre: ev.target.value } }))} /></Field>
                     <Button small icon={P.check} onClick={() => enregistrerHoraires(e.id)}>Enregistrer les horaires</Button>
                   </div>
                 </div>
@@ -2071,6 +2112,44 @@ function App({ session, onLogout }) {
                   </select>
                 </Field>
                 <Button small icon={P.plus} onClick={ajouterMatiere}>Ajouter</Button>
+              </div>
+            </Card>
+
+            <Card title="Volume horaire hebdomadaire par matière" style={{ marginBottom: 20 }}>
+              <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                Utilisé par "Générer automatiquement" pour savoir combien d'heures par semaine programmer pour chaque matière. Précise un niveau (ex. "6ème") pour un réglage exact, ou seulement un cycle pour une valeur par défaut qui s'applique à tous les niveaux de ce cycle sans réglage précis.
+              </div>
+              {volumesHoraires.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun volume horaire défini — la génération automatique utilisera alors le nombre de séances par défaut.</div>}
+              {volumesHoraires.map((v, i) => (
+                <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 18px", borderBottom: i < volumesHoraires.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                  <span style={{ fontWeight: 500, flex: 1 }}>{v.matiere_nom}</span>
+                  <span style={{ fontSize: 11.5, color: COLORS.craieDim, width: 160 }}>{v.niveau || (v.cycle === "1er_cycle" ? "1er cycle (défaut)" : v.cycle === "2nd_cycle" ? "2nd cycle (défaut)" : "—")}</span>
+                  <span style={{ fontSize: 12.5, color: COLORS.marker, fontWeight: 600, width: 60 }}>{v.heures_semaine} h</span>
+                  <button onClick={() => supprimerVolumeHoraire(v.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                </div>
+              ))}
+              <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}` }}>
+                <Field label="Matière">
+                  <select style={inputStyle} value={nouveauVolume.matiere_id} onChange={(e) => setNouveauVolume((v) => ({ ...v, matiere_id: e.target.value }))}>
+                    <option value="">— Choisir —</option>
+                    {matieresListe.map((m) => <option key={m.id} value={m.id}>{m.nom}</option>)}
+                  </select>
+                </Field>
+                <Field label="Niveau précis (optionnel)">
+                  <select style={inputStyle} value={nouveauVolume.niveau} onChange={(e) => setNouveauVolume((v) => ({ ...v, niveau: e.target.value, cycle: e.target.value ? "" : v.cycle }))}>
+                    <option value="">— Aucun (utiliser le cycle) —</option>
+                    {["6ème","5ème","4ème","3ème","2nde","1ère","Terminale"].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </Field>
+                <Field label="Ou cycle entier">
+                  <select style={inputStyle} value={nouveauVolume.cycle} onChange={(e) => setNouveauVolume((v) => ({ ...v, cycle: e.target.value, niveau: e.target.value ? "" : v.niveau }))} disabled={!!nouveauVolume.niveau}>
+                    <option value="">—</option>
+                    <option value="1er_cycle">1er cycle (Collège)</option>
+                    <option value="2nd_cycle">2nd cycle (Lycée)</option>
+                  </select>
+                </Field>
+                <Field label="Heures / semaine"><input type="number" min="0.5" step="0.5" style={{ ...inputStyle, width: 90 }} value={nouveauVolume.heures_semaine} onChange={(e) => setNouveauVolume((v) => ({ ...v, heures_semaine: e.target.value }))} /></Field>
+                <Button small icon={P.plus} onClick={ajouterVolumeHoraire}>Ajouter</Button>
               </div>
             </Card>
 

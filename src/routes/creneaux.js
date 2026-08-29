@@ -24,7 +24,7 @@ router.get("/", async (req, res) => {
 
 // POST /api/creneaux  { classe_id, jour_semaine, heure_debut, heure_fin, matiere, enseignant }
 router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
-  const { classe_id, jour_semaine, date_exceptionnelle, heure_debut, heure_fin, matiere, enseignant, salle_id } = req.body;
+  const { classe_id, jour_semaine, date_exceptionnelle, heure_debut, heure_fin, matiere, enseignant, salle_id, est_pause } = req.body;
   if (!classe_id || (!jour_semaine && !date_exceptionnelle) || !heure_debut || !heure_fin || !matiere) {
     return res.status(400).json({ error: "classe_id, (jour_semaine OU date_exceptionnelle), heure_debut, heure_fin et matiere sont requis." });
   }
@@ -81,9 +81,9 @@ router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
   }
 
   const { rows } = await pool.query(
-    `INSERT INTO creneaux (classe_id, jour_semaine, date_exceptionnelle, heure_debut, heure_fin, matiere, enseignant, salle_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [classe_id, jour_semaine || null, date_exceptionnelle || null, heure_debut, heure_fin, matiere, enseignant || null, salle_id || null]
+    `INSERT INTO creneaux (classe_id, jour_semaine, date_exceptionnelle, heure_debut, heure_fin, matiere, enseignant, salle_id, est_pause)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    [classe_id, jour_semaine || null, date_exceptionnelle || null, heure_debut, heure_fin, matiere, enseignant || null, salle_id || null, !!est_pause]
   );
   res.status(201).json(rows[0]);
 });
@@ -122,11 +122,13 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
   // au lieu d'horaires fixes identiques pour tout le monde.
   const ecoleIdPourHoraires = ecoleEffective(req);
   const { rows: ecoleRows } = await pool.query(
-    "SELECT heure_debut_matin, heure_fin_matin, heure_debut_apresmidi, heure_fin_apresmidi FROM ecoles WHERE id = $1",
+    "SELECT heure_debut_matin, heure_fin_matin, heure_debut_apresmidi, heure_fin_apresmidi, heure_debut_recre, heure_fin_recre FROM ecoles WHERE id = $1",
     [ecoleIdPourHoraires]
   );
   const horaires = ecoleRows[0] || {};
   const fmt = (t, defaut) => (t ? t.toString().slice(0, 5) : defaut);
+  const recreDebut = horaires.heure_debut_recre ? fmt(horaires.heure_debut_recre) : null;
+  const recreFin = horaires.heure_fin_recre ? fmt(horaires.heure_fin_recre) : null;
 
   const PLAGES = {
     matin: { debut: fmt(horaires.heure_debut_matin, "07:30"), fin: fmt(horaires.heure_fin_matin, "12:30") },
@@ -144,7 +146,9 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
     while (minutes + dureeMinutes <= finMinutes) {
       const debut = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
       const finSlot = `${String(Math.floor((minutes + dureeMinutes) / 60)).padStart(2, "0")}:${String((minutes + dureeMinutes) % 60).padStart(2, "0")}`;
-      slots.push({ debut, fin: finSlot });
+      // Ne propose jamais un créneau qui chevauche la récréation — elle reste libre pour tout le monde.
+      const chevaucheRecre = recreDebut && recreFin && debut < recreFin && finSlot > recreDebut;
+      if (!chevaucheRecre) slots.push({ debut, fin: finSlot });
       minutes += dureeMinutes;
     }
     return slots;
@@ -188,6 +192,50 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
   const creees = [];
   const nonPlanifiees = [];
 
+  // Détermine le cycle (1er/2nd) à partir du niveau d'une classe — sert de repli
+  // quand aucun volume horaire n'est précisé pour ce niveau exact.
+  const NIVEAUX_1ER_CYCLE = ["6ème", "5ème", "4ème", "3ème"];
+  const NIVEAUX_2ND_CYCLE = ["2nde", "1ère", "Terminale"];
+  function cycleDeNiveau(niveau) {
+    if (NIVEAUX_1ER_CYCLE.includes(niveau)) return "1er_cycle";
+    if (NIVEAUX_2ND_CYCLE.includes(niveau)) return "2nd_cycle";
+    return null;
+  }
+
+  // Volumes horaires déclarés pour cette école — { "NomMatiere|niveau" -> heures, "NomMatiere|cycle" -> heures }
+  const { rows: volumesRows } = await pool.query(
+    `SELECT vh.niveau, vh.cycle, vh.heures_semaine, m.nom AS matiere_nom
+     FROM volumes_horaires vh JOIN matieres m ON m.id = vh.matiere_id
+     WHERE ${ecoleGeneration ? "vh.ecole_id = $1" : "TRUE"}`,
+    ecoleGeneration ? [ecoleGeneration] : []
+  );
+  function heuresPourMatiere(nomMatiere, niveau) {
+    const parNiveau = volumesRows.find((v) => v.matiere_nom === nomMatiere && v.niveau === niveau);
+    if (parNiveau) return Number(parNiveau.heures_semaine);
+    const cycle = cycleDeNiveau(niveau);
+    const parCycle = volumesRows.find((v) => v.matiere_nom === nomMatiere && !v.niveau && v.cycle === cycle);
+    if (parCycle) return Number(parCycle.heures_semaine);
+    return null; // aucun volume déclaré — on retombe sur seances_par_matiere par défaut
+  }
+
+  // Insère automatiquement une récréation dans chaque classe générée, un jour donné,
+  // si l'école en a une configurée — occupe le créneau pour que rien d'autre n'y soit placé.
+  if (recreDebut && recreFin) {
+    for (const classe of classesCibles) {
+      for (const jour of jours) {
+        const clefClasse = `${classe.id}|${jour}|${recreDebut}`;
+        if (occupeClasse.has(clefClasse)) continue; // déjà une récréation (ou autre chose) à cette heure
+        const { rows } = await pool.query(
+          `INSERT INTO creneaux (classe_id, jour_semaine, heure_debut, heure_fin, matiere, est_pause)
+           VALUES ($1,$2,$3,$4,'Récréation', true) RETURNING *`,
+          [classe.id, jour, recreDebut, recreFin]
+        );
+        occupeClasse.add(clefClasse);
+        creees.push(rows[0]);
+      }
+    }
+  }
+
   for (const classe of classesCibles) {
     const slotsPossibles = [];
     for (const jour of jours) {
@@ -207,9 +255,14 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
     for (const ens of enseignants) {
       const matieres = ens.matieres.split(",").map((m) => m.trim()).filter(Boolean);
       for (const matiere of matieres) {
+        // Le volume horaire déclaré (par niveau, sinon par cycle) prévaut sur la valeur
+        // par défaut passée en paramètre — s'il n'y en a pas, on garde l'ancien comportement.
+        const heures = heuresPourMatiere(matiere, classe.niveau);
+        const seancesCible = heures != null ? Math.max(1, Math.round(heures / (dureeMinutes / 60))) : seancesParMatiere;
+
         let placees = 0;
         for (const slot of slotsPossibles) {
-          if (placees >= seancesParMatiere) break;
+          if (placees >= seancesCible) break;
           const clefClasse = `${classe.id}|${slot.jour}|${slot.debut}`;
           const clefEnseignant = `${ens.nom}|${slot.jour}|${slot.debut}`;
           if (occupeClasse.has(clefClasse) || occupeEnseignant.has(clefEnseignant)) continue;
@@ -233,8 +286,8 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
           creees.push(rows[0]);
           placees++;
         }
-        if (placees < seancesParMatiere) {
-          nonPlanifiees.push({ classe: classe.nom, matiere, enseignant: ens.nom, manquantes: seancesParMatiere - placees });
+        if (placees < seancesCible) {
+          nonPlanifiees.push({ classe: classe.nom, matiere, enseignant: ens.nom, manquantes: seancesCible - placees });
         }
       }
     }

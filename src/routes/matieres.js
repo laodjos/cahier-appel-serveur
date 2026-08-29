@@ -88,4 +88,39 @@ router.delete("/:id", requireRole("direction", "super_admin"), async (req, res) 
   res.status(204).send();
 });
 
+// GET /api/matieres/:id/volumes — volume horaire hebdomadaire configuré pour cette matière
+router.get("/:id/volumes", async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM matieres_volumes WHERE matiere_id = $1 ORDER BY niveau NULLS LAST, cycle NULLS LAST", [req.params.id]);
+  res.json(rows);
+});
+
+// POST /api/matieres/:id/volumes  { niveau?, cycle?, heures_semaine }
+// Précise soit un niveau exact (ex. "6ème"), soit tout un cycle (si niveau vide) — pas les deux à la fois.
+router.post("/:id/volumes", requireRole("direction", "super_admin"), async (req, res) => {
+  const { niveau, cycle, heures_semaine } = req.body;
+  if (!heures_semaine || Number(heures_semaine) <= 0) {
+    return res.status(400).json({ error: "Le nombre d'heures par semaine doit être supérieur à 0." });
+  }
+  if (!niveau && !cycle) {
+    return res.status(400).json({ error: "Précise un niveau ou un cycle." });
+  }
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO matieres_volumes (matiere_id, niveau, cycle, heures_semaine) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (matiere_id, niveau, cycle) DO UPDATE SET heures_semaine = EXCLUDED.heures_semaine
+       RETURNING *`,
+      [req.params.id, niveau || null, niveau ? null : (cycle || null), heures_semaine]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    throw err;
+  }
+});
+
+// DELETE /api/matieres/volumes/:volumeId
+router.delete("/volumes/:volumeId", requireRole("direction", "super_admin"), async (req, res) => {
+  await pool.query("DELETE FROM matieres_volumes WHERE id = $1", [req.params.volumeId]);
+  res.status(204).send();
+});
+
 module.exports = router;

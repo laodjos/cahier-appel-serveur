@@ -190,6 +190,48 @@ CREATE TABLE IF NOT EXISTS salles (
   UNIQUE (nom, ecole_id)
 );
 ALTER TABLE creneaux ADD COLUMN IF NOT EXISTS salle_id UUID REFERENCES salles(id);
+
+-- --------------------------------------------------------------------------
+-- Volume horaire hebdomadaire par matière — soit pour un niveau précis
+-- (ex. "6ème"), soit pour tout un cycle (niveau NULL, cycle renseigné) comme
+-- valeur par défaut si aucun niveau précis n'est défini. Utilisé par la
+-- génération automatique de l'emploi du temps pour savoir combien de séances
+-- programmer par semaine.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS volumes_horaires (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ecole_id UUID REFERENCES ecoles(id),
+  matiere_id UUID REFERENCES matieres(id) ON DELETE CASCADE,
+  niveau TEXT,
+  cycle TEXT CHECK (cycle IN ('1er_cycle', '2nd_cycle') OR cycle IS NULL),
+  heures_semaine NUMERIC NOT NULL CHECK (heures_semaine > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- --------------------------------------------------------------------------
+-- Pauses / récréations : un créneau peut être marqué comme une pause (pas un
+-- vrai cours) — affiché différemment, sans enseignant ni salle obligatoire.
+-- Les horaires de récréation, définis par école, permettent aussi à la
+-- génération automatique d'éviter d'y placer un cours.
+-- --------------------------------------------------------------------------
+ALTER TABLE creneaux ADD COLUMN IF NOT EXISTS est_pause BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS heure_debut_recre TIME;
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS heure_fin_recre TIME;
+
+-- --------------------------------------------------------------------------
+-- Volume horaire hebdomadaire par matière — peut être précisé pour un niveau
+-- exact (ex. "6ème") OU pour tout un cycle (si niveau est vide) comme repli.
+-- Utilisé par la génération automatique pour savoir combien de séances
+-- programmer par semaine, au lieu d'un nombre fixe identique pour tous.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS matieres_volumes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  matiere_id UUID REFERENCES matieres(id) ON DELETE CASCADE,
+  niveau TEXT,
+  cycle TEXT CHECK (cycle IN ('1er_cycle', '2nd_cycle') OR cycle IS NULL),
+  heures_semaine NUMERIC NOT NULL CHECK (heures_semaine > 0),
+  UNIQUE (matiere_id, niveau, cycle)
+);
 ALTER TABLE creneaux DROP CONSTRAINT IF EXISTS creneaux_un_type_requis;
 ALTER TABLE creneaux ADD CONSTRAINT creneaux_un_type_requis
   CHECK (jour_semaine IS NOT NULL OR date_exceptionnelle IS NOT NULL);

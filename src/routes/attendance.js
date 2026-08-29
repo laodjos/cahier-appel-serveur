@@ -196,6 +196,7 @@ router.get("/creneaux-sans-appel", async (req, res) => {
     `SELECT cr.*, cl.nom AS classe_nom FROM creneaux cr
      JOIN classes cl ON cl.id = cr.classe_id
      WHERE ${filtreEcole} AND cr.heure_fin < to_char(now(), 'HH24:MI')::time
+       AND cr.est_pause = false
        AND (
          (cr.jour_semaine = $1 AND cr.date_exceptionnelle IS NULL ${estFerie ? "AND FALSE" : ""})
          OR cr.date_exceptionnelle = $${paramsJour.length}
@@ -235,7 +236,7 @@ router.get("/suivi-enseignants", async (req, res) => {
   if (ecoleId) { params.push(ecoleId); filtreEcole = `cl.ecole_id = $${params.length}`; }
 
   const { rows: creneauxEcole } = await pool.query(
-    `SELECT cr.*, cl.nom AS classe_nom FROM creneaux cr JOIN classes cl ON cl.id = cr.classe_id WHERE ${filtreEcole} AND cr.enseignant IS NOT NULL`,
+    `SELECT cr.*, cl.nom AS classe_nom FROM creneaux cr JOIN classes cl ON cl.id = cr.classe_id WHERE ${filtreEcole} AND cr.enseignant IS NOT NULL AND cr.est_pause = false`,
     params
   );
   const { rows: joursFeries } = await pool.query(

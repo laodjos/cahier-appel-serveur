@@ -18,6 +18,7 @@ const joursNonScolairesRoutes = require("./routes/joursNonScolaires");
 const agentRoutes = require("./routes/agent");
 const matieresRoutes = require("./routes/matieres");
 const sallesRoutes = require("./routes/salles");
+const volumesHorairesRoutes = require("./routes/volumesHoraires");
 
 const { demarrerPollingLecteurs, demarrerEnvoiNotifications } = require("./jobs/scheduler");
 
@@ -60,6 +61,7 @@ app.use("/api/jours-non-scolaires", joursNonScolairesRoutes);
 app.use("/api/agent", agentRoutes);
 app.use("/api/matieres", matieresRoutes);
 app.use("/api/salles", sallesRoutes);
+app.use("/api/volumes-horaires", volumesHorairesRoutes);
 
 // Gestion d'erreurs centralisée
 app.use((err, req, res, next) => {
