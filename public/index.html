@@ -2732,11 +2732,11 @@ function App({ session, onLogout }) {
                   <Field label="Heures mensuelles de référence (pour valoriser une heure manquée)">
                     <input type="number" style={inputStyle} defaultValue={gestionSalaireUser.heures_mensuelles_reference || ""} onBlur={(e) => e.target.value && enregistrerSalaire(gestionSalaireUser.id, { heures_mensuelles_reference: e.target.value })} placeholder="ex. 80" />
                   </Field>
-                  <Field label="Cycle d'enseignement (plafond réglementaire hebdomadaire)">
+                  <Field label="Diplôme / qualification (détermine le plafond hebdomadaire et les classes autorisées)">
                     <select style={inputStyle} value={gestionSalaireUser.cycle_enseignement || ""} onChange={(e) => enregistrerSalaire(gestionSalaireUser.id, { cycle_enseignement: e.target.value })}>
                       <option value="">— Non renseigné (pas de calcul d'heures sup.) —</option>
-                      <option value="1er_cycle">1er cycle — Collège (max. 21h/semaine)</option>
-                      <option value="2nd_cycle">2nd cycle — Lycée (max. 18h/semaine)</option>
+                      <option value="1er_cycle">DEUG2 — 1er cycle uniquement (Collège, max. 21h/semaine)</option>
+                      <option value="2nd_cycle">Licence — 2nd cycle (Lycée, max. 18h/semaine, complétable au 1er cycle si besoin)</option>
                     </select>
                   </Field>
                   <Field label="Taux horaire des heures supplémentaires (F CFA)">

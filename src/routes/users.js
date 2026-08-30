@@ -240,9 +240,38 @@ router.patch("/:id/ecole", requireRole("super_admin"), async (req, res) => {
 });
 
 // POST /api/users/:id/classes  { classe_id }
+// Détermine le cycle (1er/2nd) à partir du niveau d'une classe, en ignorant les
+// accents/majuscules (ex. "6EME" doit être reconnu comme "6ème").
+const NIVEAUX_1ER_CYCLE = ["6ème", "5ème", "4ème", "3ème"];
+const NIVEAUX_2ND_CYCLE = ["2nde", "1ère", "Terminale"];
+function normaliserNiveau(s) {
+  return (s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+function cycleDeNiveau(niveau) {
+  const n = normaliserNiveau(niveau);
+  if (NIVEAUX_1ER_CYCLE.some((x) => normaliserNiveau(x) === n)) return "1er_cycle";
+  if (NIVEAUX_2ND_CYCLE.some((x) => normaliserNiveau(x) === n)) return "2nd_cycle";
+  return null;
+}
+
 router.post("/:id/classes", async (req, res) => {
   const { classe_id } = req.body;
   if (!classe_id) return res.status(400).json({ error: "classe_id requis." });
+
+  // Un enseignant dont le diplôme ne permet d'enseigner qu'au 1er cycle (DEUG2)
+  // ne peut jamais être rattaché à une classe de 2nd cycle (2nde, 1ère, Terminale).
+  // Dans l'autre sens, un enseignant de 2nd cycle (Licence) PEUT être rattaché à
+  // une classe de 1er cycle — c'est justement ce qui lui permet de compléter ses
+  // 18h hebdomadaires s'il n'en trouve pas assez au 2nd cycle.
+  const { rows: profRows } = await pool.query("SELECT cycle_enseignement FROM users WHERE id = $1", [req.params.id]);
+  const { rows: classeRows } = await pool.query("SELECT niveau FROM classes WHERE id = $1", [classe_id]);
+  if (profRows[0]?.cycle_enseignement === "1er_cycle" && classeRows[0]) {
+    const cycleClasse = cycleDeNiveau(classeRows[0].niveau);
+    if (cycleClasse === "2nd_cycle") {
+      return res.status(403).json({ error: "Cet enseignant est déclaré 1er cycle (DEUG2) — il ne peut pas être rattaché à une classe de 2nd cycle (2nde/1ère/Terminale)." });
+    }
+  }
+
   await pool.query(
     `INSERT INTO enseignant_classes (user_id, classe_id) VALUES ($1, $2)
      ON CONFLICT (user_id, classe_id) DO NOTHING`,
