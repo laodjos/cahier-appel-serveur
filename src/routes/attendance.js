@@ -385,36 +385,11 @@ router.get("/paye-enseignants", async (req, res) => {
   }
 
   // --------------------------------------------------------------------------
-  // Barème ITS (Impôt sur les Traitements et Salaires) — impôt unique, en vigueur
-  // depuis la réforme du 1er janvier 2024 (ordonnance n°2023-718/719), calculé
-  // directement sur le salaire brut, sans abattement. CNPS retraite salariale à
-  // 6,3%, plafonnée à 3 375 000 F/mois. RICF (réduction pour charges de famille)
-  // forfaitaire selon le nombre de parts fiscales déclaré.
-  // ⚠ Ces taux peuvent évoluer par loi de finances — à faire vérifier
-  // périodiquement par un comptable ou expert-comptable.
+  // Calcul CNPS/ITS partagé (voir services/payrollService.js) — impôt unique
+  // en vigueur depuis la réforme du 1er janvier 2024. ⚠ À faire vérifier
+  // périodiquement par un comptable, les taux pouvant changer par loi de finances.
   // --------------------------------------------------------------------------
-  const TRANCHES_ITS = [
-    { max: 75000, taux: 0 },
-    { max: 240000, taux: 0.16 },
-    { max: 800000, taux: 0.21 },
-    { max: 2400000, taux: 0.24 },
-    { max: 8000000, taux: 0.28 },
-    { max: Infinity, taux: 0.32 },
-  ];
-  const RICF_PAR_PARTS = { 1: 0, 1.5: 5500, 2: 11000, 3: 22000, 4: 33000, 5: 44000 };
-  const PLAFOND_CNPS = 3375000;
-  const TAUX_CNPS_SALARIE = 0.063;
-
-  function calculerITS(brut) {
-    let its = 0;
-    let precedent = 0;
-    for (const tranche of TRANCHES_ITS) {
-      if (brut <= precedent) break;
-      its += (Math.min(brut, tranche.max) - precedent) * tranche.taux;
-      precedent = tranche.max;
-    }
-    return Math.round(its);
-  }
+  const { calculerBulletin } = require("../services/payrollService");
 
   const resultat = Object.values(parEnseignant)
     .map((e) => {
@@ -427,11 +402,7 @@ router.get("/paye-enseignants", async (req, res) => {
         const valeurHeure = e.salaire_base / e.heures_mensuelles_reference;
         const deduction_absences = Math.round(heures_manquees * valeurHeure);
         const salaire_brut_ajuste = Math.max(0, e.salaire_base - deduction_absences);
-        const cnps = Math.round(Math.min(salaire_brut_ajuste, PLAFOND_CNPS) * TAUX_CNPS_SALARIE);
-        const its_brut = calculerITS(salaire_brut_ajuste);
-        const ricf = RICF_PAR_PARTS[e.parts_fiscales] || 0;
-        const its_net = Math.max(0, its_brut - ricf);
-        const montant_a_payer = salaire_brut_ajuste - cnps - its_net;
+        const { cnps, its_net, net: montant_a_payer } = calculerBulletin(salaire_brut_ajuste, e.parts_fiscales);
         return {
           enseignant: e.enseignant,
           statut_emploi: e.statut_emploi,
@@ -464,6 +435,129 @@ router.get("/paye-enseignants", async (req, res) => {
   const total_a_payer = resultat.reduce((somme, e) => somme + (e.montant_a_payer || 0), 0);
 
   res.json({ debut, fin, enseignants: resultat, total_a_payer });
+});
+
+// --------------------------------------------------------------------------
+// GET /api/attendance/bulletin-salaire/:userId?debut=&fin=
+// Bulletin de salaire individuel — fonctionne pour N'IMPORTE QUEL membre
+// (Direction, Surveillant, ou Enseignant), pas seulement les enseignants :
+//   - Enseignant PERMANENT avec salaire renseigné : même calcul que la paie
+//     collective (salaire réel - heures manquées, puis CNPS + ITS).
+//   - Enseignant VACATAIRE (ou permanent sans salaire renseigné) : heures
+//     travaillées × taux horaire, sans CNPS/ITS (rémunération à l'acte).
+//   - Direction / Surveillant (administration) : salaire fixe mensuel, sans
+//     notion d'heures manquées (pas de créneaux à leur nom) — CNPS + ITS
+//     directement sur le salaire de base.
+// --------------------------------------------------------------------------
+router.get("/bulletin-salaire/:userId", async (req, res) => {
+  const { calculerBulletin } = require("../services/payrollService");
+  const aujourdHui = new Date().toISOString().slice(0, 10);
+  const debut = req.query.debut || aujourdHui.slice(0, 8) + "01";
+  const fin = req.query.fin || aujourdHui;
+
+  const params = [req.params.userId];
+  let filtreEcole = "TRUE";
+  const ecoleId = ecoleEffective(req);
+  if (ecoleId) { params.push(ecoleId); filtreEcole = `ecole_id = $${params.length}`; }
+
+  const { rows: userRows } = await pool.query(
+    `SELECT * FROM users WHERE id = $1 AND ${filtreEcole}`, params
+  );
+  const personne = userRows[0];
+  if (!personne) return res.status(404).json({ error: "Compte introuvable (ou hors de ton école)." });
+
+  // --- Cas 1 : administration (Direction, Surveillant, Super-administrateur) ---
+  if (personne.role !== "enseignant") {
+    if (personne.salaire_base == null) {
+      return res.json({ debut, fin, personne: { nom: personne.nom, role: personne.role }, mode_calcul: "non_renseigne" });
+    }
+    const { cnps, its_net, net } = calculerBulletin(Number(personne.salaire_base), personne.parts_fiscales || 1);
+    return res.json({
+      debut, fin,
+      personne: { nom: personne.nom, role: personne.role },
+      mode_calcul: "salaire_reel",
+      salaire_base: Number(personne.salaire_base),
+      deduction_absences: 0,
+      salaire_brut_ajuste: Number(personne.salaire_base),
+      cnps, its_net, montant_a_payer: net,
+    });
+  }
+
+  // --- Cas 2 : enseignant — réutilise le même calcul jour par jour que la paie collective ---
+  const paramsEcole = [];
+  let filtreEcoleCr = "TRUE";
+  if (ecoleId) { paramsEcole.push(ecoleId); filtreEcoleCr = `cl.ecole_id = $${paramsEcole.length}`; }
+  const { rows: creneauxEcole } = await pool.query(
+    `SELECT cr.*, cl.nom AS classe_nom FROM creneaux cr JOIN classes cl ON cl.id = cr.classe_id
+     WHERE ${filtreEcoleCr} AND cr.enseignant = $${paramsEcole.length + 1} AND cr.est_pause = false`,
+    [...paramsEcole, personne.nom]
+  );
+  const { rows: joursFeries } = await pool.query(
+    "SELECT date FROM jours_non_scolaires WHERE date BETWEEN $1 AND $2", [debut, fin]
+  );
+  const feriesSet = new Set(joursFeries.map((j) => j.date.toISOString().slice(0, 10)));
+
+  let minutes_travaillees = 0;
+  let minutes_manquees = 0;
+  const maintenant = new Date();
+  let curseur = new Date(debut + "T00:00:00");
+  const dateFin = new Date(fin + "T00:00:00");
+  while (curseur <= dateFin) {
+    const jourStr = curseur.toISOString().slice(0, 10);
+    const jourSemaineCurseur = curseur.getDay() || 7;
+    const estFerie = feriesSet.has(jourStr);
+
+    for (const cr of creneauxEcole) {
+      const estRecurrentDuJour = cr.jour_semaine === jourSemaineCurseur && !cr.date_exceptionnelle && !estFerie;
+      const estRattrapageDuJour = cr.date_exceptionnelle && cr.date_exceptionnelle.toISOString().slice(0, 10) === jourStr;
+      if (!estRecurrentDuJour && !estRattrapageDuJour) continue;
+      const finCreneauDatetime = new Date(`${jourStr}T${cr.heure_fin}`);
+      if (finCreneauDatetime > maintenant) continue;
+
+      const { rows } = await pool.query(
+        `SELECT COUNT(*) AS total FROM attendance_events ae
+         JOIN students s ON s.id = ae.student_id
+         WHERE s.classe_id = $1 AND ae.creneau_id = $2 AND ae.horodatage::date = $3`,
+        [cr.classe_id, cr.id, jourStr]
+      );
+      const [hD, mD] = cr.heure_debut.split(":").map(Number);
+      const [hF, mF] = cr.heure_fin.split(":").map(Number);
+      const duree = (hF * 60 + mF) - (hD * 60 + mD);
+      if (Number(rows[0].total) > 0) minutes_travaillees += duree;
+      else minutes_manquees += duree;
+    }
+    curseur.setDate(curseur.getDate() + 1);
+  }
+
+  const heures_travaillees = Math.round((minutes_travaillees / 60) * 100) / 100;
+  const heures_manquees = Math.round((minutes_manquees / 60) * 100) / 100;
+
+  if (personne.statut_emploi === "permanent" && personne.salaire_base != null && personne.heures_mensuelles_reference) {
+    const valeurHeure = Number(personne.salaire_base) / Number(personne.heures_mensuelles_reference);
+    const deduction_absences = Math.round(heures_manquees * valeurHeure);
+    const salaire_brut_ajuste = Math.max(0, Number(personne.salaire_base) - deduction_absences);
+    const { cnps, its_net, net } = calculerBulletin(salaire_brut_ajuste, personne.parts_fiscales || 1);
+    return res.json({
+      debut, fin,
+      personne: { nom: personne.nom, role: personne.role },
+      mode_calcul: "salaire_reel",
+      heures_travaillees, heures_manquees,
+      salaire_base: Number(personne.salaire_base),
+      deduction_absences, salaire_brut_ajuste, cnps, its_net,
+      montant_a_payer: net,
+    });
+  }
+
+  // Vacataire (ou permanent sans salaire renseigné) : heures × taux horaire
+  const montant_a_payer = personne.taux_horaire != null ? Math.round(heures_travaillees * Number(personne.taux_horaire)) : null;
+  res.json({
+    debut, fin,
+    personne: { nom: personne.nom, role: personne.role },
+    mode_calcul: "taux_horaire",
+    heures_travaillees, heures_manquees,
+    taux_horaire: personne.taux_horaire != null ? Number(personne.taux_horaire) : null,
+    montant_a_payer,
+  });
 });
 
 module.exports = router;

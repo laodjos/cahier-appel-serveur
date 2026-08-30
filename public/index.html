@@ -729,6 +729,70 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function imprimerBulletinSalaire(userId, nomAffiche) {
+    try {
+      const b = await api(`/attendance/bulletin-salaire/${userId}?debut=${suiviEnseignantsDebut}&fin=${suiviEnseignantsFin}`);
+      const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
+
+      if (b.mode_calcul === "non_renseigne") {
+        setGlobalError(`Aucun salaire renseigné pour ${nomAffiche} — impossible de générer le bulletin.`);
+        setTimeout(() => setGlobalError(""), 5000);
+        return;
+      }
+
+      const lignesDetail = b.mode_calcul === "salaire_reel" ? `
+        <tr><td>Salaire de base</td><td style="text-align:right">${b.salaire_base.toLocaleString("fr-FR")} F</td></tr>
+        ${b.deduction_absences > 0 ? `<tr><td>Déduction heures manquées${b.heures_manquees ? ` (${b.heures_manquees} h)` : ""}</td><td style="text-align:right; color:#b33;">−${b.deduction_absences.toLocaleString("fr-FR")} F</td></tr>` : ""}
+        <tr><td><strong>Salaire brut</strong></td><td style="text-align:right"><strong>${b.salaire_brut_ajuste.toLocaleString("fr-FR")} F</strong></td></tr>
+        <tr><td>CNPS (6,3%)</td><td style="text-align:right; color:#b33;">−${b.cnps.toLocaleString("fr-FR")} F</td></tr>
+        <tr><td>ITS (impôt sur salaire)</td><td style="text-align:right; color:#b33;">−${b.its_net.toLocaleString("fr-FR")} F</td></tr>
+      ` : `
+        <tr><td>Heures travaillées</td><td style="text-align:right">${b.heures_travaillees} h</td></tr>
+        ${b.heures_manquees > 0 ? `<tr><td>Heures manquées (non payées)</td><td style="text-align:right; color:#b33;">${b.heures_manquees} h</td></tr>` : ""}
+        <tr><td>Taux horaire</td><td style="text-align:right">${b.taux_horaire != null ? b.taux_horaire.toLocaleString("fr-FR") + " F/h" : "—"}</td></tr>
+      `;
+
+      const fenetre = window.open("", "_blank", "width=700,height=850");
+      fenetre.document.write(`
+        <html><head><title>Bulletin de salaire — ${nomAffiche}</title>
+        <style>
+          @page { size: A4 portrait; margin: 16mm; }
+          body { font-family: Arial, sans-serif; color: #222; font-size: 13px; }
+          h1 { font-size: 18px; margin-bottom: 2px; }
+          .sous-titre { font-size: 12px; color: #666; margin-bottom: 4px; }
+          .entete { display: flex; justify-content: space-between; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 2px solid #333; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          td { padding: 8px 4px; border-bottom: 1px solid #ddd; }
+          .net { font-size: 17px; font-weight: bold; }
+          .net-row td { border-top: 2px solid #333; border-bottom: none; padding-top: 14px; }
+          .avertissement { margin-top: 30px; font-size: 10px; color: #888; border-top: 1px solid #ddd; padding-top: 10px; }
+        </style></head>
+        <body onload="window.print()">
+          <div class="entete">
+            <div>
+              <h1>Bulletin de salaire</h1>
+              <div class="sous-titre">${ecoleNom}</div>
+            </div>
+            <div style="text-align:right">
+              <div><strong>${nomAffiche}</strong></div>
+              <div class="sous-titre">${b.personne.role === "enseignant" ? "Enseignant" : b.personne.role === "direction" ? "Direction" : b.personne.role === "surveillant" ? "Surveillant" : b.personne.role}</div>
+              <div class="sous-titre">Période : ${b.debut} au ${b.fin}</div>
+            </div>
+          </div>
+          <table>${lignesDetail}</table>
+          <table>
+            <tr class="net-row"><td class="net">NET À PAYER</td><td class="net" style="text-align:right">${b.montant_a_payer != null ? b.montant_a_payer.toLocaleString("fr-FR") + " F" : "Non calculable"}</td></tr>
+          </table>
+          <div class="avertissement">
+            Document généré automatiquement à titre indicatif — barème CNPS/ITS en vigueur depuis la réforme du 1er janvier 2024.
+            À faire vérifier par un comptable avant tout usage officiel ; les taux peuvent évoluer par loi de finances.
+          </div>
+        </body></html>
+      `);
+      fenetre.document.close();
+    } catch (e) { catchErr(e); }
+  }
+
   function exporterPayePdf() {
     const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
     const total = payeEnseignants.reduce((s, e) => s + (e.montant_a_payer || 0), 0);
@@ -2157,13 +2221,13 @@ function App({ session, onLogout }) {
             )}
 
             <Card title="Comptes existants">
-              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.4fr 0.9fr 1.4fr auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
-                <span>Nom</span><span>Email</span><span>Rôle</span><span>Classes rattachées</span><span></span>
+              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.4fr 0.9fr 1.4fr 1.1fr auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
+                <span>Nom</span><span>Email</span><span>Rôle</span><span>Classes rattachées</span><span>Salaire</span><span></span>
               </div>
               {users.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun utilisateur pour l'instant.</div>}
               {users.map((u, i) => (
                 <div key={u.id} style={{ borderBottom: i < users.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.4fr 0.9fr 1.4fr auto", alignItems: "center", padding: "10px 18px", fontSize: 13, gap: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.4fr 0.9fr 1.4fr 1.1fr auto", alignItems: "center", padding: "10px 18px", fontSize: 13, gap: 8 }}>
                     <NomEditable valeur={u.nom} onValider={(v) => changeUserNom(u.id, v)} style={{ fontWeight: 500 }} />
                     <span style={{ color: COLORS.craieDim, fontSize: 12 }}>{u.email}</span>
                     <select style={{ ...inputStyle, fontSize: 12 }} value={u.role} onChange={(e) => changeUserRole(u.id, e.target.value)}>
@@ -2176,6 +2240,10 @@ function App({ session, onLogout }) {
                         {(u.classes_rattachees || []).length === 0 ? "Aucune — cliquer pour rattacher" : (u.classes_rattachees || []).map((c) => c.nom).join(", ")}
                       </button>
                     ) : <span style={{ color: COLORS.craieDim, fontSize: 11.5 }}>—</span>}
+                    <button onClick={() => setGestionSalaireUser(u)} style={{ background: "transparent", border: "none", cursor: "pointer", color: u.salaire_base != null ? COLORS.craie : COLORS.craieDim, fontSize: 11.5, textAlign: "left", padding: 0 }}>
+                      {u.salaire_base != null ? `${Number(u.salaire_base).toLocaleString("fr-FR")} F/mois` : "— définir le salaire"}
+                    </button>
+                    <button onClick={() => imprimerBulletinSalaire(u.id, u.nom)} title="Imprimer le bulletin de salaire" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.scan} size={14} /></button>
                     <button onClick={() => removeUser(u.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
                   </div>
                   {estDirectionGenerale && (
@@ -2587,6 +2655,7 @@ function App({ session, onLogout }) {
                   ) : (
                     <NomEditable valeur={u.taux_horaire != null ? `${u.taux_horaire} F` : "— définir"} onValider={(v) => changeTauxHoraire(u.id, v)} style={{ fontSize: 12, color: u.taux_horaire != null ? COLORS.craie : COLORS.craieDim }} />
                   )}
+                  <button onClick={() => imprimerBulletinSalaire(u.id, u.nom)} title="Imprimer le bulletin de salaire" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.scan} size={14} /></button>
                   <button onClick={() => removeUser(u.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
                 </div>
               ))}
@@ -2647,14 +2716,18 @@ function App({ session, onLogout }) {
                 <button onClick={() => setGestionSalaireUser(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
               </div>
               <div style={{ fontSize: 11, color: COLORS.craieDim, marginBottom: 14 }}>
-                Sert à calculer sa paie complète (CNPS + ITS) sur "Absentéisme" — les heures manquées seront déduites de ce salaire avant le calcul des retenues.
+                {gestionSalaireUser.role === "enseignant"
+                  ? "Sert à calculer sa paie complète (CNPS + ITS) sur \"Absentéisme\" — les heures manquées seront déduites de ce salaire avant le calcul des retenues."
+                  : "Sert à générer son bulletin de salaire (CNPS + ITS) — pas de notion d'heures manquées pour un poste administratif."}
               </div>
               <Field label="Salaire de base (F CFA / mois)">
                 <input type="number" style={inputStyle} defaultValue={gestionSalaireUser.salaire_base || ""} onBlur={(e) => e.target.value && enregistrerSalaire(gestionSalaireUser.id, { salaire_base: e.target.value })} placeholder="ex. 350000" />
               </Field>
-              <Field label="Heures mensuelles de référence (pour valoriser une heure manquée)">
-                <input type="number" style={inputStyle} defaultValue={gestionSalaireUser.heures_mensuelles_reference || ""} onBlur={(e) => e.target.value && enregistrerSalaire(gestionSalaireUser.id, { heures_mensuelles_reference: e.target.value })} placeholder="ex. 80" />
-              </Field>
+              {gestionSalaireUser.role === "enseignant" && (
+                <Field label="Heures mensuelles de référence (pour valoriser une heure manquée)">
+                  <input type="number" style={inputStyle} defaultValue={gestionSalaireUser.heures_mensuelles_reference || ""} onBlur={(e) => e.target.value && enregistrerSalaire(gestionSalaireUser.id, { heures_mensuelles_reference: e.target.value })} placeholder="ex. 80" />
+                </Field>
+              )}
               <Field label="Parts fiscales (charges de famille — pour la réduction RICF)">
                 <select style={inputStyle} value={gestionSalaireUser.parts_fiscales || 1} onChange={(e) => enregistrerSalaire(gestionSalaireUser.id, { parts_fiscales: e.target.value })}>
                   <option value="1">1 part (célibataire, sans enfant)</option>
