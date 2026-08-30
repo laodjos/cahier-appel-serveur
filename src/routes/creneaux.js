@@ -390,6 +390,9 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
     }
     for (const recre of recresApplicables) {
       for (const jour of jours) {
+        // Le mercredi après-midi, il n'y a jamais cours — inutile (et faux) d'y
+        // marquer la récréation d'après-midi.
+        if (jour === 3 && recre.debut === recreApresMidiDebut) continue;
         const clefClasse = `${classe.id}|${jour}|${recre.debut}`;
         if (occupeClasse.has(clefClasse)) continue; // déjà une récréation (ou autre chose) à cette heure
         const { rows } = await pool.query(
@@ -412,6 +415,8 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
     for (const classe of classesCibles) {
       if (classe.vacation) continue; // classes à vacation simple : pas de pause déjeuner à marquer
       for (const jour of jours) {
+        // Pas de pause déjeuner à marquer le mercredi — pas d'après-midi vers lequel transitionner.
+        if (jour === 3) continue;
         const clefClasse = `${classe.id}|${jour}|${dejeunerDebut}`;
         if (occupeClasse.has(clefClasse)) continue;
         const { rows } = await pool.query(
@@ -432,7 +437,16 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
     // de la même matière, mieux vaut étaler sur plusieurs jours différents).
     const slotsParJour = {};
     for (const jour of jours) {
-      slotsParJour[jour] = genererCreneauxPossibles(classe.vacation).map((s) => ({ jour, ...s }));
+      // Le mercredi après-midi, officiellement, il n'y a jamais cours — quelle que
+      // soit la vacation de la classe. Une classe en vacation "après-midi" n'a donc
+      // simplement pas cours du tout ce jour-là ; les autres classes n'ont que leur matin.
+      if (jour === 3) {
+        slotsParJour[jour] = classe.vacation === "apres_midi"
+          ? []
+          : genererSlotsPourPlage(PLAGES.matin).map((s) => ({ jour, ...s }));
+      } else {
+        slotsParJour[jour] = genererCreneauxPossibles(classe.vacation).map((s) => ({ jour, ...s }));
+      }
     }
 
     // Enseignants rattachés à cette classe, avec leurs matières déclarées
