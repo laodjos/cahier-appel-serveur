@@ -52,14 +52,14 @@ function demarrerPollingLecteurs() {
 function demarrerEnvoiNotifications() {
   cron.schedule("* * * * *", async () => {
     const { rows } = await pool.query(
-      `SELECT n.*, p.push_token FROM notifications n
+      `SELECT n.*, p.telephone, p.push_token FROM notifications n
        JOIN parents p ON p.id = n.parent_id
        WHERE n.statut = 'programmee' AND n.envoyer_a <= now()
        LIMIT 200`
     );
     for (const notif of rows) {
       try {
-        await envoyerNotification(notif.push_token, notif.contenu);
+        await envoyerNotification({ telephone: notif.telephone, push_token: notif.push_token }, notif.contenu);
         await pool.query(
           "UPDATE notifications SET statut = 'envoyee', envoyee_a = now() WHERE id = $1",
           [notif.id]
