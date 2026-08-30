@@ -399,6 +399,8 @@ function App({ session, onLogout }) {
   const [gestionDisponibilitesUser, setGestionDisponibilitesUser] = useState(null);
   const [disponibilitesUser, setDisponibilitesUser] = useState([]);
   const [nouvelleDispo, setNouvelleDispo] = useState({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "12:00" });
+  const [anneesScolaires, setAnneesScolaires] = useState([]);
+  const [nouvelleAnnee, setNouvelleAnnee] = useState({ libelle: "", date_debut: "", date_fin: "" });
 
   // Paramétrage des lecteurs biométriques
   const [showAddDevice, setShowAddDevice] = useState(false);
@@ -485,6 +487,7 @@ function App({ session, onLogout }) {
       if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
       if (availableViews.includes("emploi")) api("/salles").then(siEcoleInchangee(setSallesListe)).catch(catchErr);
       if (availableViews.includes("ecoles")) api("/ecoles").then(setEcoles).catch(catchErr);
+      if (availableViews.includes("ecoles") && role === "super_admin") api("/annees-scolaires").then(setAnneesScolaires).catch(catchErr);
     };
     load();
     const t = setInterval(load, 8000);
@@ -1227,6 +1230,30 @@ function App({ session, onLogout }) {
     try {
       const updated = await api(`/ecoles/${id}/generer-cle-agent`, { method: "POST" });
       setEcoles((liste) => liste.map((x) => x.id === id ? updated : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ajouterAnneeScolaire() {
+    if (!nouvelleAnnee.libelle.trim()) return;
+    try {
+      const created = await api("/annees-scolaires", { method: "POST", body: nouvelleAnnee });
+      setAnneesScolaires((a) => [created, ...a]);
+      setNouvelleAnnee({ libelle: "", date_debut: "", date_fin: "" });
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerAnneeScolaire(id) {
+    if (!window.confirm("Supprimer cette année scolaire ? Les écoles qui y sont rattachées perdront cette information.")) return;
+    try {
+      await api(`/annees-scolaires/${id}`, { method: "DELETE" });
+      setAnneesScolaires((a) => a.filter((x) => x.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function assignerAnneeScolaire(ecoleId, patch) {
+    try {
+      const updated = await api(`/ecoles/${ecoleId}/annee-scolaire`, { method: "PATCH", body: patch });
+      setEcoles((liste) => liste.map((x) => x.id === ecoleId ? { ...x, ...updated } : x));
     } catch (e) { catchErr(e); }
   }
 
@@ -2329,6 +2356,30 @@ function App({ session, onLogout }) {
               </FormPanel>
             )}
 
+            {role === "super_admin" && (
+              <Card title="Années scolaires" style={{ marginBottom: 20 }}>
+                <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                  Une fois l'année scolaire d'un établissement terminée (date de fin d'utilisation dépassée), ses comptes ne peuvent plus se connecter tant qu'une nouvelle année scolaire ne leur est pas assignée ci-dessous, dans "Écoles enregistrées".
+                </div>
+                {anneesScolaires.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucune année scolaire créée pour l'instant.</div>}
+                {anneesScolaires.map((a, i) => (
+                  <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 18px", borderBottom: i < anneesScolaires.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                    <span style={{ fontWeight: 600, flex: 1 }}>{a.libelle}</span>
+                    <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>
+                      {a.date_debut ? new Date(a.date_debut).toLocaleDateString("fr-FR") : "?"} → {a.date_fin ? new Date(a.date_fin).toLocaleDateString("fr-FR") : "?"}
+                    </span>
+                    <button onClick={() => supprimerAnneeScolaire(a.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                  </div>
+                ))}
+                <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}` }}>
+                  <Field label="Libellé (ex. 2026-2027)"><input style={inputStyle} value={nouvelleAnnee.libelle} onChange={(e) => setNouvelleAnnee((v) => ({ ...v, libelle: e.target.value }))} placeholder="2026-2027" /></Field>
+                  <Field label="Date de début"><input type="date" style={inputStyle} value={nouvelleAnnee.date_debut} onChange={(e) => setNouvelleAnnee((v) => ({ ...v, date_debut: e.target.value }))} /></Field>
+                  <Field label="Date de fin"><input type="date" style={inputStyle} value={nouvelleAnnee.date_fin} onChange={(e) => setNouvelleAnnee((v) => ({ ...v, date_fin: e.target.value }))} /></Field>
+                  <Button small icon={P.plus} onClick={ajouterAnneeScolaire}>Créer</Button>
+                </div>
+              </Card>
+            )}
+
             <Card title="Écoles enregistrées">
               {ecoles.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucune école enregistrée pour l'instant.</div>}
               {ecoles.map((e, i) => (
@@ -2355,6 +2406,22 @@ function App({ session, onLogout }) {
                     )}
                     <Button small variant="ghost" onClick={() => genererCleAgent(e.id)}>{e.cle_agent ? "Régénérer" : "Générer une clé agent"}</Button>
                   </div>
+                  {role === "super_admin" && (
+                    <div style={{ padding: "0 18px 14px 18px", display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap", fontSize: 11.5 }}>
+                      <Field label="Année scolaire assignée">
+                        <select style={inputStyle} value={e.annee_scolaire_id || ""} onChange={(ev) => assignerAnneeScolaire(e.id, { annee_scolaire_id: ev.target.value })}>
+                          <option value="">— Aucune —</option>
+                          {anneesScolaires.map((a) => <option key={a.id} value={a.id}>{a.libelle}</option>)}
+                        </select>
+                      </Field>
+                      <Field label="Date de fin d'utilisation">
+                        <input type="date" style={{ ...inputStyle, borderColor: e.date_fin_utilisation && e.date_fin_utilisation < new Date().toISOString().slice(0,10) ? COLORS.alert : COLORS.line }} defaultValue={e.date_fin_utilisation ? e.date_fin_utilisation.slice(0,10) : ""} onBlur={(ev) => ev.target.value && assignerAnneeScolaire(e.id, { date_fin_utilisation: ev.target.value })} />
+                      </Field>
+                      {e.date_fin_utilisation && e.date_fin_utilisation.slice(0,10) < new Date().toISOString().slice(0,10) && (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.alert, background: COLORS.alertBg, borderRadius: 6, padding: "6px 10px" }}>⚠ Accès expiré — connexion bloquée pour cet établissement</span>
+                      )}
+                    </div>
+                  )}
                   <div style={{ padding: "0 18px 14px 18px", display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap", fontSize: 11.5 }}>
                     <Field label="Début matin"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_debut_matin ?? (e.heure_debut_matin || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_debut_matin: ev.target.value } }))} /></Field>
                     <Field label="Fin matin"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_fin_matin ?? (e.heure_fin_matin || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_fin_matin: ev.target.value } }))} /></Field>

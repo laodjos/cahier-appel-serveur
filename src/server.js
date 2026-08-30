@@ -20,6 +20,7 @@ const matieresRoutes = require("./routes/matieres");
 const sallesRoutes = require("./routes/salles");
 const volumesHorairesRoutes = require("./routes/volumesHoraires");
 const disponibilitesRoutes = require("./routes/disponibilites");
+const anneesScolairesRoutes = require("./routes/anneesScolaires");
 
 const { demarrerPollingLecteurs, demarrerEnvoiNotifications } = require("./jobs/scheduler");
 
@@ -64,6 +65,7 @@ app.use("/api/matieres", matieresRoutes);
 app.use("/api/salles", sallesRoutes);
 app.use("/api/volumes-horaires", volumesHorairesRoutes);
 app.use("/api/disponibilites", disponibilitesRoutes);
+app.use("/api/annees-scolaires", anneesScolairesRoutes);
 
 // Gestion d'erreurs centralisée
 app.use((err, req, res, next) => {

@@ -343,3 +343,20 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS ecole_id UUID REFERENCES ecoles(id)
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check
   CHECK (role IN ('super_admin', 'direction', 'enseignant', 'surveillant'));
+
+-- --------------------------------------------------------------------------
+-- Années scolaires — liste gérée par le Super-administrateur (ex. "2025-2026",
+-- du 01/09/2025 au 31/07/2026). Chaque école est rattachée à UNE année scolaire
+-- courante, avec sa propre date de fin d'utilisation (accès à l'application) —
+-- au-delà de cette date, l'établissement ne peut plus se connecter tant qu'une
+-- nouvelle année scolaire ne lui a pas été (re)assignée par le Super-administrateur.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS annees_scolaires (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  libelle TEXT NOT NULL UNIQUE,
+  date_debut DATE,
+  date_fin DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS annee_scolaire_id UUID REFERENCES annees_scolaires(id);
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS date_fin_utilisation DATE;

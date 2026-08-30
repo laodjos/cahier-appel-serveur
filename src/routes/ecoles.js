@@ -70,6 +70,22 @@ router.delete("/:id", requireRole("super_admin"), async (req, res) => {
   res.status(204).send();
 });
 
+// PATCH /api/ecoles/:id/annee-scolaire  { annee_scolaire_id, date_fin_utilisation }
+// Réservé au Super-administrateur — assigne l'année scolaire en cours d'un
+// établissement et sa date de fin d'utilisation (accès à l'application).
+router.patch("/:id/annee-scolaire", requireRole("super_admin"), async (req, res) => {
+  const { annee_scolaire_id, date_fin_utilisation } = req.body;
+  const { rows } = await pool.query(
+    `UPDATE ecoles SET
+       annee_scolaire_id = COALESCE($1, annee_scolaire_id),
+       date_fin_utilisation = CASE WHEN $2::text IS NOT NULL THEN NULLIF($2, '')::date ELSE date_fin_utilisation END
+     WHERE id = $3 RETURNING *`,
+    [annee_scolaire_id || null, date_fin_utilisation !== undefined ? date_fin_utilisation : null, req.params.id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "École introuvable." });
+  res.json(rows[0]);
+});
+
 // POST /api/ecoles/:id/generer-cle-agent — génère (ou régénère) la clé secrète de l'agent local
 router.post("/:id/generer-cle-agent", requireRole("direction", "super_admin"), async (req, res) => {
   const crypto = require("crypto");

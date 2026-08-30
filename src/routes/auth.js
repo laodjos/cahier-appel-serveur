@@ -19,6 +19,23 @@ router.post("/login", async (req, res) => {
   const ok = await bcrypt.compare(mot_de_passe, user.mot_de_passe_hash);
   if (!ok) return res.status(401).json({ error: "Identifiants invalides." });
 
+  // Un compte rattaché à une école (donc pas le Super-administrateur) ne peut plus
+  // se connecter une fois la date de fin d'utilisation de son établissement dépassée
+  // — le Super-administrateur doit d'abord lui (re)assigner une nouvelle année scolaire.
+  if (user.role !== "super_admin" && user.ecole_id) {
+    const { rows: ecoleRows } = await pool.query(
+      "SELECT date_fin_utilisation FROM ecoles WHERE id = $1", [user.ecole_id]
+    );
+    const dateFin = ecoleRows[0]?.date_fin_utilisation;
+    const aujourdHui = new Date().toISOString().slice(0, 10);
+    const dateFinStr = dateFin ? new Date(dateFin).toISOString().slice(0, 10) : null;
+    if (dateFinStr && dateFinStr < aujourdHui) {
+      return res.status(403).json({
+        error: `Accès suspendu : l'année scolaire de votre établissement s'est terminée le ${new Date(dateFin).toLocaleDateString("fr-FR")}. Contactez l'administrateur du système pour renouveler l'accès.`,
+      });
+    }
+  }
+
   const token = jwt.sign(
     { sub: user.id, role: user.role, nom: user.nom, ecole_id: user.ecole_id },
     process.env.JWT_SECRET,
