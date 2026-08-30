@@ -29,7 +29,7 @@ router.get("/", async (req, res) => {
   const params = [];
   const filtreEcole = clauseEcole(req, params, "u.ecole_id");
   const { rows } = await pool.query(
-    `SELECT u.id, u.nom, u.email, u.role, u.matieres, u.statut_emploi, u.ecole_id, u.created_at, ec.nom AS ecole_nom,
+    `SELECT u.id, u.nom, u.email, u.role, u.matieres, u.statut_emploi, u.taux_horaire, u.ecole_id, u.created_at, ec.nom AS ecole_nom,
             COALESCE(
               json_agg(
                 json_build_object('id', c.id, 'nom', c.nom, 'niveau', c.niveau)

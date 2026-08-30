@@ -865,14 +865,14 @@ function App({ session, onLogout }) {
   async function changeUserRole(id, role) {
     try {
       const updated = await api(`/users/${id}/role`, { method: "PATCH", body: { role } });
-      setUsers((u) => u.map((x) => x.id === id ? updated : x));
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
     } catch (e) { catchErr(e); }
   }
 
   async function changeStatutEmploi(id, statut_emploi) {
     try {
       const updated = await api(`/users/${id}/statut-emploi`, { method: "PATCH", body: { statut_emploi } });
-      setUsers((u) => u.map((x) => x.id === id ? updated : x));
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
     } catch (e) { catchErr(e); }
   }
 
@@ -881,7 +881,7 @@ function App({ session, onLogout }) {
     if (isNaN(nombre)) return;
     try {
       const updated = await api(`/users/${id}/taux-horaire`, { method: "PATCH", body: { taux_horaire: nombre } });
-      setUsers((u) => u.map((x) => x.id === id ? updated : x));
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
     } catch (e) { catchErr(e); }
   }
 
@@ -889,14 +889,14 @@ function App({ session, onLogout }) {
     if (!nom.trim()) return;
     try {
       const updated = await api(`/users/${id}/nom`, { method: "PATCH", body: { nom } });
-      setUsers((u) => u.map((x) => x.id === id ? updated : x));
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
     } catch (e) { catchErr(e); }
   }
 
   async function changeUserMatieres(id, matieres) {
     try {
       const updated = await api(`/users/${id}/matieres`, { method: "PATCH", body: { matieres: matieres === "—" ? "" : matieres } });
-      setUsers((u) => u.map((x) => x.id === id ? updated : x));
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
     } catch (e) { catchErr(e); }
   }
 
@@ -1112,7 +1112,7 @@ function App({ session, onLogout }) {
   async function saveMatieres(userId) {
     try {
       const updated = await api(`/users/${userId}/matieres`, { method: "PATCH", body: { matieres: matieresInput } });
-      setUsers((u) => u.map((x) => x.id === userId ? updated : x));
+      setUsers((u) => u.map((x) => x.id === userId ? { ...x, ...updated } : x));
       setEditingMatieresUserId(null);
     } catch (e) { catchErr(e); }
   }
