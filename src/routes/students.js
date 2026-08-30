@@ -50,6 +50,44 @@ router.get("/", async (req, res) => {
   res.json(rows);
 });
 
+// GET /api/students/export — Excel de la liste complète des élèves (avec parent rattaché)
+// Placée ICI, avant toute route "/:id..." — sinon Express confondrait "export" avec un identifiant.
+router.get("/export", async (req, res) => {
+  const params = [];
+  let filtreEcole = "TRUE";
+  const ecoleId = ecoleEffective(req);
+  if (ecoleId) { params.push(ecoleId); filtreEcole = "c.ecole_id = $1"; }
+  const { rows } = await pool.query(
+    `SELECT s.matricule, s.nom, c.nom AS classe, c.niveau, s.date_naissance, s.lieu_naissance,
+            p.nom AS parent_nom, p.telephone AS parent_telephone
+     FROM students s
+     LEFT JOIN classes c ON c.id = s.classe_id
+     LEFT JOIN LATERAL (
+       SELECT pa.nom, pa.telephone FROM student_parents sp
+       JOIN parents pa ON pa.id = sp.parent_id
+       WHERE sp.student_id = s.id ORDER BY sp.parent_id LIMIT 1
+     ) p ON TRUE
+     WHERE ${filtreEcole}
+     ORDER BY c.niveau NULLS LAST, c.nom NULLS LAST, s.nom`,
+    params
+  );
+
+  const feuille = XLSX.utils.json_to_sheet(
+    rows.map((r) => ({
+      matricule: r.matricule, nom: r.nom, classe: r.classe || "", niveau: r.niveau || "",
+      date_naissance: r.date_naissance ? r.date_naissance.toISOString().slice(0, 10) : "",
+      lieu_naissance: r.lieu_naissance || "", parent_nom: r.parent_nom || "", parent_telephone: r.parent_telephone || "",
+    }))
+  );
+  const classeur = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(classeur, feuille, "Élèves");
+  const buffer = XLSX.write(classeur, { type: "buffer", bookType: "xlsx" });
+
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", "attachment; filename=eleves.xlsx");
+  res.send(buffer);
+});
+
 // POST /api/students  { matricule, nom, classe_id, methode_biometrique }
 router.post("/", requireRole("direction", "surveillant"), async (req, res) => {
   const { matricule, nom, classe_id, methode_biometrique, parent_nom, parent_telephone, date_naissance, lieu_naissance } = req.body;
@@ -218,12 +256,16 @@ router.post("/:id/photo", requireRole("direction", "surveillant", "super_admin")
 
 // GET /api/students/:id/attendance — historique de présence récent (dossier élève)
 router.get("/:id/attendance", async (req, res) => {
+  const { debut, fin } = req.query;
+  const params = [req.params.id];
+  let filtreDate = "";
+  if (debut && fin) { params.push(debut, fin); filtreDate = `AND ae.horodatage::date BETWEEN $2 AND $3`; }
   const { rows } = await pool.query(
     `SELECT ae.*, cr.matiere, cr.jour_semaine FROM attendance_events ae
      LEFT JOIN creneaux cr ON cr.id = ae.creneau_id
-     WHERE ae.student_id = $1
-     ORDER BY ae.horodatage DESC LIMIT 30`,
-    [req.params.id]
+     WHERE ae.student_id = $1 ${filtreDate}
+     ORDER BY ae.horodatage DESC ${debut && fin ? "" : "LIMIT 30"}`,
+    params
   );
   res.json(rows);
 });

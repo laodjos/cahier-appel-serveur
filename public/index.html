@@ -401,6 +401,9 @@ function App({ session, onLogout }) {
   const [nouvelleDispo, setNouvelleDispo] = useState({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "12:00" });
   const [anneesScolaires, setAnneesScolaires] = useState([]);
   const [nouvelleAnnee, setNouvelleAnnee] = useState({ libelle: "", date_debut: "", date_fin: "" });
+  const [rapportDate, setRapportDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [rapportEleveId, setRapportEleveId] = useState("");
+  const [rapportUserId, setRapportUserId] = useState("");
 
   // Paramétrage des lecteurs biométriques
   const [showAddDevice, setShowAddDevice] = useState(false);
@@ -573,6 +576,125 @@ function App({ session, onLogout }) {
       document.body.removeChild(lien);
       URL.revokeObjectURL(url);
     } catch (e) { catchErr(e); }
+  }
+
+  async function exporterElevesExcel() {
+    try {
+      const res = await fetch(`${session.baseUrl}/students/export`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!res.ok) throw new Error("Échec de l'export.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const lien = document.createElement("a");
+      lien.href = url;
+      lien.download = "eleves.xlsx";
+      document.body.appendChild(lien);
+      lien.click();
+      document.body.removeChild(lien);
+      URL.revokeObjectURL(url);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function exporterRegistreJourPdf(date) {
+    try {
+      const res = await api(`/attendance/registre-jour?date=${date}`);
+      const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
+      const parClasse = {};
+      for (const e of res.eleves) {
+        const cle = `${e.niveau || ""} · ${e.classe_nom}`;
+        if (!parClasse[cle]) parClasse[cle] = [];
+        parClasse[cle].push(e);
+      }
+      const LIBELLES = { present: "Présent", retard: "En retard", absent: "Absent", attente: "Non pointé" };
+      const lignes = Object.entries(parClasse).map(([classe, eleves]) => `
+        <h3>${classe}</h3>
+        <table>
+          <thead><tr><th>Élève</th><th>Statut</th></tr></thead>
+          <tbody>${eleves.map((e) => `<tr><td>${e.nom}</td><td style="color:${e.statut === "absent" ? "#b33" : e.statut === "attente" ? "#999" : "#2a2"};">${LIBELLES[e.statut] || e.statut}</td></tr>`).join("")}</tbody>
+        </table>
+      `).join("");
+
+      const fenetre = window.open("", "_blank", "width=800,height=900");
+      fenetre.document.write(`
+        <html><head><title>Registre d'appel — ${date}</title>
+        <style>
+          @page { size: A4 portrait; margin: 14mm; }
+          body { font-family: Arial, sans-serif; color: #222; }
+          h1 { font-size: 18px; margin-bottom: 2px; }
+          h3 { font-size: 13px; text-transform: uppercase; background: #f0ece0; padding: 5px 8px; border-radius: 4px; margin-top: 20px; margin-bottom: 4px; break-inside: avoid; }
+          .sous-titre { font-size: 12px; color: #666; margin-bottom: 18px; }
+          table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+          td, th { padding: 5px 8px; border-bottom: 1px solid #eee; text-align: left; }
+        </style></head>
+        <body onload="window.print()">
+          <h1>Registre d'appel journalier</h1>
+          <div class="sous-titre">${ecoleNom} · ${new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div>
+          ${lignes || "<p>Aucun élève enregistré.</p>"}
+        </body></html>
+      `);
+      fenetre.document.close();
+    } catch (e) { catchErr(e); }
+  }
+
+  async function exporterBulletinPresence(studentId, nomEleve, debut, fin) {
+    try {
+      const historique = await api(`/students/${studentId}/attendance?debut=${debut}&fin=${fin}`);
+      const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
+      const LIBELLES = { present: "Présent", retard: "En retard", absent: "Absent" };
+      const lignes = historique.map((h) => `
+        <tr><td>${new Date(h.horodatage).toLocaleDateString("fr-FR")}</td><td>${h.matiere || "—"}</td><td>${LIBELLES[h.statut] || h.statut}</td></tr>
+      `).join("");
+      const totaux = historique.reduce((acc, h) => { acc[h.statut] = (acc[h.statut] || 0) + 1; return acc; }, {});
+
+      const fenetre = window.open("", "_blank", "width=700,height=850");
+      fenetre.document.write(`
+        <html><head><title>Bulletin de présence — ${nomEleve}</title>
+        <style>
+          @page { size: A4 portrait; margin: 16mm; }
+          body { font-family: Arial, sans-serif; color: #222; font-size: 13px; }
+          h1 { font-size: 18px; margin-bottom: 2px; }
+          .sous-titre { font-size: 12px; color: #666; margin-bottom: 18px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          td, th { padding: 7px 8px; border-bottom: 1px solid #ddd; text-align: left; }
+          .totaux { display: flex; gap: 20px; margin: 16px 0; font-size: 13px; }
+        </style></head>
+        <body onload="window.print()">
+          <h1>Bulletin de présence</h1>
+          <div class="sous-titre">${ecoleNom} · ${nomEleve} · Période du ${debut} au ${fin}</div>
+          <div class="totaux">
+            <span>✔ Présences : ${totaux.present || 0}</span>
+            <span>⏱ Retards : ${totaux.retard || 0}</span>
+            <span style="color:#b33">✘ Absences : ${totaux.absent || 0}</span>
+          </div>
+          <table><thead><tr><th>Date</th><th>Matière</th><th>Statut</th></tr></thead><tbody>${lignes || '<tr><td colspan="3">Aucun pointage sur cette période.</td></tr>'}</tbody></table>
+        </body></html>
+      `);
+      fenetre.document.close();
+    } catch (e) { catchErr(e); }
+  }
+
+  function exporterAbsenteismePdf() {
+    const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
+    const lignes = absenteisme.map((s) => `<tr><td>${s.nom}</td><td>${s.classe_nom}</td><td style="text-align:right; color:#b33;">${s.absences_mois}</td></tr>`).join("");
+    const fenetre = window.open("", "_blank", "width=700,height=850");
+    fenetre.document.write(`
+      <html><head><title>Rapport d'absentéisme</title>
+      <style>
+        @page { size: A4 portrait; margin: 16mm; }
+        body { font-family: Arial, sans-serif; color: #222; font-size: 13px; }
+        h1 { font-size: 18px; margin-bottom: 2px; }
+        .sous-titre { font-size: 12px; color: #666; margin-bottom: 18px; }
+        table { width: 100%; border-collapse: collapse; }
+        td, th { padding: 7px 8px; border-bottom: 1px solid #ddd; text-align: left; }
+      </style></head>
+      <body onload="window.print()">
+        <h1>Rapport d'absentéisme</h1>
+        <div class="sous-titre">${ecoleNom} · Élèves à 3 absences ou plus ce mois-ci</div>
+        <table><thead><tr><th>Élève</th><th>Classe</th><th>Absences ce mois</th></tr></thead><tbody>${lignes || '<tr><td colspan="3">Aucun élève au-dessus du seuil.</td></tr>'}</tbody></table>
+      </body></html>
+    `);
+    fenetre.document.close();
   }
 
   async function handleAddEleve() {
@@ -2124,24 +2246,108 @@ function App({ session, onLogout }) {
         {view === "rapports" && (
           <div>
             <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Rapports et documents</h1>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14 }}>
-              {[
-                { title: "Registre d'appel journalier", desc: "PDF officiel du jour, valeur légale, à archiver." },
-                { title: "Bulletin de présence mensuel", desc: "Par élève, imprimable, pour les parents." },
-                { title: "Export académique (Excel)", desc: "Données consolidées pour l'administration." },
-                { title: "Rapport d'absentéisme", desc: "Élèves à risque, tendances par classe." },
-              ].map((r) => (
-                <Card key={r.title}>
-                  <div style={{ padding: 18 }}>
-                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{r.title}</div>
-                    <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>{r.desc}</div>
-                    <Button small variant="ghost" disabled>Génération PDF — à venir</Button>
+            <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Tous les exports du système, réunis au même endroit.</div>
+
+            {/* ---- ÉLÈVES ---- */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.marker, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10, marginTop: 4 }}>Élèves</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14, marginBottom: 24 }}>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Export académique (Excel)</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>Liste complète des élèves, classes, dates de naissance et contacts parents.</div>
+                  <Button small variant="ghost" onClick={exporterElevesExcel}>Télécharger le fichier Excel</Button>
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Registre d'appel journalier</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>PDF de toutes les classes pour un jour donné, à archiver.</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="date" style={{ ...inputStyle, fontSize: 12, padding: "6px 8px" }} value={rapportDate} onChange={(e) => setRapportDate(e.target.value)} />
+                    <Button small variant="ghost" onClick={() => exporterRegistreJourPdf(rapportDate)}>Générer le PDF</Button>
                   </div>
-                </Card>
-              ))}
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Bulletin de présence mensuel</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Historique d'un élève sur une période, imprimable pour les parents.</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <select style={{ ...inputStyle, fontSize: 12, padding: "6px 8px", flex: 1, minWidth: 140 }} value={rapportEleveId} onChange={(e) => setRapportEleveId(e.target.value)}>
+                      <option value="">— Choisir un élève —</option>
+                      {students.map((s) => <option key={s.id} value={s.id}>{s.nom} ({s.classe_nom})</option>)}
+                    </select>
+                    <input type="date" style={{ ...inputStyle, fontSize: 12, padding: "6px 8px" }} value={suiviEnseignantsDebut} onChange={(e) => setSuiviEnseignantsDebut(e.target.value)} />
+                    <input type="date" style={{ ...inputStyle, fontSize: 12, padding: "6px 8px" }} value={suiviEnseignantsFin} onChange={(e) => setSuiviEnseignantsFin(e.target.value)} />
+                    <Button small variant="ghost" onClick={() => { const el = students.find((s) => s.id === rapportEleveId); if (el) exporterBulletinPresence(el.id, el.nom, suiviEnseignantsDebut, suiviEnseignantsFin); }}>Générer le PDF</Button>
+                  </div>
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Rapport d'absentéisme</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>Élèves à 3 absences ou plus ce mois-ci (même liste que la page "Absentéisme").</div>
+                  <Button small variant="ghost" onClick={exporterAbsenteismePdf}>Générer le PDF</Button>
+                </div>
+              </Card>
             </div>
-            <div style={{ marginTop: 14, fontSize: 11.5, color: COLORS.craieDim }}>
-              La génération de documents PDF/Excel n'est pas encore connectée au serveur — ces cartes montrent l'emplacement prévu pour cette fonctionnalité.
+
+            {/* ---- EMPLOI DU TEMPS ---- */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.marker, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Emploi du temps</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14, marginBottom: 24 }}>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Emploi du temps d'une classe</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>PDF complet de la semaine, organisé par jour.</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <SelectClasseParNiveau classes={classes} value={selectedClasseId} onChange={(e) => setSelectedClasseId(e.target.value)} style={{ ...inputStyle, fontSize: 12, padding: "6px 8px", flex: 1 }} />
+                    <Button small variant="ghost" onClick={exporterEmploiPdf}>Générer le PDF</Button>
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* ---- ENSEIGNANTS & PAIE ---- */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.marker, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Enseignants & paie</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14, marginBottom: 24 }}>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Export enseignants (Excel)</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>Liste complète, matières, statut, classes rattachées.</div>
+                  <Button small variant="ghost" onClick={exporterEnseignants}>Télécharger le fichier Excel</Button>
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Paie collective (PDF)</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Tous les enseignants, sur la période choisie ci-dessous.</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="date" style={{ ...inputStyle, fontSize: 12, padding: "6px 8px" }} value={suiviEnseignantsDebut} onChange={(e) => setSuiviEnseignantsDebut(e.target.value)} />
+                    <input type="date" style={{ ...inputStyle, fontSize: 12, padding: "6px 8px" }} value={suiviEnseignantsFin} onChange={(e) => setSuiviEnseignantsFin(e.target.value)} />
+                    <Button small variant="ghost" onClick={async () => { await chargerPayeEnseignants(); exporterPayePdf(); }}>Générer le PDF</Button>
+                  </div>
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Bulletin de salaire individuel</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Enseignant ou membre de l'administration, sur la période ci-dessus.</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <select style={{ ...inputStyle, fontSize: 12, padding: "6px 8px", flex: 1 }} value={rapportUserId} onChange={(e) => setRapportUserId(e.target.value)}>
+                      <option value="">— Choisir une personne —</option>
+                      {users.map((u) => <option key={u.id} value={u.id}>{u.nom}</option>)}
+                    </select>
+                    <Button small variant="ghost" onClick={() => { const u = users.find((x) => x.id === rapportUserId); if (u) imprimerBulletinSalaire(u.id, u.nom); }}>Générer le PDF</Button>
+                  </div>
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Suivi des heures manquées</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>Voir le détail complet dans la page "Absentéisme" — export PDF disponible là-bas.</div>
+                  <Button small variant="ghost" onClick={() => setView("absenteisme")}>Ouvrir "Absentéisme"</Button>
+                </div>
+              </Card>
             </div>
           </div>
         )}

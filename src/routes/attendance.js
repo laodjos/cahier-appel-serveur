@@ -87,6 +87,32 @@ router.get("/registre", async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
+// GET /api/attendance/registre-jour?date=YYYY-MM-DD
+// Registre complet de TOUTES les classes de l'école pour un jour donné —
+// utilisé pour le rapport "Registre d'appel journalier" (export PDF).
+// --------------------------------------------------------------------------
+router.get("/registre-jour", async (req, res) => {
+  const jour = req.query.date || new Date().toISOString().slice(0, 10);
+  const params = [jour];
+  let filtreEcole = "TRUE";
+  const ecoleId = ecoleEffective(req);
+  if (ecoleId) { params.push(ecoleId); filtreEcole = `c.ecole_id = $${params.length}`; }
+
+  const { rows } = await pool.query(
+    `SELECT s.nom, c.nom AS classe_nom, c.niveau,
+            (SELECT statut FROM attendance_events ae
+             WHERE ae.student_id = s.id AND ae.horodatage::date = $1
+             ORDER BY ae.horodatage DESC LIMIT 1) AS statut
+     FROM students s
+     JOIN classes c ON c.id = s.classe_id
+     WHERE ${filtreEcole}
+     ORDER BY c.niveau NULLS LAST, c.nom, s.nom`,
+    params
+  );
+  res.json({ date: jour, eleves: rows.map((r) => ({ ...r, statut: r.statut || "attente" })) });
+});
+
+// --------------------------------------------------------------------------
 // GET /api/attendance/stats/today  -> compteurs pour le tableau de bord (école de l'utilisateur)
 // --------------------------------------------------------------------------
 router.get("/stats/today", async (req, res) => {
