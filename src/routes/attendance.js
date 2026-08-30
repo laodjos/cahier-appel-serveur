@@ -324,13 +324,13 @@ router.get("/paye-enseignants", async (req, res) => {
   );
   const feriesSet = new Set(joursFeries.map((j) => j.date.toISOString().slice(0, 10)));
 
-  // Taux horaire et statut de chaque enseignant (recherche par nom, comme le reste
-  // du système de créneaux qui stocke le nom de l'enseignant en texte libre).
+  // Taux horaire, statut et salaire de chaque enseignant (recherche par nom, comme
+  // le reste du système de créneaux qui stocke le nom de l'enseignant en texte libre).
   const paramsProfs = [];
   let filtreEcoleProfs = "TRUE";
   if (ecoleId) { paramsProfs.push(ecoleId); filtreEcoleProfs = `ecole_id = $${paramsProfs.length}`; }
   const { rows: profs } = await pool.query(
-    `SELECT nom, taux_horaire, statut_emploi FROM users WHERE role = 'enseignant' AND ${filtreEcoleProfs}`,
+    `SELECT nom, taux_horaire, statut_emploi, salaire_base, heures_mensuelles_reference, parts_fiscales FROM users WHERE role = 'enseignant' AND ${filtreEcoleProfs}`,
     paramsProfs
   );
   const infoProfParNom = new Map(profs.map((p) => [p.nom, p]));
@@ -359,6 +359,9 @@ router.get("/paye-enseignants", async (req, res) => {
           enseignant: cr.enseignant,
           statut_emploi: info.statut_emploi || null,
           taux_horaire: info.taux_horaire != null ? Number(info.taux_horaire) : null,
+          salaire_base: info.salaire_base != null ? Number(info.salaire_base) : null,
+          heures_mensuelles_reference: info.heures_mensuelles_reference != null ? Number(info.heures_mensuelles_reference) : null,
+          parts_fiscales: info.parts_fiscales != null ? Number(info.parts_fiscales) : 1,
           minutes_travaillees: 0,
           minutes_manquees: 0,
         };
@@ -381,10 +384,70 @@ router.get("/paye-enseignants", async (req, res) => {
     curseur.setDate(curseur.getDate() + 1);
   }
 
+  // --------------------------------------------------------------------------
+  // Barème ITS (Impôt sur les Traitements et Salaires) — impôt unique, en vigueur
+  // depuis la réforme du 1er janvier 2024 (ordonnance n°2023-718/719), calculé
+  // directement sur le salaire brut, sans abattement. CNPS retraite salariale à
+  // 6,3%, plafonnée à 3 375 000 F/mois. RICF (réduction pour charges de famille)
+  // forfaitaire selon le nombre de parts fiscales déclaré.
+  // ⚠ Ces taux peuvent évoluer par loi de finances — à faire vérifier
+  // périodiquement par un comptable ou expert-comptable.
+  // --------------------------------------------------------------------------
+  const TRANCHES_ITS = [
+    { max: 75000, taux: 0 },
+    { max: 240000, taux: 0.16 },
+    { max: 800000, taux: 0.21 },
+    { max: 2400000, taux: 0.24 },
+    { max: 8000000, taux: 0.28 },
+    { max: Infinity, taux: 0.32 },
+  ];
+  const RICF_PAR_PARTS = { 1: 0, 1.5: 5500, 2: 11000, 3: 22000, 4: 33000, 5: 44000 };
+  const PLAFOND_CNPS = 3375000;
+  const TAUX_CNPS_SALARIE = 0.063;
+
+  function calculerITS(brut) {
+    let its = 0;
+    let precedent = 0;
+    for (const tranche of TRANCHES_ITS) {
+      if (brut <= precedent) break;
+      its += (Math.min(brut, tranche.max) - precedent) * tranche.taux;
+      precedent = tranche.max;
+    }
+    return Math.round(its);
+  }
+
   const resultat = Object.values(parEnseignant)
     .map((e) => {
       const heures_travaillees = Math.round((e.minutes_travaillees / 60) * 100) / 100;
       const heures_manquees = Math.round((e.minutes_manquees / 60) * 100) / 100;
+
+      // Un enseignant PERMANENT avec un salaire de base renseigné : calcul complet
+      // (salaire réel - déduction des heures manquées, puis CNPS + ITS).
+      if (e.statut_emploi === "permanent" && e.salaire_base != null && e.heures_mensuelles_reference) {
+        const valeurHeure = e.salaire_base / e.heures_mensuelles_reference;
+        const deduction_absences = Math.round(heures_manquees * valeurHeure);
+        const salaire_brut_ajuste = Math.max(0, e.salaire_base - deduction_absences);
+        const cnps = Math.round(Math.min(salaire_brut_ajuste, PLAFOND_CNPS) * TAUX_CNPS_SALARIE);
+        const its_brut = calculerITS(salaire_brut_ajuste);
+        const ricf = RICF_PAR_PARTS[e.parts_fiscales] || 0;
+        const its_net = Math.max(0, its_brut - ricf);
+        const montant_a_payer = salaire_brut_ajuste - cnps - its_net;
+        return {
+          enseignant: e.enseignant,
+          statut_emploi: e.statut_emploi,
+          heures_travaillees,
+          heures_manquees,
+          mode_calcul: "salaire_reel",
+          salaire_base: e.salaire_base,
+          deduction_absences,
+          salaire_brut_ajuste,
+          cnps,
+          its_net,
+          montant_a_payer,
+        };
+      }
+
+      // Sinon (vacataire, ou permanent sans salaire renseigné) : calcul simple heures × taux horaire.
       const montant_a_payer = e.taux_horaire != null ? Math.round(heures_travaillees * e.taux_horaire) : null;
       return {
         enseignant: e.enseignant,
@@ -392,6 +455,7 @@ router.get("/paye-enseignants", async (req, res) => {
         taux_horaire: e.taux_horaire,
         heures_travaillees,
         heures_manquees,
+        mode_calcul: "taux_horaire",
         montant_a_payer,
       };
     })

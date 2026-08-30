@@ -29,7 +29,7 @@ router.get("/", async (req, res) => {
   const params = [];
   const filtreEcole = clauseEcole(req, params, "u.ecole_id");
   const { rows } = await pool.query(
-    `SELECT u.id, u.nom, u.email, u.role, u.matieres, u.statut_emploi, u.taux_horaire, u.ecole_id, u.created_at, ec.nom AS ecole_nom,
+    `SELECT u.id, u.nom, u.email, u.role, u.matieres, u.statut_emploi, u.taux_horaire, u.salaire_base, u.heures_mensuelles_reference, u.parts_fiscales, u.ecole_id, u.created_at, ec.nom AS ecole_nom,
             COALESCE(
               json_agg(
                 json_build_object('id', c.id, 'nom', c.nom, 'niveau', c.niveau)
@@ -124,6 +124,34 @@ router.patch("/:id/taux-horaire", requireRole("direction", "super_admin"), async
   const filtreEcole = clauseEcole(req, params, "ecole_id");
   const { rows } = await pool.query(
     `UPDATE users SET taux_horaire = $1 WHERE id = $2 AND ${filtreEcole} RETURNING id, nom, email, role, matieres, statut_emploi, taux_horaire, ecole_id, created_at`,
+    params
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Compte introuvable (ou hors de ton école)." });
+  res.json(rows[0]);
+});
+
+// PATCH /api/users/:id/salaire  { salaire_base, heures_mensuelles_reference, parts_fiscales }
+// Pour le calcul complet de la paie (CNPS + ITS) d'un enseignant permanent.
+router.patch("/:id/salaire", requireRole("direction", "super_admin"), async (req, res) => {
+  const { salaire_base, heures_mensuelles_reference, parts_fiscales } = req.body;
+  const PARTS_VALIDES = [1, 1.5, 2, 3, 4, 5];
+  if (parts_fiscales !== undefined && parts_fiscales !== null && !PARTS_VALIDES.includes(Number(parts_fiscales))) {
+    return res.status(400).json({ error: "Parts fiscales invalides (1, 1.5, 2, 3, 4 ou 5)." });
+  }
+  const params = [
+    salaire_base === "" || salaire_base === undefined ? null : salaire_base,
+    heures_mensuelles_reference === "" || heures_mensuelles_reference === undefined ? null : heures_mensuelles_reference,
+    parts_fiscales === "" || parts_fiscales === undefined ? null : parts_fiscales,
+    req.params.id,
+  ];
+  const filtreEcole = clauseEcole(req, params, "ecole_id");
+  const { rows } = await pool.query(
+    `UPDATE users SET
+       salaire_base = COALESCE($1, salaire_base),
+       heures_mensuelles_reference = COALESCE($2, heures_mensuelles_reference),
+       parts_fiscales = COALESCE($3, parts_fiscales)
+     WHERE id = $4 AND ${filtreEcole}
+     RETURNING id, nom, email, role, matieres, statut_emploi, taux_horaire, salaire_base, heures_mensuelles_reference, parts_fiscales, ecole_id, created_at`,
     params
   );
   if (!rows[0]) return res.status(404).json({ error: "Compte introuvable (ou hors de ton école)." });

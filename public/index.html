@@ -423,6 +423,7 @@ function App({ session, onLogout }) {
   const [nouvelleMatiereCategorie, setNouvelleMatiereCategorie] = useState("");
   const [nouvelleMatiereDureeDouble, setNouvelleMatiereDureeDouble] = useState(false);
   const [editionMatiere, setEditionMatiere] = useState(null);
+  const [gestionSalaireUser, setGestionSalaireUser] = useState(null);
   const [volumesHoraires, setVolumesHoraires] = useState([]);
   const [nouveauVolume, setNouveauVolume] = useState({ matiere_id: "", classe_id: "", niveau: "", cycle: "", heures_semaine: "" });
   const [sallesListe, setSallesListe] = useState([]);
@@ -882,6 +883,14 @@ function App({ session, onLogout }) {
     try {
       const updated = await api(`/users/${id}/taux-horaire`, { method: "PATCH", body: { taux_horaire: nombre } });
       setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function enregistrerSalaire(id, patch) {
+    try {
+      const updated = await api(`/users/${id}/salaire`, { method: "PATCH", body: patch });
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
+      setGestionSalaireUser(updated);
     } catch (e) { catchErr(e); }
   }
 
@@ -1789,23 +1798,34 @@ function App({ session, onLogout }) {
                 }
               >
                 <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
-                  Calculée sur les heures où l'appel a réellement été fait — les créneaux "sans appel" ci-dessus ne sont jamais payés. Renseigne le taux horaire de chaque enseignant dans la page "Enseignants" pour que le montant se calcule automatiquement.
+                  Calculée sur les heures où l'appel a réellement été fait — les créneaux "sans appel" ci-dessus ne sont jamais payés. Renseigne le taux horaire (vacataires) ou le salaire de base (permanents) dans la page "Enseignants". ⚠ Le calcul CNPS/ITS des permanents suit le barème 2024 en vigueur — fais-le vérifier périodiquement par un comptable, les taux pouvant changer par loi de finances.
                 </div>
                 {payeEnseignants.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Clique "Actualiser" pour charger la paie de la période choisie.</div>}
                 {payeEnseignants.map((e, i) => (
-                  <div key={e.enseignant} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: i < payeEnseignants.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>{e.enseignant}</div>
-                      <div style={{ fontSize: 11, color: COLORS.craieDim }}>
-                        {e.statut_emploi === "permanent" ? "Permanent" : e.statut_emploi === "vacataire" ? "Vacataire" : "Statut non renseigné"}
-                        {e.taux_horaire != null ? ` · ${e.taux_horaire} F/h` : " · Taux horaire non renseigné"}
+                  <div key={e.enseignant} style={{ padding: "11px 18px", borderBottom: i < payeEnseignants.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500 }}>{e.enseignant}</div>
+                        <div style={{ fontSize: 11, color: COLORS.craieDim }}>
+                          {e.statut_emploi === "permanent" ? "Permanent" : e.statut_emploi === "vacataire" ? "Vacataire" : "Statut non renseigné"}
+                          {e.mode_calcul === "taux_horaire" && (e.taux_horaire != null ? ` · ${e.taux_horaire} F/h` : " · Taux horaire non renseigné")}
+                          {e.mode_calcul === "salaire_reel" && ` · Salaire réel : ${Number(e.salaire_base).toLocaleString("fr-FR")} F/mois`}
+                        </div>
                       </div>
+                      <span style={{ fontSize: 12, color: COLORS.success }}>{e.heures_travaillees} h travaillées</span>
+                      {e.heures_manquees > 0 && <span style={{ fontSize: 12, color: COLORS.alert }}>{e.heures_manquees} h manquées</span>}
+                      <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.marker, minWidth: 110, textAlign: "right" }}>
+                        {e.montant_a_payer != null ? `${e.montant_a_payer.toLocaleString("fr-FR")} F` : "Taux manquant"}
+                      </span>
                     </div>
-                    <span style={{ fontSize: 12, color: COLORS.success }}>{e.heures_travaillees} h travaillées</span>
-                    {e.heures_manquees > 0 && <span style={{ fontSize: 12, color: COLORS.alert }}>{e.heures_manquees} h manquées</span>}
-                    <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.marker, minWidth: 110, textAlign: "right" }}>
-                      {e.montant_a_payer != null ? `${e.montant_a_payer.toLocaleString("fr-FR")} F` : "Taux manquant"}
-                    </span>
+                    {e.mode_calcul === "salaire_reel" && (
+                      <div style={{ display: "flex", gap: 16, marginTop: 6, paddingLeft: 2, fontSize: 11, color: COLORS.craieDim }}>
+                        <span>Déduction absences : −{e.deduction_absences.toLocaleString("fr-FR")} F</span>
+                        <span>Brut ajusté : {e.salaire_brut_ajuste.toLocaleString("fr-FR")} F</span>
+                        <span>CNPS (6,3%) : −{e.cnps.toLocaleString("fr-FR")} F</span>
+                        <span>ITS : −{e.its_net.toLocaleString("fr-FR")} F</span>
+                      </div>
+                    )}
                   </div>
                 ))}
                 {payeEnseignants.length > 0 && (
@@ -2560,7 +2580,13 @@ function App({ session, onLogout }) {
                   >
                     {u.statut_emploi === "vacataire" ? "⚠ Renseigner" : "Toujours disponible"}
                   </button>
-                  <NomEditable valeur={u.taux_horaire != null ? `${u.taux_horaire} F` : "— définir"} onValider={(v) => changeTauxHoraire(u.id, v)} style={{ fontSize: 12, color: u.taux_horaire != null ? COLORS.craie : COLORS.craieDim }} />
+                  {u.statut_emploi === "permanent" ? (
+                    <button onClick={() => setGestionSalaireUser(u)} style={{ background: "transparent", border: "none", cursor: "pointer", color: u.salaire_base != null ? COLORS.craie : COLORS.craieDim, fontSize: 12, textAlign: "left", padding: 0 }}>
+                      {u.salaire_base != null ? `${Number(u.salaire_base).toLocaleString("fr-FR")} F/mois` : "— définir le salaire"}
+                    </button>
+                  ) : (
+                    <NomEditable valeur={u.taux_horaire != null ? `${u.taux_horaire} F` : "— définir"} onValider={(v) => changeTauxHoraire(u.id, v)} style={{ fontSize: 12, color: u.taux_horaire != null ? COLORS.craie : COLORS.craieDim }} />
+                  )}
                   <button onClick={() => removeUser(u.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
                 </div>
               ))}
@@ -2609,6 +2635,36 @@ function App({ session, onLogout }) {
                 <input type="checkbox" checked={!!editionMatiere.duree_double} onChange={(e) => enregistrerReglagesMatiere(editionMatiere.id, { duree_double: e.target.checked })} />
                 Toujours programmer sur 2h d'affilée (ex. EPS)
               </label>
+            </div>
+          </div>
+        )}
+
+        {gestionSalaireUser && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setGestionSalaireUser(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 380 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Salaire — {gestionSalaireUser.nom}</span>
+                <button onClick={() => setGestionSalaireUser(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+              </div>
+              <div style={{ fontSize: 11, color: COLORS.craieDim, marginBottom: 14 }}>
+                Sert à calculer sa paie complète (CNPS + ITS) sur "Absentéisme" — les heures manquées seront déduites de ce salaire avant le calcul des retenues.
+              </div>
+              <Field label="Salaire de base (F CFA / mois)">
+                <input type="number" style={inputStyle} defaultValue={gestionSalaireUser.salaire_base || ""} onBlur={(e) => e.target.value && enregistrerSalaire(gestionSalaireUser.id, { salaire_base: e.target.value })} placeholder="ex. 350000" />
+              </Field>
+              <Field label="Heures mensuelles de référence (pour valoriser une heure manquée)">
+                <input type="number" style={inputStyle} defaultValue={gestionSalaireUser.heures_mensuelles_reference || ""} onBlur={(e) => e.target.value && enregistrerSalaire(gestionSalaireUser.id, { heures_mensuelles_reference: e.target.value })} placeholder="ex. 80" />
+              </Field>
+              <Field label="Parts fiscales (charges de famille — pour la réduction RICF)">
+                <select style={inputStyle} value={gestionSalaireUser.parts_fiscales || 1} onChange={(e) => enregistrerSalaire(gestionSalaireUser.id, { parts_fiscales: e.target.value })}>
+                  <option value="1">1 part (célibataire, sans enfant)</option>
+                  <option value="1.5">1,5 part</option>
+                  <option value="2">2 parts</option>
+                  <option value="3">3 parts</option>
+                  <option value="4">4 parts</option>
+                  <option value="5">5 parts (maximum)</option>
+                </select>
+              </Field>
             </div>
           </div>
         )}

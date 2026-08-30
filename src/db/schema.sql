@@ -166,6 +166,11 @@ ALTER TABLE classes ADD COLUMN IF NOT EXISTS niveau TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS matieres TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS statut_emploi TEXT CHECK (statut_emploi IN ('permanent', 'vacataire') OR statut_emploi IS NULL);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS taux_horaire NUMERIC;
+-- Pour le calcul de la paie complète (CNPS + ITS) d'un enseignant PERMANENT —
+-- basée sur son vrai salaire de base, pas seulement un taux horaire simple.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS salaire_base NUMERIC;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS heures_mensuelles_reference NUMERIC;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS parts_fiscales NUMERIC DEFAULT 1;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS photo_url TEXT;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS date_naissance DATE;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS lieu_naissance TEXT;
