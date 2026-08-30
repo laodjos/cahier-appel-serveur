@@ -420,7 +420,7 @@ function App({ session, onLogout }) {
   const [ecoles, setEcoles] = useState([]);
   const [showAddEcole, setShowAddEcole] = useState(false);
   const [editingEcoleId, setEditingEcoleId] = useState(null);
-  const [newEcole, setNewEcole] = useState({ nom: "", adresse: "", ville: "", telephone: "", annee_scolaire: "", active: false });
+  const [newEcole, setNewEcole] = useState({ nom: "", adresse: "", ville: "", telephone: "", annee_scolaire: "", active: false, email: "", registre_commerce: "" });
   const [horairesEdits, setHorairesEdits] = useState({});
   const [matieresListe, setMatieresListe] = useState([]);
   const [nouvelleMatiere, setNouvelleMatiere] = useState("");
@@ -443,6 +443,7 @@ function App({ session, onLogout }) {
     api("/classes").then((rows) => { if (ecoleActiveIdRef.current === ecoleAuMoment) { setClasses(rows); if (rows[0]) setSelectedClasseId(rows[0].id); } }).catch(catchErr);
     api("/students").then((rows) => { if (ecoleActiveIdRef.current === ecoleAuMoment) setStudents(rows); }).catch(catchErr);
     api("/ecoles").then(setEcoles).catch(() => {});
+    api("/annees-scolaires").then(setAnneesScolaires).catch(() => {});
   }, [api]);
 
   // Créneaux de la classe sélectionnée
@@ -490,7 +491,6 @@ function App({ session, onLogout }) {
       if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
       if (availableViews.includes("emploi")) api("/salles").then(siEcoleInchangee(setSallesListe)).catch(catchErr);
       if (availableViews.includes("ecoles")) api("/ecoles").then(setEcoles).catch(catchErr);
-      if (availableViews.includes("ecoles") && role === "super_admin") api("/annees-scolaires").then(setAnneesScolaires).catch(catchErr);
     };
     load();
     const t = setInterval(load, 8000);
@@ -599,7 +599,12 @@ function App({ session, onLogout }) {
   async function exporterRegistreJourPdf(date) {
     try {
       const res = await api(`/attendance/registre-jour?date=${date}`);
-      const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
+      const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
       const parClasse = {};
       for (const e of res.eleves) {
         const cle = `${e.niveau || ""} · ${e.classe_nom}`;
@@ -628,9 +633,14 @@ function App({ session, onLogout }) {
           td, th { padding: 5px 8px; border-bottom: 1px solid #eee; text-align: left; }
         </style></head>
         <body onload="window.print()">
+          ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:50px;margin-bottom:8px;" />` : ""}
           <h1>Registre d'appel journalier</h1>
-          <div class="sous-titre">${ecoleNom} · ${new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div>
+          <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""} · ${new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div>
           ${lignes || "<p>Aucun élève enregistré.</p>"}
+        <div style="margin-top:24px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:10px;">
+            <div style="font-size:10px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:25mm;" />` : ""}
+          </div>
         </body></html>
       `);
       fenetre.document.close();
@@ -640,7 +650,12 @@ function App({ session, onLogout }) {
   async function exporterBulletinPresence(studentId, nomEleve, debut, fin) {
     try {
       const historique = await api(`/students/${studentId}/attendance?debut=${debut}&fin=${fin}`);
-      const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
+      const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
       const LIBELLES = { present: "Présent", retard: "En retard", absent: "Absent" };
       const lignes = historique.map((h) => `
         <tr><td>${new Date(h.horodatage).toLocaleDateString("fr-FR")}</td><td>${h.matiere || "—"}</td><td>${LIBELLES[h.statut] || h.statut}</td></tr>
@@ -660,14 +675,19 @@ function App({ session, onLogout }) {
           .totaux { display: flex; gap: 20px; margin: 16px 0; font-size: 13px; }
         </style></head>
         <body onload="window.print()">
+          ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:50px;margin-bottom:8px;" />` : ""}
           <h1>Bulletin de présence</h1>
-          <div class="sous-titre">${ecoleNom} · ${nomEleve} · Période du ${debut} au ${fin}</div>
+          <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""} · ${nomEleve} · Période du ${debut} au ${fin}</div>
           <div class="totaux">
             <span>✔ Présences : ${totaux.present || 0}</span>
             <span>⏱ Retards : ${totaux.retard || 0}</span>
             <span style="color:#b33">✘ Absences : ${totaux.absent || 0}</span>
           </div>
           <table><thead><tr><th>Date</th><th>Matière</th><th>Statut</th></tr></thead><tbody>${lignes || '<tr><td colspan="3">Aucun pointage sur cette période.</td></tr>'}</tbody></table>
+        <div style="margin-top:24px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:10px;">
+            <div style="font-size:10px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:25mm;" />` : ""}
+          </div>
         </body></html>
       `);
       fenetre.document.close();
@@ -675,7 +695,12 @@ function App({ session, onLogout }) {
   }
 
   function exporterAbsenteismePdf() {
-    const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
+    const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
     const lignes = absenteisme.map((s) => `<tr><td>${s.nom}</td><td>${s.classe_nom}</td><td style="text-align:right; color:#b33;">${s.absences_mois}</td></tr>`).join("");
     const fenetre = window.open("", "_blank", "width=700,height=850");
     fenetre.document.write(`
@@ -689,9 +714,14 @@ function App({ session, onLogout }) {
         td, th { padding: 7px 8px; border-bottom: 1px solid #ddd; text-align: left; }
       </style></head>
       <body onload="window.print()">
+        ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:50px;margin-bottom:8px;" />` : ""}
         <h1>Rapport d'absentéisme</h1>
-        <div class="sous-titre">${ecoleNom} · Élèves à 3 absences ou plus ce mois-ci</div>
+        <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""} · Élèves à 3 absences ou plus ce mois-ci</div>
         <table><thead><tr><th>Élève</th><th>Classe</th><th>Absences ce mois</th></tr></thead><tbody>${lignes || '<tr><td colspan="3">Aucun élève au-dessus du seuil.</td></tr>'}</tbody></table>
+      <div style="margin-top:24px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:10px;">
+            <div style="font-size:10px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:25mm;" />` : ""}
+          </div>
       </body></html>
     `);
     fenetre.document.close();
@@ -744,7 +774,12 @@ function App({ session, onLogout }) {
 
   function exporterEmploiPdf() {
     const nomClasse = classeSelectionnee?.nom || "";
-    const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
+    const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
     const parJour = {};
     for (const c of creneaux) {
       if (!parJour[c.jour_semaine]) parJour[c.jour_semaine] = [];
@@ -786,9 +821,14 @@ function App({ session, onLogout }) {
         .detail { color: #777; font-size: 11px; }
       </style></head>
       <body onload="window.print()">
+        ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:50px;margin-bottom:8px;" />` : ""}
         <h1>Emploi du temps — ${nomClasse}</h1>
-        <div class="sous-titre">${ecoleNom}</div>
+        <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""}</div>
         ${lignesParJour || "<p>Aucun créneau enregistré pour cette classe.</p>"}
+      <div style="margin-top:24px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:10px;">
+            <div style="font-size:10px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:25mm;" />` : ""}
+          </div>
       </body></html>
     `);
     fenetre.document.close();
@@ -857,7 +897,12 @@ function App({ session, onLogout }) {
   async function imprimerBulletinSalaire(userId, nomAffiche) {
     try {
       const b = await api(`/attendance/bulletin-salaire/${userId}?debut=${suiviEnseignantsDebut}&fin=${suiviEnseignantsFin}`);
-      const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
+      const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
 
       if (b.mode_calcul === "non_renseigne") {
         setGlobalError(`Aucun salaire renseigné pour ${nomAffiche} — impossible de générer le bulletin.`);
@@ -894,10 +939,11 @@ function App({ session, onLogout }) {
           .avertissement { margin-top: 30px; font-size: 10px; color: #888; border-top: 1px solid #ddd; padding-top: 10px; }
         </style></head>
         <body onload="window.print()">
+          ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:50px;margin-bottom:8px;" />` : ""}
           <div class="entete">
             <div>
               <h1>Bulletin de salaire</h1>
-              <div class="sous-titre">${ecoleNom}</div>
+              <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""}</div>
             </div>
             <div style="text-align:right">
               <div><strong>${nomAffiche}</strong></div>
@@ -913,6 +959,10 @@ function App({ session, onLogout }) {
             Document généré automatiquement à titre indicatif — barème CNPS/ITS en vigueur depuis la réforme du 1er janvier 2024.
             À faire vérifier par un comptable avant tout usage officiel ; les taux peuvent évoluer par loi de finances.
           </div>
+        <div style="margin-top:24px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:10px;">
+            <div style="font-size:10px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:25mm;" />` : ""}
+          </div>
         </body></html>
       `);
       fenetre.document.close();
@@ -920,7 +970,12 @@ function App({ session, onLogout }) {
   }
 
   function exporterPayePdf() {
-    const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
+    const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
     const total = payeEnseignants.reduce((s, e) => s + (e.montant_a_payer || 0), 0);
     const lignes = payeEnseignants.map((e) => `
       <tr>
@@ -946,13 +1001,18 @@ function App({ session, onLogout }) {
         tfoot td { font-weight: bold; font-size: 14px; border-top: 2px solid #333; }
       </style></head>
       <body onload="window.print()">
+        ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:50px;margin-bottom:8px;" />` : ""}
         <h1>Paie des enseignants</h1>
-        <div class="sous-titre">${ecoleNom} · Période du ${suiviEnseignantsDebut} au ${suiviEnseignantsFin}</div>
+        <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""} · Période du ${suiviEnseignantsDebut} au ${suiviEnseignantsFin}</div>
         <table>
           <thead><tr><th>Enseignant</th><th>Statut</th><th>Heures travaillées</th><th>Heures manquées</th><th>Taux/h</th><th>Montant à payer</th></tr></thead>
           <tbody>${lignes || '<tr><td colspan="6">Aucune donnée pour cette période.</td></tr>'}</tbody>
           <tfoot><tr><td colspan="5" style="text-align:right">TOTAL À PAYER</td><td style="text-align:right">${total.toLocaleString("fr-FR")} F</td></tr></tfoot>
         </table>
+      <div style="margin-top:24px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:10px;">
+            <div style="font-size:10px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:25mm;" />` : ""}
+          </div>
       </body></html>
     `);
     fenetre.document.close();
@@ -1188,7 +1248,12 @@ function App({ session, onLogout }) {
   async function imprimerBadge(eleve) {
     try {
       const { image } = await api(`/students/${eleve.id}/badge`);
-      const ecoleNom = ecoles.find((e) => e.active)?.nom || ecoles[0]?.nom || "";
+      const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
       const photoAbsolue = eleve.photo_url ? `${session.baseUrl.replace(/\/api$/, "")}${eleve.photo_url}` : null;
       const fenetre = window.open("", "_blank", "width=500,height=350");
       fenetre.document.write(`
@@ -1211,7 +1276,10 @@ function App({ session, onLogout }) {
             ${photoAbsolue ? `<img class="photo" src="${photoAbsolue}" />` : `<div class="photo-placeholder"></div>`}
             <img class="qr" src="${image}" />
             <div class="infos">
-              <div class="ecole">${ecoleNom}</div>
+              <div class="ecole" style="display:flex; align-items:center; gap:1.5mm;">
+                ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:5mm; width:5mm; object-fit:contain;" />` : ""}
+                ${ecoleNom}
+              </div>
               <div class="nom">${eleve.nom}</div>
               <div class="classe">${eleve.classe_nom || ""}</div>
               <div class="matricule">${eleve.matricule}</div>
@@ -1328,13 +1396,13 @@ function App({ session, onLogout }) {
         const created = await api("/ecoles", { method: "POST", body: newEcole });
         setEcoles((liste) => [created, ...liste].map((x) => created.active && x.id !== created.id ? { ...x, active: false } : x));
       }
-      setNewEcole({ nom: "", adresse: "", ville: "", telephone: "", annee_scolaire: "", active: false });
+      setNewEcole({ nom: "", adresse: "", ville: "", telephone: "", annee_scolaire: "", active: false, email: "", registre_commerce: "" });
       setEditingEcoleId(null);
       setShowAddEcole(false);
     } catch (e) { setEcoleFormError(e.message); }
   }
   function commencerEditionEcole(e) {
-    setNewEcole({ nom: e.nom, adresse: e.adresse || "", ville: e.ville || "", telephone: e.telephone || "", annee_scolaire: e.annee_scolaire || "", active: e.active });
+    setNewEcole({ nom: e.nom, adresse: e.adresse || "", ville: e.ville || "", telephone: e.telephone || "", annee_scolaire: e.annee_scolaire || "", active: e.active, email: e.email || "", registre_commerce: e.registre_commerce || "" });
     setEditingEcoleId(e.id);
     setEcoleFormError("");
     setShowAddEcole(true);
@@ -1353,6 +1421,18 @@ function App({ session, onLogout }) {
       const updated = await api(`/ecoles/${id}/generer-cle-agent`, { method: "POST" });
       setEcoles((liste) => liste.map((x) => x.id === id ? updated : x));
     } catch (e) { catchErr(e); }
+  }
+
+  async function handleUploadImageEcole(ecoleId, type, e) {
+    const fichier = e.target.files?.[0];
+    e.target.value = "";
+    if (!fichier) return;
+    try {
+      const formData = new FormData();
+      formData.append("image", fichier);
+      const updated = await api(`/ecoles/${ecoleId}/${type}`, { method: "POST", body: formData });
+      setEcoles((liste) => liste.map((x) => x.id === ecoleId ? { ...x, ...updated } : x));
+    } catch (e2) { catchErr(e2); }
   }
 
   async function ajouterAnneeScolaire() {
@@ -2539,7 +2619,7 @@ function App({ session, onLogout }) {
               Chaque école a ses propres classes, élèves, lecteurs et comptes — totalement séparés des autres écoles. Ton compte actuel {estDirectionGenerale ? "est un compte \"direction générale\" : tu vois et gères toutes les écoles ci-dessous." : "est rattaché à une seule école et n'a accès qu'à ses données."} Pour créer une nouvelle école complète, crée-la ici puis crée son premier compte Direction depuis Paramètres, en le rattachant à cette école.
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-              <Button icon={P.plus} onClick={() => { setNewEcole({ nom: "", adresse: "", ville: "", telephone: "", annee_scolaire: "", active: false }); setEditingEcoleId(null); setEcoleFormError(""); setShowAddEcole((v) => !v); }}>Ajouter une école</Button>
+              <Button icon={P.plus} onClick={() => { setNewEcole({ nom: "", adresse: "", ville: "", telephone: "", annee_scolaire: "", active: false, email: "", registre_commerce: "" }); setEditingEcoleId(null); setEcoleFormError(""); setShowAddEcole((v) => !v); }}>Ajouter une école</Button>
             </div>
 
             {showAddEcole && (
@@ -2558,6 +2638,10 @@ function App({ session, onLogout }) {
                     <input type="checkbox" checked={newEcole.active} onChange={(e) => setNewEcole((v) => ({ ...v, active: e.target.checked }))} />
                     École active (affichée dans l'en-tête)
                   </label>
+                </div>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Email de l'école"><input style={inputStyle} value={newEcole.email} onChange={(e) => setNewEcole((v) => ({ ...v, email: e.target.value }))} placeholder="contact@ecole.example" /></Field>
+                  <Field label="Registre de commerce"><input style={inputStyle} value={newEcole.registre_commerce} onChange={(e) => setNewEcole((v) => ({ ...v, registre_commerce: e.target.value }))} placeholder="ex. CI-ABJ-2020-B-12345" /></Field>
                 </div>
               </FormPanel>
             )}
@@ -2591,6 +2675,11 @@ function App({ session, onLogout }) {
               {ecoles.map((e, i) => (
                 <div key={e.id} style={{ borderBottom: i < ecoles.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 18px" }}>
+                    {e.logo_url ? (
+                      <img src={`${session.baseUrl.replace(/\/api$/, "")}${e.logo_url}`} style={{ width: 40, height: 40, borderRadius: 8, objectFit: "contain", background: "#fff", border: `1px solid ${COLORS.line}`, flexShrink: 0 }} />
+                    ) : (
+                      <div style={{ width: 40, height: 40, borderRadius: 8, background: COLORS.craieDim, flexShrink: 0 }} />
+                    )}
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
                         {e.nom}
@@ -2602,6 +2691,21 @@ function App({ session, onLogout }) {
                     </div>
                     <button onClick={() => commencerEditionEcole(e)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.settings} size={14} /></button>
                     <button onClick={() => supprimerEcole(e.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
+                  </div>
+                  <div style={{ padding: "0 18px 12px 18px", display: "flex", alignItems: "center", gap: 16, fontSize: 11.5, flexWrap: "wrap" }}>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", color: COLORS.craie }}>
+                      <Icon path={P.upload} size={13} />
+                      {e.logo_url ? "Changer le logo" : "Ajouter un logo"}
+                      <input type="file" accept="image/*" style={{ display: "none" }} onChange={(ev) => handleUploadImageEcole(e.id, "logo", ev)} />
+                    </label>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", color: COLORS.craie }}>
+                      <Icon path={P.upload} size={13} />
+                      {e.cachet_url ? "Changer le cachet" : "Ajouter un cachet"}
+                      <input type="file" accept="image/*" style={{ display: "none" }} onChange={(ev) => handleUploadImageEcole(e.id, "cachet", ev)} />
+                    </label>
+                    {e.cachet_url && (
+                      <img src={`${session.baseUrl.replace(/\/api$/, "")}${e.cachet_url}`} style={{ width: 32, height: 32, borderRadius: 6, objectFit: "contain", background: "#fff", border: `1px solid ${COLORS.line}` }} />
+                    )}
                   </div>
                   <div style={{ padding: "0 18px 12px 18px", display: "flex", alignItems: "center", gap: 8, fontSize: 11.5 }}>
                     <span style={{ color: COLORS.craieDim, flexShrink: 0 }}>Clé agent local :</span>

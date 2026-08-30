@@ -360,3 +360,10 @@ CREATE TABLE IF NOT EXISTS annees_scolaires (
 );
 ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS annee_scolaire_id UUID REFERENCES annees_scolaires(id);
 ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS date_fin_utilisation DATE;
+-- Logo et cachet de l'école — affichés sur tous les documents imprimés (badges,
+-- bulletins, registres, emploi du temps, paie...).
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS logo_url TEXT;
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS cachet_url TEXT;
+-- Références légales de l'école, affichées en bas de page des documents imprimés.
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS registre_commerce TEXT;
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS email TEXT;
