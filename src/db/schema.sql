@@ -171,6 +171,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS taux_horaire NUMERIC;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS salaire_base NUMERIC;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS heures_mensuelles_reference NUMERIC;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS parts_fiscales NUMERIC DEFAULT 1;
+-- Cycle de référence d'un enseignant permanent — détermine son plafond réglementaire
+-- d'heures hebdomadaires (21h en 1er cycle / Collège, 18h en 2nd cycle / Lycée) :
+-- au-delà, les heures sont des heures supplémentaires, payées à part (taux_horaire).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS cycle_enseignement TEXT CHECK (cycle_enseignement IN ('1er_cycle', '2nd_cycle') OR cycle_enseignement IS NULL);
 ALTER TABLE students ADD COLUMN IF NOT EXISTS photo_url TEXT;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS date_naissance DATE;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS lieu_naissance TEXT;

@@ -330,7 +330,7 @@ router.get("/paye-enseignants", async (req, res) => {
   let filtreEcoleProfs = "TRUE";
   if (ecoleId) { paramsProfs.push(ecoleId); filtreEcoleProfs = `ecole_id = $${paramsProfs.length}`; }
   const { rows: profs } = await pool.query(
-    `SELECT nom, taux_horaire, statut_emploi, salaire_base, heures_mensuelles_reference, parts_fiscales FROM users WHERE role = 'enseignant' AND ${filtreEcoleProfs}`,
+    `SELECT nom, taux_horaire, statut_emploi, salaire_base, heures_mensuelles_reference, parts_fiscales, cycle_enseignement FROM users WHERE role = 'enseignant' AND ${filtreEcoleProfs}`,
     paramsProfs
   );
   const infoProfParNom = new Map(profs.map((p) => [p.nom, p]));
@@ -362,8 +362,10 @@ router.get("/paye-enseignants", async (req, res) => {
           salaire_base: info.salaire_base != null ? Number(info.salaire_base) : null,
           heures_mensuelles_reference: info.heures_mensuelles_reference != null ? Number(info.heures_mensuelles_reference) : null,
           parts_fiscales: info.parts_fiscales != null ? Number(info.parts_fiscales) : 1,
+          cycle_enseignement: info.cycle_enseignement || null,
           minutes_travaillees: 0,
           minutes_manquees: 0,
+          minutesParJourTravaillees: [], // pour répartir normales/supplémentaires semaine par semaine
         };
       }
 
@@ -378,8 +380,12 @@ router.get("/paye-enseignants", async (req, res) => {
       const [hF, mF] = cr.heure_fin.split(":").map(Number);
       const duree = (hF * 60 + mF) - (hD * 60 + mD);
 
-      if (Number(rows[0].total) > 0) parEnseignant[cr.enseignant].minutes_travaillees += duree;
-      else parEnseignant[cr.enseignant].minutes_manquees += duree;
+      if (Number(rows[0].total) > 0) {
+        parEnseignant[cr.enseignant].minutes_travaillees += duree;
+        parEnseignant[cr.enseignant].minutesParJourTravaillees.push({ date: jourStr, jourSemaine: jourSemaineCurseur, minutes: duree });
+      } else {
+        parEnseignant[cr.enseignant].minutes_manquees += duree;
+      }
     }
     curseur.setDate(curseur.getDate() + 1);
   }
@@ -389,7 +395,7 @@ router.get("/paye-enseignants", async (req, res) => {
   // en vigueur depuis la réforme du 1er janvier 2024. ⚠ À faire vérifier
   // périodiquement par un comptable, les taux pouvant changer par loi de finances.
   // --------------------------------------------------------------------------
-  const { calculerBulletin } = require("../services/payrollService");
+  const { calculerBulletin, repartirNormalesEtSupplementaires } = require("../services/payrollService");
 
   const resultat = Object.values(parEnseignant)
     .map((e) => {
@@ -399,18 +405,29 @@ router.get("/paye-enseignants", async (req, res) => {
       // Un enseignant PERMANENT avec un salaire de base renseigné : calcul complet
       // (salaire réel - déduction des heures manquées, puis CNPS + ITS).
       if (e.statut_emploi === "permanent" && e.salaire_base != null && e.heures_mensuelles_reference) {
+        // Sépare les heures normales (dans le plafond réglementaire hebdomadaire) des
+        // heures supplémentaires — seulement si le cycle d'enseignement est renseigné.
+        const { minutes_normales, minutes_supplementaires } = repartirNormalesEtSupplementaires(e.minutesParJourTravaillees, e.cycle_enseignement);
+        const heures_supplementaires = Math.round((minutes_supplementaires / 60) * 100) / 100;
+
         const valeurHeure = e.salaire_base / e.heures_mensuelles_reference;
         const deduction_absences = Math.round(heures_manquees * valeurHeure);
-        const salaire_brut_ajuste = Math.max(0, e.salaire_base - deduction_absences);
+        const salaire_base_ajuste = Math.max(0, e.salaire_base - deduction_absences);
+        // Les heures supplémentaires sont payées EN PLUS, au taux horaire déclaré —
+        // elles s'ajoutent au brut avant CNPS/ITS (elles sont, elles aussi, imposables).
+        const montant_heures_supp = e.taux_horaire != null ? Math.round(heures_supplementaires * e.taux_horaire) : 0;
+        const salaire_brut_ajuste = salaire_base_ajuste + montant_heures_supp;
         const { cnps, its_net, net: montant_a_payer } = calculerBulletin(salaire_brut_ajuste, e.parts_fiscales);
         return {
           enseignant: e.enseignant,
           statut_emploi: e.statut_emploi,
           heures_travaillees,
           heures_manquees,
+          heures_supplementaires,
           mode_calcul: "salaire_reel",
           salaire_base: e.salaire_base,
           deduction_absences,
+          montant_heures_supp,
           salaire_brut_ajuste,
           cnps,
           its_net,
@@ -499,6 +516,7 @@ router.get("/bulletin-salaire/:userId", async (req, res) => {
 
   let minutes_travaillees = 0;
   let minutes_manquees = 0;
+  const minutesParJourTravaillees = [];
   const maintenant = new Date();
   let curseur = new Date(debut + "T00:00:00");
   const dateFin = new Date(fin + "T00:00:00");
@@ -523,8 +541,12 @@ router.get("/bulletin-salaire/:userId", async (req, res) => {
       const [hD, mD] = cr.heure_debut.split(":").map(Number);
       const [hF, mF] = cr.heure_fin.split(":").map(Number);
       const duree = (hF * 60 + mF) - (hD * 60 + mD);
-      if (Number(rows[0].total) > 0) minutes_travaillees += duree;
-      else minutes_manquees += duree;
+      if (Number(rows[0].total) > 0) {
+        minutes_travaillees += duree;
+        minutesParJourTravaillees.push({ date: jourStr, jourSemaine: jourSemaineCurseur, minutes: duree });
+      } else {
+        minutes_manquees += duree;
+      }
     }
     curseur.setDate(curseur.getDate() + 1);
   }
@@ -533,17 +555,23 @@ router.get("/bulletin-salaire/:userId", async (req, res) => {
   const heures_manquees = Math.round((minutes_manquees / 60) * 100) / 100;
 
   if (personne.statut_emploi === "permanent" && personne.salaire_base != null && personne.heures_mensuelles_reference) {
+    const { repartirNormalesEtSupplementaires } = require("../services/payrollService");
+    const { minutes_supplementaires } = repartirNormalesEtSupplementaires(minutesParJourTravaillees, personne.cycle_enseignement);
+    const heures_supplementaires = Math.round((minutes_supplementaires / 60) * 100) / 100;
+
     const valeurHeure = Number(personne.salaire_base) / Number(personne.heures_mensuelles_reference);
     const deduction_absences = Math.round(heures_manquees * valeurHeure);
-    const salaire_brut_ajuste = Math.max(0, Number(personne.salaire_base) - deduction_absences);
+    const salaire_base_ajuste = Math.max(0, Number(personne.salaire_base) - deduction_absences);
+    const montant_heures_supp = personne.taux_horaire != null ? Math.round(heures_supplementaires * Number(personne.taux_horaire)) : 0;
+    const salaire_brut_ajuste = salaire_base_ajuste + montant_heures_supp;
     const { cnps, its_net, net } = calculerBulletin(salaire_brut_ajuste, personne.parts_fiscales || 1);
     return res.json({
       debut, fin,
       personne: { nom: personne.nom, role: personne.role },
       mode_calcul: "salaire_reel",
-      heures_travaillees, heures_manquees,
+      heures_travaillees, heures_manquees, heures_supplementaires,
       salaire_base: Number(personne.salaire_base),
-      deduction_absences, salaire_brut_ajuste, cnps, its_net,
+      deduction_absences, montant_heures_supp, salaire_brut_ajuste, cnps, its_net,
       montant_a_payer: net,
     });
   }

@@ -39,4 +39,38 @@ function calculerBulletin(salaireBrut, partsFiscales = 1) {
   return { cnps, its_brut, ricf, its_net, net };
 }
 
-module.exports = { calculerITS, calculerBulletin, RICF_PAR_PARTS, PLAFOND_CNPS, TAUX_CNPS_SALARIE };
+// Regroupe des minutes travaillées jour par jour en minutes par semaine (la semaine
+// commence le lundi), puis répartit chaque semaine entre heures normales (dans la
+// limite du plafond réglementaire hebdomadaire) et heures supplémentaires (l'excédent).
+// Plafonds officiels : 21h/semaine en 1er cycle (Collège), 18h/semaine en 2nd cycle
+// (Lycée). ⚠ À faire vérifier périodiquement, ces seuils pouvant évoluer.
+const SEUIL_HEBDO_MINUTES = { "1er_cycle": 21 * 60, "2nd_cycle": 18 * 60 };
+
+function lundiDeLaSemaine(dateStr, jourSemaine) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() - (jourSemaine - 1));
+  return d.toISOString().slice(0, 10);
+}
+
+// minutesParJour : [{ date: "YYYY-MM-DD", jourSemaine: 1-7, minutes: n }]
+function repartirNormalesEtSupplementaires(minutesParJour, cycleEnseignement) {
+  const seuil = SEUIL_HEBDO_MINUTES[cycleEnseignement];
+  if (!seuil) {
+    // Pas de cycle déclaré : impossible de savoir le plafond -> tout compte en heures normales.
+    const total = minutesParJour.reduce((s, j) => s + j.minutes, 0);
+    return { minutes_normales: total, minutes_supplementaires: 0 };
+  }
+  const parSemaine = {};
+  for (const j of minutesParJour) {
+    const cle = lundiDeLaSemaine(j.date, j.jourSemaine);
+    parSemaine[cle] = (parSemaine[cle] || 0) + j.minutes;
+  }
+  let minutes_normales = 0, minutes_supplementaires = 0;
+  for (const minutesSemaine of Object.values(parSemaine)) {
+    minutes_normales += Math.min(minutesSemaine, seuil);
+    minutes_supplementaires += Math.max(0, minutesSemaine - seuil);
+  }
+  return { minutes_normales, minutes_supplementaires };
+}
+
+module.exports = { calculerITS, calculerBulletin, repartirNormalesEtSupplementaires, RICF_PAR_PARTS, PLAFOND_CNPS, TAUX_CNPS_SALARIE, SEUIL_HEBDO_MINUTES };

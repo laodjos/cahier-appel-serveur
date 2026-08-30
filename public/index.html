@@ -743,6 +743,7 @@ function App({ session, onLogout }) {
       const lignesDetail = b.mode_calcul === "salaire_reel" ? `
         <tr><td>Salaire de base</td><td style="text-align:right">${b.salaire_base.toLocaleString("fr-FR")} F</td></tr>
         ${b.deduction_absences > 0 ? `<tr><td>Déduction heures manquées${b.heures_manquees ? ` (${b.heures_manquees} h)` : ""}</td><td style="text-align:right; color:#b33;">−${b.deduction_absences.toLocaleString("fr-FR")} F</td></tr>` : ""}
+        ${b.heures_supplementaires > 0 ? `<tr><td>Heures supplémentaires (${b.heures_supplementaires} h)</td><td style="text-align:right">+${(b.montant_heures_supp || 0).toLocaleString("fr-FR")} F</td></tr>` : ""}
         <tr><td><strong>Salaire brut</strong></td><td style="text-align:right"><strong>${b.salaire_brut_ajuste.toLocaleString("fr-FR")} F</strong></td></tr>
         <tr><td>CNPS (6,3%)</td><td style="text-align:right; color:#b33;">−${b.cnps.toLocaleString("fr-FR")} F</td></tr>
         <tr><td>ITS (impôt sur salaire)</td><td style="text-align:right; color:#b33;">−${b.its_net.toLocaleString("fr-FR")} F</td></tr>
@@ -1883,8 +1884,11 @@ function App({ session, onLogout }) {
                       </span>
                     </div>
                     {e.mode_calcul === "salaire_reel" && (
-                      <div style={{ display: "flex", gap: 16, marginTop: 6, paddingLeft: 2, fontSize: 11, color: COLORS.craieDim }}>
+                      <div style={{ display: "flex", gap: 16, marginTop: 6, paddingLeft: 2, fontSize: 11, color: COLORS.craieDim, flexWrap: "wrap" }}>
                         <span>Déduction absences : −{e.deduction_absences.toLocaleString("fr-FR")} F</span>
+                        {e.heures_supplementaires > 0 && (
+                          <span style={{ color: COLORS.marker, fontWeight: 600 }}>+{e.heures_supplementaires} h sup. : +{e.montant_heures_supp.toLocaleString("fr-FR")} F</span>
+                        )}
                         <span>Brut ajusté : {e.salaire_brut_ajuste.toLocaleString("fr-FR")} F</span>
                         <span>CNPS (6,3%) : −{e.cnps.toLocaleString("fr-FR")} F</span>
                         <span>ITS : −{e.its_net.toLocaleString("fr-FR")} F</span>
@@ -2724,9 +2728,21 @@ function App({ session, onLogout }) {
                 <input type="number" style={inputStyle} defaultValue={gestionSalaireUser.salaire_base || ""} onBlur={(e) => e.target.value && enregistrerSalaire(gestionSalaireUser.id, { salaire_base: e.target.value })} placeholder="ex. 350000" />
               </Field>
               {gestionSalaireUser.role === "enseignant" && (
-                <Field label="Heures mensuelles de référence (pour valoriser une heure manquée)">
-                  <input type="number" style={inputStyle} defaultValue={gestionSalaireUser.heures_mensuelles_reference || ""} onBlur={(e) => e.target.value && enregistrerSalaire(gestionSalaireUser.id, { heures_mensuelles_reference: e.target.value })} placeholder="ex. 80" />
-                </Field>
+                <React.Fragment>
+                  <Field label="Heures mensuelles de référence (pour valoriser une heure manquée)">
+                    <input type="number" style={inputStyle} defaultValue={gestionSalaireUser.heures_mensuelles_reference || ""} onBlur={(e) => e.target.value && enregistrerSalaire(gestionSalaireUser.id, { heures_mensuelles_reference: e.target.value })} placeholder="ex. 80" />
+                  </Field>
+                  <Field label="Cycle d'enseignement (plafond réglementaire hebdomadaire)">
+                    <select style={inputStyle} value={gestionSalaireUser.cycle_enseignement || ""} onChange={(e) => enregistrerSalaire(gestionSalaireUser.id, { cycle_enseignement: e.target.value })}>
+                      <option value="">— Non renseigné (pas de calcul d'heures sup.) —</option>
+                      <option value="1er_cycle">1er cycle — Collège (max. 21h/semaine)</option>
+                      <option value="2nd_cycle">2nd cycle — Lycée (max. 18h/semaine)</option>
+                    </select>
+                  </Field>
+                  <Field label="Taux horaire des heures supplémentaires (F CFA)">
+                    <input type="number" style={inputStyle} defaultValue={gestionSalaireUser.taux_horaire || ""} onBlur={(e) => e.target.value && changeTauxHoraire(gestionSalaireUser.id, e.target.value)} placeholder="ex. 2500" />
+                  </Field>
+                </React.Fragment>
               )}
               <Field label="Parts fiscales (charges de famille — pour la réduction RICF)">
                 <select style={inputStyle} value={gestionSalaireUser.parts_fiscales || 1} onChange={(e) => enregistrerSalaire(gestionSalaireUser.id, { parts_fiscales: e.target.value })}>
