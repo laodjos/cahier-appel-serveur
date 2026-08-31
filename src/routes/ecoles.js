@@ -4,14 +4,15 @@ const fs = require("fs");
 const path = require("path");
 const { pool } = require("../config/db");
 const { authRequired, requireRole } = require("../middleware/auth");
+const { UPLOAD_DIR } = require("../config/uploadDir");
 
 const router = express.Router();
 router.use(authRequired);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024 } });
 
-// Dossier public où sont stockés logos et cachets — servi automatiquement via
-// express.static (voir server.js), accessible directement en /uploads/ecoles/...
-const DOSSIER_IMAGES_ECOLE = path.join(__dirname, "..", "..", "public", "uploads", "ecoles");
+// Dossier où sont stockés logos et cachets — voir src/config/uploadDir.js pour
+// le choix de l'emplacement (disque persistant en production).
+const DOSSIER_IMAGES_ECOLE = path.join(UPLOAD_DIR, "ecoles");
 fs.mkdirSync(DOSSIER_IMAGES_ECOLE, { recursive: true });
 
 function extensionValide(mimetype) {

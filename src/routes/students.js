@@ -6,14 +6,15 @@ const path = require("path");
 const { pool } = require("../config/db");
 const { authRequired, requireRole } = require("../middleware/auth");
 const { genererJetonEleve, genererImageQr } = require("../services/qrService");
+const { UPLOAD_DIR } = require("../config/uploadDir");
 
 const router = express.Router();
 router.use(authRequired);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-// Dossier public où sont stockées les photos d'élèves — servi automatiquement
-// via express.static (voir server.js), donc accessible directement en /uploads/students/...
-const DOSSIER_PHOTOS = path.join(__dirname, "..", "..", "public", "uploads", "students");
+// Dossier où sont stockées les photos d'élèves — voir src/config/uploadDir.js
+// pour le choix de l'emplacement (disque persistant en production).
+const DOSSIER_PHOTOS = path.join(UPLOAD_DIR, "students");
 fs.mkdirSync(DOSSIER_PHOTOS, { recursive: true });
 
 function ecoleEffective(req) {

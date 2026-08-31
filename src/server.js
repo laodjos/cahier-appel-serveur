@@ -38,6 +38,15 @@ app.use(morgan("combined"));
 // des CDN externes (unpkg.com, jsdelivr.net, etc.).
 // --------------------------------------------------------------------------
 app.use(express.static(path.join(__dirname, "..", "public")));
+
+// Sert les fichiers uploadés (photos élèves, logo, cachet) depuis leur
+// emplacement réel — voir src/config/uploadDir.js. En production, cet
+// emplacement pointe vers un disque persistant Render, potentiellement HORS du
+// dossier "public" ci-dessus ; ce mount explicite garantit qu'ils restent bien
+// accessibles en /uploads/... quel que soit l'endroit où ils sont réellement stockés.
+const { UPLOAD_DIR } = require("./config/uploadDir");
+app.use("/uploads", express.static(UPLOAD_DIR));
+
 app.get("/vendor/react.production.min.js", (req, res) => {
   res.sendFile(path.join(__dirname, "..", "node_modules", "react", "umd", "react.production.min.js"));
 });
