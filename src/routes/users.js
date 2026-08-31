@@ -49,7 +49,8 @@ router.get("/", async (req, res) => {
 
 // POST /api/users  { nom, email, mot_de_passe, role, matieres, ecole_id? }
 router.post("/", async (req, res) => {
-  const { nom, email, mot_de_passe, role, matieres, statut_emploi } = req.body;
+  const { nom, email, mot_de_passe, role, matieres, statut_emploi, statut_matrimonial, nombre_enfants } = req.body;
+  const { calculerPartsFiscales } = require("../services/payrollService");
   const rolesValides = ["super_admin", "direction", "enseignant", "surveillant"];
 
   if (!nom || !email || !mot_de_passe || !role) {
@@ -67,17 +68,26 @@ router.post("/", async (req, res) => {
   if (statut_emploi && !["permanent", "vacataire"].includes(statut_emploi)) {
     return res.status(400).json({ error: "Statut d'emploi invalide." });
   }
+  if (statut_matrimonial && !["celibataire", "marie", "veuf", "divorce"].includes(statut_matrimonial)) {
+    return res.status(400).json({ error: "Statut matrimonial invalide." });
+  }
 
   const ecoleCible = ecoleEffective(req);
   if (role !== "super_admin" && !ecoleCible) {
     return res.status(400).json({ error: "Choisis l'école de rattachement pour ce compte." });
   }
 
+  // Si la situation familiale est renseignée dès la création, on calcule tout de
+  // suite les parts fiscales — évite d'avoir à repasser par "Salaire" ensuite
+  // juste pour ça (voir calculerPartsFiscales dans payrollService.js).
+  const partsFiscales = (statut_matrimonial || nombre_enfants) ? calculerPartsFiscales(statut_matrimonial || "celibataire", nombre_enfants || 0) : null;
+
   try {
     const hash = await bcrypt.hash(mot_de_passe, 10);
     const { rows } = await pool.query(
-      "INSERT INTO users (nom, email, mot_de_passe_hash, role, matieres, ecole_id, statut_emploi) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, nom, email, role, matieres, ecole_id, statut_emploi, created_at",
-      [nom.trim(), email.trim().toLowerCase(), hash, role, matieres?.trim() || null, ecoleCible, statut_emploi || null]
+      `INSERT INTO users (nom, email, mot_de_passe_hash, role, matieres, ecole_id, statut_emploi, statut_matrimonial, nombre_enfants, parts_fiscales)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10, 1)) RETURNING id, nom, email, role, matieres, ecole_id, statut_emploi, statut_matrimonial, nombre_enfants, parts_fiscales, created_at`,
+      [nom.trim(), email.trim().toLowerCase(), hash, role, matieres?.trim() || null, ecoleCible, statut_emploi || null, statut_matrimonial || null, nombre_enfants || 0, partsFiscales]
     );
     res.status(201).json(rows[0]);
   } catch (err) {

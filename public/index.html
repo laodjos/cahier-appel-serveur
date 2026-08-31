@@ -404,6 +404,7 @@ function App({ session, onLogout }) {
   const [rapportDate, setRapportDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [rapportEleveId, setRapportEleveId] = useState("");
   const [rapportUserId, setRapportUserId] = useState("");
+  const [afficherInfosRhCreation, setAfficherInfosRhCreation] = useState(false);
 
   // Paramétrage des lecteurs biométriques
   const [showAddDevice, setShowAddDevice] = useState(false);
@@ -1100,8 +1101,9 @@ function App({ session, onLogout }) {
     try {
       const created = await api("/users", { method: "POST", body: { ...newUser, matieres: newUser.role === "enseignant" ? newUserMatieres : null } });
       setUsers((u) => [created, ...u]);
-      setNewUser({ nom: "", email: "", mot_de_passe: "", role: "enseignant", ecole_id: null, statut_emploi: "" });
+      setNewUser({ nom: "", email: "", mot_de_passe: "", role: "enseignant", ecole_id: null, statut_emploi: "", statut_matrimonial: "", nombre_enfants: "" });
       setNewUserMatieres("");
+      setAfficherInfosRhCreation(false);
       setShowAddUser(false);
     } catch (e) { setUserFormError(e.message); }
   }
@@ -2995,6 +2997,25 @@ function App({ session, onLogout }) {
                       {ecoles.map((e) => <option key={e.id} value={e.id}>{e.nom}</option>)}
                     </select>
                   </Field>
+                )}
+                <button type="button" onClick={() => setAfficherInfosRhCreation((v) => !v)} style={{ background: "transparent", border: "none", color: COLORS.marker, cursor: "pointer", fontSize: 12, padding: "6px 0", textAlign: "left" }}>
+                  {afficherInfosRhCreation ? "▾" : "▸"} Informations RH pour la paie (optionnel — à renseigner maintenant ou plus tard)
+                </button>
+                {afficherInfosRhCreation && (
+                  <div style={{ display: "flex", gap: 12 }}>
+                    <Field label="Situation matrimoniale">
+                      <select style={inputStyle} value={newUser.statut_matrimonial || ""} onChange={(e) => setNewUser((v) => ({ ...v, statut_matrimonial: e.target.value }))}>
+                        <option value="">— Non renseigné —</option>
+                        <option value="celibataire">Célibataire</option>
+                        <option value="marie">Marié(e)</option>
+                        <option value="veuf">Veuf / Veuve</option>
+                        <option value="divorce">Divorcé(e)</option>
+                      </select>
+                    </Field>
+                    <Field label="Nombre d'enfants à charge">
+                      <input type="number" min="0" max="10" style={inputStyle} value={newUser.nombre_enfants || ""} onChange={(e) => setNewUser((v) => ({ ...v, nombre_enfants: e.target.value }))} />
+                    </Field>
+                  </div>
                 )}
               </FormPanel>
             )}
