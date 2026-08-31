@@ -1140,7 +1140,7 @@ function App({ session, onLogout }) {
     try {
       const updated = await api(`/users/${id}/salaire`, { method: "PATCH", body: patch });
       setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
-      setGestionSalaireUser(updated);
+      setGestionSalaireUser((g) => g && g.id === id ? { ...g, ...updated } : g);
     } catch (e) { catchErr(e); }
   }
 
@@ -3121,16 +3121,25 @@ function App({ session, onLogout }) {
                   </Field>
                 </React.Fragment>
               )}
-              <Field label="Parts fiscales (charges de famille — pour la réduction RICF)">
-                <select style={inputStyle} value={gestionSalaireUser.parts_fiscales || 1} onChange={(e) => enregistrerSalaire(gestionSalaireUser.id, { parts_fiscales: e.target.value })}>
-                  <option value="1">1 part (célibataire, sans enfant)</option>
-                  <option value="1.5">1,5 part</option>
-                  <option value="2">2 parts</option>
-                  <option value="3">3 parts</option>
-                  <option value="4">4 parts</option>
-                  <option value="5">5 parts (maximum)</option>
+              <Field label="Situation matrimoniale">
+                <select style={inputStyle} value={gestionSalaireUser.statut_matrimonial || ""} onChange={(e) => enregistrerSalaire(gestionSalaireUser.id, { statut_matrimonial: e.target.value, nombre_enfants: gestionSalaireUser.nombre_enfants || 0 })}>
+                  <option value="">— Non renseigné —</option>
+                  <option value="celibataire">Célibataire</option>
+                  <option value="marie">Marié(e)</option>
+                  <option value="veuf">Veuf / Veuve</option>
+                  <option value="divorce">Divorcé(e)</option>
                 </select>
               </Field>
+              <Field label="Nombre d'enfants à charge">
+                <input type="number" min="0" max="10" style={inputStyle} defaultValue={gestionSalaireUser.nombre_enfants || 0} onBlur={(e) => enregistrerSalaire(gestionSalaireUser.id, { nombre_enfants: e.target.value, statut_matrimonial: gestionSalaireUser.statut_matrimonial || "celibataire" })} />
+              </Field>
+              <div style={{ fontSize: 11, color: COLORS.craieDim, marginTop: -6, marginBottom: 14 }}>
+                Parts fiscales calculées automatiquement : <strong style={{ color: COLORS.craie }}>{gestionSalaireUser.parts_fiscales || 1} part{(gestionSalaireUser.parts_fiscales || 1) > 1 ? "s" : ""}</strong>
+                {" — "}
+                <button onClick={() => { const v = window.prompt("Forcer une valeur de parts fiscales précise (entre 1 et 5, par pas de 0,5) :", gestionSalaireUser.parts_fiscales || 1); if (v) enregistrerSalaire(gestionSalaireUser.id, { parts_fiscales: v }); }} style={{ background: "transparent", border: "none", color: COLORS.marker, cursor: "pointer", textDecoration: "underline", fontSize: 11, padding: 0 }}>
+                  modifier manuellement
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -17,6 +17,32 @@ const RICF_PAR_PARTS = { 1: 0, 1.5: 5500, 2: 11000, 3: 22000, 4: 33000, 5: 44000
 const PLAFOND_CNPS = 3375000;
 const TAUX_CNPS_SALARIE = 0.063;
 
+// La réduction RICF suit en réalité une formule linéaire (11 000 F CFA par part
+// entière au-delà de la 1ère, soit 5 500 F par demi-part) — vérifiée exacte sur
+// toutes les valeurs officielles connues (1, 1.5, 2, 3, 4 et 5 parts). Utiliser
+// la formule plutôt qu'une simple table permet de couvrir aussi les valeurs
+// intermédiaires manquantes de la table (2.5, 3.5, 4.5 parts — ex. un salarié
+// marié avec 1 ou 3 enfants), qu'une table figée aux seules valeurs ci-dessus
+// aurait laissées sans réduction du tout.
+function calculerRicf(partsFiscales) {
+  const parts = Number(partsFiscales) || 1;
+  if (parts <= 1) return 0;
+  return Math.round((Math.min(parts, 5) - 1) * 11000);
+}
+
+// Détermine le nombre de parts fiscales à partir de la situation familiale
+// déclarée — évite de demander à l'école de deviner elle-même la conversion.
+// ⚠ Règle à faire confirmer par un comptable (voir document de méthodologie) :
+//   - Célibataire / divorcé(e) sans enfant, ou veuf(ve) SANS enfant : 1 part
+//   - Marié(e), ou veuf(ve) avec au moins un enfant à charge : 2 parts de base
+//   - + 0,5 part par enfant à charge, quel que soit le statut
+//   - Plafond légal : 5 parts maximum
+function calculerPartsFiscales(statutMatrimonial, nombreEnfants) {
+  const n = Math.max(0, Number(nombreEnfants) || 0);
+  const base = (statutMatrimonial === "marie" || (statutMatrimonial === "veuf" && n > 0)) ? 2 : 1;
+  return Math.min(5, base + n * 0.5);
+}
+
 function calculerITS(brut) {
   let its = 0;
   let precedent = 0;
@@ -33,7 +59,7 @@ function calculerITS(brut) {
 function calculerBulletin(salaireBrut, partsFiscales = 1) {
   const cnps = Math.round(Math.min(salaireBrut, PLAFOND_CNPS) * TAUX_CNPS_SALARIE);
   const its_brut = calculerITS(salaireBrut);
-  const ricf = RICF_PAR_PARTS[partsFiscales] || 0;
+  const ricf = calculerRicf(partsFiscales);
   const its_net = Math.max(0, its_brut - ricf);
   const net = Math.round(salaireBrut - cnps - its_net);
   return { cnps, its_brut, ricf, its_net, net };
@@ -73,4 +99,4 @@ function repartirNormalesEtSupplementaires(minutesParJour, cycleEnseignement) {
   return { minutes_normales, minutes_supplementaires };
 }
 
-module.exports = { calculerITS, calculerBulletin, repartirNormalesEtSupplementaires, RICF_PAR_PARTS, PLAFOND_CNPS, TAUX_CNPS_SALARIE, SEUIL_HEBDO_MINUTES };
+module.exports = { calculerITS, calculerBulletin, calculerRicf, calculerPartsFiscales, repartirNormalesEtSupplementaires, RICF_PAR_PARTS, PLAFOND_CNPS, TAUX_CNPS_SALARIE, SEUIL_HEBDO_MINUTES };

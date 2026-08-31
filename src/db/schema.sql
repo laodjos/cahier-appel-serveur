@@ -171,6 +171,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS taux_horaire NUMERIC;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS salaire_base NUMERIC;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS heures_mensuelles_reference NUMERIC;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS parts_fiscales NUMERIC DEFAULT 1;
+-- Situation familiale déclarée — sert à calculer parts_fiscales automatiquement
+-- (voir calculerPartsFiscales dans payrollService.js), plutôt que de demander à
+-- l'école de deviner elle-même la conversion en nombre de parts.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS statut_matrimonial TEXT CHECK (statut_matrimonial IN ('celibataire', 'marie', 'veuf', 'divorce') OR statut_matrimonial IS NULL);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS nombre_enfants INTEGER DEFAULT 0;
 -- Cycle de référence d'un enseignant permanent — détermine son plafond réglementaire
 -- d'heures hebdomadaires (21h en 1er cycle / Collège, 18h en 2nd cycle / Lycée) :
 -- au-delà, les heures sont des heures supplémentaires, payées à part (taux_horaire).

@@ -29,7 +29,7 @@ router.get("/", async (req, res) => {
   const params = [];
   const filtreEcole = clauseEcole(req, params, "u.ecole_id");
   const { rows } = await pool.query(
-    `SELECT u.id, u.nom, u.email, u.role, u.matieres, u.statut_emploi, u.taux_horaire, u.salaire_base, u.heures_mensuelles_reference, u.parts_fiscales, u.cycle_enseignement, u.ecole_id, u.created_at, ec.nom AS ecole_nom,
+    `SELECT u.id, u.nom, u.email, u.role, u.matieres, u.statut_emploi, u.taux_horaire, u.salaire_base, u.heures_mensuelles_reference, u.parts_fiscales, u.cycle_enseignement, u.statut_matrimonial, u.nombre_enfants, u.ecole_id, u.created_at, ec.nom AS ecole_nom,
             COALESCE(
               json_agg(
                 json_build_object('id', c.id, 'nom', c.nom, 'niveau', c.niveau)
@@ -133,10 +133,25 @@ router.patch("/:id/taux-horaire", requireRole("direction", "super_admin"), async
 // PATCH /api/users/:id/salaire  { salaire_base, heures_mensuelles_reference, parts_fiscales }
 // Pour le calcul complet de la paie (CNPS + ITS) d'un enseignant permanent.
 router.patch("/:id/salaire", requireRole("direction", "super_admin"), async (req, res) => {
-  const { salaire_base, heures_mensuelles_reference, parts_fiscales, cycle_enseignement } = req.body;
-  const PARTS_VALIDES = [1, 1.5, 2, 3, 4, 5];
-  if (parts_fiscales !== undefined && parts_fiscales !== null && !PARTS_VALIDES.includes(Number(parts_fiscales))) {
-    return res.status(400).json({ error: "Parts fiscales invalides (1, 1.5, 2, 3, 4 ou 5)." });
+  const { calculerPartsFiscales } = require("../services/payrollService");
+  let { salaire_base, heures_mensuelles_reference, parts_fiscales, cycle_enseignement, statut_matrimonial, nombre_enfants } = req.body;
+
+  if (statut_matrimonial && !["celibataire", "marie", "veuf", "divorce"].includes(statut_matrimonial)) {
+    return res.status(400).json({ error: "Statut matrimonial invalide." });
+  }
+  // Si la situation familiale est renseignée (et qu'aucune valeur de parts n'est
+  // donnée explicitement en même temps), on calcule les parts fiscales
+  // automatiquement — évite à l'école de deviner elle-même la conversion.
+  if ((statut_matrimonial || nombre_enfants !== undefined) && parts_fiscales === undefined) {
+    parts_fiscales = calculerPartsFiscales(statut_matrimonial || "celibataire", nombre_enfants || 0);
+  }
+  // Autorise n'importe quelle valeur par demi-part entre 1 et 5 (1, 1.5, 2, 2.5...) —
+  // la réduction RICF se calcule désormais par formule, plus par table figée.
+  if (parts_fiscales !== undefined && parts_fiscales !== null && parts_fiscales !== "") {
+    const p = Number(parts_fiscales);
+    if (isNaN(p) || p < 1 || p > 5 || (p * 2) % 1 !== 0) {
+      return res.status(400).json({ error: "Parts fiscales invalides (entre 1 et 5, par pas de 0,5)." });
+    }
   }
   if (cycle_enseignement && !["1er_cycle", "2nd_cycle"].includes(cycle_enseignement)) {
     return res.status(400).json({ error: "Cycle d'enseignement invalide." });
@@ -146,6 +161,8 @@ router.patch("/:id/salaire", requireRole("direction", "super_admin"), async (req
     heures_mensuelles_reference === "" || heures_mensuelles_reference === undefined ? null : heures_mensuelles_reference,
     parts_fiscales === "" || parts_fiscales === undefined ? null : parts_fiscales,
     cycle_enseignement === "" || cycle_enseignement === undefined ? null : cycle_enseignement,
+    statut_matrimonial === "" || statut_matrimonial === undefined ? null : statut_matrimonial,
+    nombre_enfants === "" || nombre_enfants === undefined ? null : nombre_enfants,
     req.params.id,
   ];
   const filtreEcole = clauseEcole(req, params, "ecole_id");
@@ -154,9 +171,11 @@ router.patch("/:id/salaire", requireRole("direction", "super_admin"), async (req
        salaire_base = COALESCE($1, salaire_base),
        heures_mensuelles_reference = COALESCE($2, heures_mensuelles_reference),
        parts_fiscales = COALESCE($3, parts_fiscales),
-       cycle_enseignement = COALESCE($4, cycle_enseignement)
-     WHERE id = $5 AND ${filtreEcole}
-     RETURNING id, nom, email, role, matieres, statut_emploi, taux_horaire, salaire_base, heures_mensuelles_reference, parts_fiscales, cycle_enseignement, ecole_id, created_at`,
+       cycle_enseignement = COALESCE($4, cycle_enseignement),
+       statut_matrimonial = COALESCE($5, statut_matrimonial),
+       nombre_enfants = COALESCE($6, nombre_enfants)
+     WHERE id = $7 AND ${filtreEcole}
+     RETURNING id, nom, email, role, matieres, statut_emploi, taux_horaire, salaire_base, heures_mensuelles_reference, parts_fiscales, cycle_enseignement, statut_matrimonial, nombre_enfants, ecole_id, created_at`,
     params
   );
   if (!rows[0]) return res.status(404).json({ error: "Compte introuvable (ou hors de ton école)." });
