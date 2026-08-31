@@ -302,8 +302,8 @@ function LoginScreen({ onConnected }) {
    ============================================================ */
 const ROLE_LABELS = { super_admin: "Super-administrateur", direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant général" };
 const NAV_BY_ROLE = {
-  super_admin: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "emploi", "rapports", "notif", "incidents", "parametrage-lecteurs", "parametres", "ecoles"],
-  direction: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "emploi", "rapports", "notif", "incidents", "parametrage-lecteurs", "parametres", "ecoles"],
+  super_admin: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "rapports", "notif", "incidents", "parametrage-lecteurs", "parametres", "ecoles"],
+  direction: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "rapports", "notif", "incidents", "parametrage-lecteurs", "parametres", "ecoles"],
   enseignant: ["appel", "students", "emploi"],
   surveillant: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "incidents"],
 };
@@ -481,7 +481,7 @@ function App({ session, onLogout }) {
       if (availableViews.includes("absenteisme")) {
         api("/attendance/absenteisme?seuil=3").then(setAbsenteisme).catch(catchErr);
         if (view === "absenteisme" && suiviEnseignants.length === 0) chargerSuiviEnseignants();
-        if (view === "absenteisme" && payeEnseignants.length === 0) chargerPayeEnseignants();
+        if ((view === "absenteisme" || view === "paie") && payeEnseignants.length === 0) chargerPayeEnseignants();
         if (view === "absenteisme" && feriesCI2026Charges === null) chargerJoursFeries();
       }
       if (availableViews.includes("notif")) api("/notifications/journal").then(setNotifJournal).catch(catchErr);
@@ -1680,6 +1680,7 @@ function App({ session, onLogout }) {
           {availableViews.includes("enseignants") && <NavItem label="Enseignants" active={view === "enseignants"} onClick={() => { setSidebarOuverte(false); setView("enseignants"); }} count={users.filter((u) => u.role === "enseignant").length} />}
           {availableViews.includes("parents") && <NavItem label="Rattachement parents" active={view === "parents"} onClick={() => { setSidebarOuverte(false); setView("parents"); }} />}
           {availableViews.includes("absenteisme") && <NavItem label="Absentéisme" active={view === "absenteisme"} onClick={() => { setSidebarOuverte(false); setView("absenteisme"); }} count={absenteisme.length} badge={absenteisme.length > 0} />}
+          {availableViews.includes("paie") && <NavItem label="Paie" active={view === "paie"} onClick={() => { setSidebarOuverte(false); setView("paie"); }} />}
           {availableViews.includes("emploi") && <NavItem label="Emploi du temps" active={view === "emploi"} onClick={() => { setSidebarOuverte(false); setView("emploi"); }} />}
           {availableViews.includes("rapports") && <NavItem label="Rapports" active={view === "rapports"} onClick={() => { setSidebarOuverte(false); setView("rapports"); }} />}
           {availableViews.includes("notif") && <NavItem label="Notifications parents" active={view === "notif"} onClick={() => { setSidebarOuverte(false); setView("notif"); }} />}
@@ -2098,62 +2099,6 @@ function App({ session, onLogout }) {
 
             {(role === "direction" || role === "super_admin") && (
               <Card
-                title="Paie des enseignants (heures réellement travaillées)"
-                style={{ marginTop: 20 }}
-                right={
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <input type="date" style={{ ...inputStyle, fontSize: 11.5, padding: "5px 8px" }} value={suiviEnseignantsDebut} onChange={(e) => setSuiviEnseignantsDebut(e.target.value)} />
-                    <span style={{ fontSize: 11, color: COLORS.craieDim }}>→</span>
-                    <input type="date" style={{ ...inputStyle, fontSize: 11.5, padding: "5px 8px" }} value={suiviEnseignantsFin} onChange={(e) => setSuiviEnseignantsFin(e.target.value)} />
-                    <Button small variant="ghost" onClick={chargerPayeEnseignants}>Actualiser</Button>
-                    <Button small variant="ghost" onClick={exporterPayePdf}>Exporter en PDF</Button>
-                  </div>
-                }
-              >
-                <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
-                  Calculée sur les heures où l'appel a réellement été fait — les créneaux "sans appel" ci-dessus ne sont jamais payés. Renseigne le taux horaire (vacataires) ou le salaire de base (permanents) dans la page "Enseignants". ⚠ Le calcul CNPS/ITS des permanents suit le barème 2024 en vigueur — fais-le vérifier périodiquement par un comptable, les taux pouvant changer par loi de finances.
-                </div>
-                {payeEnseignants.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Clique "Actualiser" pour charger la paie de la période choisie.</div>}
-                {payeEnseignants.map((e, i) => (
-                  <div key={e.enseignant} style={{ padding: "11px 18px", borderBottom: i < payeEnseignants.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 500 }}>{e.enseignant}</div>
-                        <div style={{ fontSize: 11, color: COLORS.craieDim }}>
-                          {e.statut_emploi === "permanent" ? "Permanent" : e.statut_emploi === "vacataire" ? "Vacataire" : "Statut non renseigné"}
-                          {e.mode_calcul === "taux_horaire" && (e.taux_horaire != null ? ` · ${e.taux_horaire} F/h` : " · Taux horaire non renseigné")}
-                          {e.mode_calcul === "salaire_reel" && ` · Salaire réel : ${Number(e.salaire_base).toLocaleString("fr-FR")} F/mois`}
-                        </div>
-                      </div>
-                      <span style={{ fontSize: 12, color: COLORS.success }}>{e.heures_travaillees} h travaillées</span>
-                      {e.heures_manquees > 0 && <span style={{ fontSize: 12, color: COLORS.alert }}>{e.heures_manquees} h manquées</span>}
-                      <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.marker, minWidth: 110, textAlign: "right" }}>
-                        {e.montant_a_payer != null ? `${e.montant_a_payer.toLocaleString("fr-FR")} F` : "Taux manquant"}
-                      </span>
-                    </div>
-                    {e.mode_calcul === "salaire_reel" && (
-                      <div style={{ display: "flex", gap: 16, marginTop: 6, paddingLeft: 2, fontSize: 11, color: COLORS.craieDim, flexWrap: "wrap" }}>
-                        <span>Déduction absences : −{e.deduction_absences.toLocaleString("fr-FR")} F</span>
-                        {e.heures_supplementaires > 0 && (
-                          <span style={{ color: COLORS.marker, fontWeight: 600 }}>+{e.heures_supplementaires} h sup. : +{e.montant_heures_supp.toLocaleString("fr-FR")} F</span>
-                        )}
-                        <span>Brut ajusté : {e.salaire_brut_ajuste.toLocaleString("fr-FR")} F</span>
-                        <span>CNPS (6,3%) : −{e.cnps.toLocaleString("fr-FR")} F</span>
-                        <span>ITS : −{e.its_net.toLocaleString("fr-FR")} F</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {payeEnseignants.length > 0 && (
-                  <div style={{ display: "flex", justifyContent: "flex-end", padding: "14px 18px", borderTop: `2px solid ${COLORS.line}`, fontSize: 15, fontWeight: 700, color: COLORS.marker }}>
-                    Total à payer : {payeEnseignants.reduce((s, e) => s + (e.montant_a_payer || 0), 0).toLocaleString("fr-FR")} F
-                  </div>
-                )}
-              </Card>
-            )}
-
-            {(role === "direction" || role === "super_admin") && (
-              <Card
                 title="Jours fériés et non scolaires"
                 style={{ marginTop: 20 }}
                 right={
@@ -2180,6 +2125,66 @@ function App({ session, onLogout }) {
                 ))}
               </Card>
             )}
+          </div>
+        )}
+
+        {view === "paie" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Paie</h1>
+            <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Calculée sur les heures où l'appel a réellement été fait — jamais sur les heures simplement prévues à l'emploi du temps.</div>
+
+            <Card
+              title="Paie des enseignants (heures réellement travaillées)"
+              right={
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="date" style={{ ...inputStyle, fontSize: 11.5, padding: "5px 8px" }} value={suiviEnseignantsDebut} onChange={(e) => setSuiviEnseignantsDebut(e.target.value)} />
+                  <span style={{ fontSize: 11, color: COLORS.craieDim }}>→</span>
+                  <input type="date" style={{ ...inputStyle, fontSize: 11.5, padding: "5px 8px" }} value={suiviEnseignantsFin} onChange={(e) => setSuiviEnseignantsFin(e.target.value)} />
+                  <Button small variant="ghost" onClick={chargerPayeEnseignants}>Actualiser</Button>
+                  <Button small variant="ghost" onClick={exporterPayePdf}>Exporter en PDF</Button>
+                </div>
+              }
+            >
+              <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                Les créneaux "sans appel" (voir "Absentéisme") ne sont jamais payés. Renseigne le taux horaire (vacataires) ou le salaire de base (permanents) dans la page "Enseignants". ⚠ Le calcul CNPS/ITS des permanents suit le barème 2024 en vigueur — fais-le vérifier périodiquement par un comptable, les taux pouvant changer par loi de finances.
+              </div>
+              {payeEnseignants.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Clique "Actualiser" pour charger la paie de la période choisie.</div>}
+              {payeEnseignants.map((e, i) => (
+                <div key={e.enseignant} style={{ padding: "11px 18px", borderBottom: i < payeEnseignants.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{e.enseignant}</div>
+                      <div style={{ fontSize: 11, color: COLORS.craieDim }}>
+                        {e.statut_emploi === "permanent" ? "Permanent" : e.statut_emploi === "vacataire" ? "Vacataire" : "Statut non renseigné"}
+                        {e.mode_calcul === "taux_horaire" && (e.taux_horaire != null ? ` · ${e.taux_horaire} F/h` : " · Taux horaire non renseigné")}
+                        {e.mode_calcul === "salaire_reel" && ` · Salaire réel : ${Number(e.salaire_base).toLocaleString("fr-FR")} F/mois`}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 12, color: COLORS.success }}>{e.heures_travaillees} h travaillées</span>
+                    {e.heures_manquees > 0 && <span style={{ fontSize: 12, color: COLORS.alert }}>{e.heures_manquees} h manquées</span>}
+                    <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.marker, minWidth: 110, textAlign: "right" }}>
+                      {e.montant_a_payer != null ? `${e.montant_a_payer.toLocaleString("fr-FR")} F` : "Taux manquant"}
+                    </span>
+                  </div>
+                  {e.mode_calcul === "salaire_reel" && (
+                    <div style={{ display: "flex", gap: 16, marginTop: 6, paddingLeft: 2, fontSize: 11, color: COLORS.craieDim, flexWrap: "wrap" }}>
+                      <span>Déduction absences : −{e.deduction_absences.toLocaleString("fr-FR")} F</span>
+                      {e.heures_supplementaires > 0 && (
+                        <span style={{ color: COLORS.marker, fontWeight: 600 }}>+{e.heures_supplementaires} h sup. : +{e.montant_heures_supp.toLocaleString("fr-FR")} F</span>
+                      )}
+                      <span>Brut ajusté : {e.salaire_brut_ajuste.toLocaleString("fr-FR")} F</span>
+                      <span>CNPS (6,3%) : −{e.cnps.toLocaleString("fr-FR")} F</span>
+                      <span>ITS : −{e.its_net.toLocaleString("fr-FR")} F</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {payeEnseignants.length > 0 && (
+                <div style={{ display: "flex", justifyContent: "flex-end", padding: "14px 18px", borderTop: `2px solid ${COLORS.line}`, fontSize: 15, fontWeight: 700, color: COLORS.marker }}>
+                  Total à payer : {payeEnseignants.reduce((s, e) => s + (e.montant_a_payer || 0), 0).toLocaleString("fr-FR")} F
+                </div>
+              )}
+            </Card>
           </div>
         )}
 
