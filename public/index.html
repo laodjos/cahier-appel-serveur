@@ -2883,16 +2883,49 @@ function App({ session, onLogout }) {
                 <Button small variant="ghost" icon={P.folder} onClick={genererVolumesOfficiels}>Préremplir le 1er cycle (circulaire officielle)</Button>
               </div>
               {volumesHoraires.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun volume horaire défini — la génération automatique utilisera alors le nombre de séances par défaut.</div>}
-              {volumesHoraires.map((v, i) => (
-                <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 18px", borderBottom: i < volumesHoraires.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
-                  <span style={{ fontWeight: 500, flex: 1 }}>{v.matiere_nom}</span>
-                  <span style={{ fontSize: 11.5, color: COLORS.craieDim, width: 170 }}>
-                    {v.classe_nom ? `Classe : ${v.classe_nom}` : v.niveau || (v.cycle === "1er_cycle" ? "1er cycle (défaut)" : v.cycle === "2nd_cycle" ? "2nd cycle (défaut)" : "—")}
-                  </span>
-                  <span style={{ fontSize: 12.5, color: COLORS.marker, fontWeight: 600, width: 60 }}>{v.heures_semaine} h</span>
-                  <button onClick={() => supprimerVolumeHoraire(v.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
-                </div>
-              ))}
+              {(() => {
+                // Regroupe par cible (cycle entier > niveau > classe précise) pour rester
+                // lisible même avec beaucoup de matières renseignées — plutôt qu'une
+                // longue liste plate qui s'allonge indéfiniment.
+                const ORDRE_NIVEAUX = ["6ème", "5ème", "4ème", "3ème", "2nde", "1ère", "Terminale"];
+                function cleGroupe(v) {
+                  if (v.classe_nom) return `classe:${v.classe_nom}`;
+                  if (v.niveau) return `niveau:${v.niveau}`;
+                  return `cycle:${v.cycle}`;
+                }
+                function libelleGroupe(v) {
+                  if (v.classe_nom) return `Classe — ${v.classe_nom}`;
+                  if (v.niveau) return v.niveau;
+                  return v.cycle === "1er_cycle" ? "1er cycle (valeur par défaut)" : "2nd cycle (valeur par défaut)";
+                }
+                function ordreGroupe(v) {
+                  if (v.cycle && !v.niveau && !v.classe_nom) return v.cycle === "1er_cycle" ? 0 : 1;
+                  if (v.niveau) return 2 + ORDRE_NIVEAUX.indexOf(v.niveau);
+                  return 100; // classes précises en dernier
+                }
+                const groupes = {};
+                for (const v of volumesHoraires) {
+                  const cle = cleGroupe(v);
+                  if (!groupes[cle]) groupes[cle] = { libelle: libelleGroupe(v), ordre: ordreGroupe(v), items: [] };
+                  groupes[cle].items.push(v);
+                }
+                const groupesTries = Object.values(groupes).sort((a, b) => a.ordre - b.ordre || a.libelle.localeCompare(b.libelle));
+
+                return groupesTries.map((groupe) => (
+                  <div key={groupe.libelle}>
+                    <div style={{ padding: "8px 18px", fontSize: 11, fontWeight: 700, color: COLORS.marker, textTransform: "uppercase", letterSpacing: 0.5, background: "rgba(246,242,231,0.04)", borderBottom: `1px solid ${COLORS.line}` }}>
+                      {groupe.libelle}
+                    </div>
+                    {groupe.items.map((v, i) => (
+                      <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 18px", borderBottom: i < groupe.items.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                        <span style={{ fontWeight: 500, flex: 1 }}>{v.matiere_nom}</span>
+                        <span style={{ fontSize: 12.5, color: COLORS.marker, fontWeight: 600, width: 60 }}>{v.heures_semaine} h</span>
+                        <button onClick={() => supprimerVolumeHoraire(v.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                      </div>
+                    ))}
+                  </div>
+                ));
+              })()}
               <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}` }}>
                 <Field label="Matière">
                   <select style={inputStyle} value={nouveauVolume.matiere_id} onChange={(e) => setNouveauVolume((v) => ({ ...v, matiere_id: e.target.value }))}>
