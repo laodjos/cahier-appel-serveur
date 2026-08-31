@@ -406,6 +406,9 @@ function App({ session, onLogout }) {
   const [rapportUserId, setRapportUserId] = useState("");
   const [afficherInfosRhCreation, setAfficherInfosRhCreation] = useState(false);
   const [afficherVolumesClasses, setAfficherVolumesClasses] = useState(false);
+  const [renouvellementEcole, setRenouvellementEcole] = useState(null);
+  const [renouvellementMontant, setRenouvellementMontant] = useState("25000");
+  const [renouvellementMois, setRenouvellementMois] = useState("1");
 
   // Paramétrage des lecteurs biométriques
   const [showAddDevice, setShowAddDevice] = useState(false);
@@ -1459,6 +1462,19 @@ function App({ session, onLogout }) {
     try {
       const updated = await api(`/ecoles/${ecoleId}/annee-scolaire`, { method: "PATCH", body: patch });
       setEcoles((liste) => liste.map((x) => x.id === ecoleId ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function lancerPaiementRenouvellement() {
+    try {
+      const res = await api("/paiements/initier", {
+        method: "POST",
+        body: { ecole_id: renouvellementEcole.id, montant: Number(renouvellementMontant), mois_ajoutes: Number(renouvellementMois) },
+      });
+      window.open(res.payment_url, "_blank");
+      setRenouvellementEcole(null);
+      setGlobalInfo("Paiement lancé dans un nouvel onglet — la date de fin d'utilisation se mettra à jour automatiquement une fois le paiement confirmé par Orange Money.");
+      setTimeout(() => setGlobalInfo(""), 8000);
     } catch (e) { catchErr(e); }
   }
 
@@ -2733,6 +2749,7 @@ function App({ session, onLogout }) {
                       {e.date_fin_utilisation && e.date_fin_utilisation.slice(0,10) < new Date().toISOString().slice(0,10) && (
                         <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.alert, background: COLORS.alertBg, borderRadius: 6, padding: "6px 10px" }}>⚠ Accès expiré — connexion bloquée pour cet établissement</span>
                       )}
+                      <Button small variant="ghost" onClick={() => setRenouvellementEcole(e)}>💳 Renouveler (paiement)</Button>
                     </div>
                   )}
                   <div style={{ padding: "0 18px 14px 18px", display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap", fontSize: 11.5 }}>
@@ -3182,6 +3199,53 @@ function App({ session, onLogout }) {
                 <input type="checkbox" checked={!!editionMatiere.duree_double} onChange={(e) => enregistrerReglagesMatiere(editionMatiere.id, { duree_double: e.target.checked })} />
                 Toujours programmer sur 2h d'affilée (ex. EPS)
               </label>
+            </div>
+          </div>
+        )}
+
+        {renouvellementEcole && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setRenouvellementEcole(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 360 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Renouveler — {renouvellementEcole.nom}</span>
+                <button onClick={() => setRenouvellementEcole(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+              </div>
+              <div style={{ fontSize: 11, color: COLORS.craieDim, marginBottom: 14 }}>
+                Génère un lien de paiement Orange Money. Une fois le paiement confirmé, la date de fin d'utilisation de cet établissement sera prolongée automatiquement — rien à faire manuellement après.
+              </div>
+              <Field label="Montant (F CFA)">
+                <input type="number" style={inputStyle} value={renouvellementMontant} onChange={(e) => setRenouvellementMontant(e.target.value)} />
+              </Field>
+              <Field label="Nombre de mois à ajouter">
+                <input type="number" min="1" style={inputStyle} value={renouvellementMois} onChange={(e) => setRenouvellementMois(e.target.value)} />
+              </Field>
+              <Button icon={P.check} onClick={lancerPaiementRenouvellement} style={{ width: "100%", marginTop: 8 }}>Générer le lien de paiement</Button>
+            </div>
+          </div>
+        )}
+
+        {renouvellementEcole && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setRenouvellementEcole(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 380 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Renouveler — {renouvellementEcole.nom}</span>
+                <button onClick={() => setRenouvellementEcole(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+              </div>
+              <div style={{ fontSize: 11, color: COLORS.craieDim, marginBottom: 14 }}>
+                Génère un lien de paiement (Wave, Orange Money, MTN, Moov, ou carte) à transmettre à l'établissement. La date de fin d'utilisation se prolongera automatiquement dès que le paiement sera confirmé.
+              </div>
+              <Field label="Montant (F CFA)">
+                <input type="number" style={inputStyle} value={renouvellementMontant} onChange={(e) => setRenouvellementMontant(e.target.value)} />
+              </Field>
+              <Field label="Durée ajoutée">
+                <select style={inputStyle} value={renouvellementMois} onChange={(e) => setRenouvellementMois(e.target.value)}>
+                  <option value="1">1 mois</option>
+                  <option value="3">3 mois</option>
+                  <option value="6">6 mois</option>
+                  <option value="12">12 mois (1 an)</option>
+                </select>
+              </Field>
+              <Button icon={P.check} onClick={lancerPaiementRenouvellement} style={{ marginTop: 8, width: "100%" }}>Générer le lien de paiement</Button>
             </div>
           </div>
         )}

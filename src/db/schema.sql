@@ -371,4 +371,23 @@ ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS logo_url TEXT;
 ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS cachet_url TEXT;
 -- Références légales de l'école, affichées en bas de page des documents imprimés.
 ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS registre_commerce TEXT;
+
+-- --------------------------------------------------------------------------
+-- Paiements de renouvellement d'abonnement (Orange Money) — chaque tentative
+-- de paiement est enregistrée ici, avec son statut. La date de fin
+-- d'utilisation de l'école n'est mise à jour QUE lorsque le statut passe à
+-- "reussi", confirmé côté serveur (jamais sur la seule foi d'une redirection
+-- côté client, qui peut être falsifiée).
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paiements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ecole_id UUID REFERENCES ecoles(id),
+  montant NUMERIC NOT NULL,
+  mois_ajoutes INTEGER NOT NULL DEFAULT 1,
+  statut TEXT NOT NULL DEFAULT 'en_attente' CHECK (statut IN ('en_attente', 'reussi', 'echoue')),
+  reference_externe TEXT UNIQUE, -- order_id transmis à Orange Money, sert à retrouver ce paiement depuis le webhook
+  transaction_id_orange TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  confirme_at TIMESTAMPTZ
+);
 ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS email TEXT;
