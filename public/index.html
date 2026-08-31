@@ -405,6 +405,7 @@ function App({ session, onLogout }) {
   const [rapportEleveId, setRapportEleveId] = useState("");
   const [rapportUserId, setRapportUserId] = useState("");
   const [afficherInfosRhCreation, setAfficherInfosRhCreation] = useState(false);
+  const [afficherVolumesClasses, setAfficherVolumesClasses] = useState(false);
 
   // Paramétrage des lecteurs biométriques
   const [showAddDevice, setShowAddDevice] = useState(false);
@@ -2884,47 +2885,89 @@ function App({ session, onLogout }) {
               </div>
               {volumesHoraires.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun volume horaire défini — la génération automatique utilisera alors le nombre de séances par défaut.</div>}
               {(() => {
-                // Regroupe par cible (cycle entier > niveau > classe précise) pour rester
-                // lisible même avec beaucoup de matières renseignées — plutôt qu'une
-                // longue liste plate qui s'allonge indéfiniment.
-                const ORDRE_NIVEAUX = ["6ème", "5ème", "4ème", "3ème", "2nde", "1ère", "Terminale"];
-                function cleGroupe(v) {
-                  if (v.classe_nom) return `classe:${v.classe_nom}`;
-                  if (v.niveau) return `niveau:${v.niveau}`;
-                  return `cycle:${v.cycle}`;
-                }
-                function libelleGroupe(v) {
-                  if (v.classe_nom) return `Classe — ${v.classe_nom}`;
+                // Grille façon "circulaire officielle" : une ligne par matière, une colonne
+                // par niveau/cycle — beaucoup plus compact et lisible qu'une liste, surtout
+                // avec beaucoup de matières renseignées. Les classes précises (qui ne
+                // rentrent pas naturellement dans cette grille) sont mises à part, repliées.
+                const COLONNES = [
+                  { cle: "1er_cycle", libelle: "1er cycle" },
+                  { cle: "6ème", libelle: "6ème" },
+                  { cle: "5ème", libelle: "5ème" },
+                  { cle: "4ème", libelle: "4ème" },
+                  { cle: "3ème", libelle: "3ème" },
+                  { cle: "2nd_cycle", libelle: "2nd cycle" },
+                  { cle: "2nde", libelle: "2nde" },
+                  { cle: "1ère", libelle: "1ère" },
+                  { cle: "Terminale", libelle: "Term." },
+                ];
+                function colonneDe(v) {
                   if (v.niveau) return v.niveau;
-                  return v.cycle === "1er_cycle" ? "1er cycle (valeur par défaut)" : "2nd cycle (valeur par défaut)";
+                  if (!v.classe_nom) return v.cycle;
+                  return null; // classe précise -> pas dans la grille
                 }
-                function ordreGroupe(v) {
-                  if (v.cycle && !v.niveau && !v.classe_nom) return v.cycle === "1er_cycle" ? 0 : 1;
-                  if (v.niveau) return 2 + ORDRE_NIVEAUX.indexOf(v.niveau);
-                  return 100; // classes précises en dernier
-                }
-                const groupes = {};
-                for (const v of volumesHoraires) {
-                  const cle = cleGroupe(v);
-                  if (!groupes[cle]) groupes[cle] = { libelle: libelleGroupe(v), ordre: ordreGroupe(v), items: [] };
-                  groupes[cle].items.push(v);
-                }
-                const groupesTries = Object.values(groupes).sort((a, b) => a.ordre - b.ordre || a.libelle.localeCompare(b.libelle));
 
-                return groupesTries.map((groupe) => (
-                  <div key={groupe.libelle}>
-                    <div style={{ padding: "8px 18px", fontSize: 11, fontWeight: 700, color: COLORS.marker, textTransform: "uppercase", letterSpacing: 0.5, background: "rgba(246,242,231,0.04)", borderBottom: `1px solid ${COLORS.line}` }}>
-                      {groupe.libelle}
-                    </div>
-                    {groupe.items.map((v, i) => (
-                      <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 18px", borderBottom: i < groupe.items.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
-                        <span style={{ fontWeight: 500, flex: 1 }}>{v.matiere_nom}</span>
-                        <span style={{ fontSize: 12.5, color: COLORS.marker, fontWeight: 600, width: 60 }}>{v.heures_semaine} h</span>
-                        <button onClick={() => supprimerVolumeHoraire(v.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                const volumesGrille = volumesHoraires.filter((v) => colonneDe(v));
+                const volumesClasses = volumesHoraires.filter((v) => v.classe_nom);
+
+                // Une ligne par matière distincte présente dans la grille, avec une cellule
+                // par colonne (le volume horaire s'il existe pour ce couple matière/colonne).
+                const matieresPresentes = [...new Set(volumesGrille.map((v) => v.matiere_nom))].sort();
+                const cellule = (matiere, colonne) => volumesGrille.find((v) => v.matiere_nom === matiere && colonneDe(v) === colonne);
+                const colonnesUtilisees = COLONNES.filter((c) => volumesGrille.some((v) => colonneDe(v) === c.cle));
+
+                return (
+                  <React.Fragment>
+                    {matieresPresentes.length > 0 && (
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                          <thead>
+                            <tr>
+                              <th style={{ textAlign: "left", padding: "8px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>Matière</th>
+                              {colonnesUtilisees.map((c) => (
+                                <th key={c.cle} style={{ textAlign: "center", padding: "8px 10px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}`, minWidth: 62 }}>{c.libelle}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {matieresPresentes.map((matiere, i) => (
+                              <tr key={matiere} style={{ borderBottom: i < matieresPresentes.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                                <td style={{ padding: "8px 18px", fontWeight: 500 }}>{matiere}</td>
+                                {colonnesUtilisees.map((c) => {
+                                  const v = cellule(matiere, c.cle);
+                                  return (
+                                    <td key={c.cle} style={{ textAlign: "center", padding: "8px 6px" }}>
+                                      {v ? (
+                                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: COLORS.marker, fontWeight: 600 }}>
+                                          {v.heures_semaine}h
+                                          <button onClick={() => supprimerVolumeHoraire(v.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim, display: "flex", padding: 0 }}><Icon path={P.x} size={10} /></button>
+                                        </span>
+                                      ) : <span style={{ color: COLORS.craieDim }}>—</span>}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                    ))}
-                  </div>
-                ));
+                    )}
+                    {volumesClasses.length > 0 && (
+                      <div>
+                        <button type="button" onClick={() => setAfficherVolumesClasses((v) => !v)} style={{ width: "100%", textAlign: "left", background: "rgba(246,242,231,0.04)", border: "none", borderTop: `1px solid ${COLORS.line}`, borderBottom: `1px solid ${COLORS.line}`, padding: "8px 18px", fontSize: 11, fontWeight: 700, color: COLORS.marker, textTransform: "uppercase", letterSpacing: 0.5, cursor: "pointer" }}>
+                          {afficherVolumesClasses ? "▾" : "▸"} Classes précises ({volumesClasses.length})
+                        </button>
+                        {afficherVolumesClasses && volumesClasses.map((v, i) => (
+                          <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 18px", borderBottom: i < volumesClasses.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                            <span style={{ fontWeight: 500, flex: 1 }}>{v.matiere_nom}</span>
+                            <span style={{ fontSize: 11.5, color: COLORS.craieDim, width: 150 }}>{v.classe_nom}</span>
+                            <span style={{ fontSize: 12.5, color: COLORS.marker, fontWeight: 600, width: 60 }}>{v.heures_semaine} h</span>
+                            <button onClick={() => supprimerVolumeHoraire(v.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
               })()}
               <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}` }}>
                 <Field label="Matière">
