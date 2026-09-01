@@ -111,6 +111,27 @@ router.patch("/:id/nom", async (req, res) => {
   res.json(rows[0]);
 });
 
+router.patch("/:id/email", async (req, res) => {
+  const { email } = req.body;
+  const emailPropre = (email || "").trim().toLowerCase();
+  if (!emailPropre || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailPropre)) {
+    return res.status(400).json({ error: "Adresse email invalide." });
+  }
+  const params = [emailPropre, req.params.id];
+  const filtreEcole = clauseEcole(req, params, "ecole_id");
+  try {
+    const { rows } = await pool.query(
+      `UPDATE users SET email = $1 WHERE id = $2 AND ${filtreEcole} RETURNING id, nom, email, role, matieres, statut_emploi, ecole_id, created_at`,
+      params
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Compte introuvable (ou hors de ton école)." });
+    res.json(rows[0]);
+  } catch (err) {
+    if (err.code === "23505") return res.status(409).json({ error: "Cet email est déjà utilisé par un autre compte." });
+    throw err;
+  }
+});
+
 router.patch("/:id/matieres", async (req, res) => {
   const { matieres } = req.body;
   const params = [matieres?.trim() || null, req.params.id];

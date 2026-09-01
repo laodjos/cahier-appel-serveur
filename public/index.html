@@ -1243,6 +1243,14 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function changeUserEmail(id, email) {
+    if (!email.trim()) return;
+    try {
+      const updated = await api(`/users/${id}/email`, { method: "PATCH", body: { email } });
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
   async function changeUserMatieres(id, matieres) {
     try {
       const updated = await api(`/users/${id}/matieres`, { method: "PATCH", body: { matieres: matieres === "—" ? "" : matieres } });
@@ -2699,7 +2707,7 @@ function App({ session, onLogout }) {
                 <div key={u.id} style={{ borderBottom: i < users.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.4fr 0.9fr 1.4fr 1.1fr auto", alignItems: "center", padding: "10px 18px", fontSize: 13, gap: 8 }}>
                     <NomEditable valeur={u.nom} onValider={(v) => changeUserNom(u.id, v)} style={{ fontWeight: 500 }} />
-                    <span style={{ color: COLORS.craieDim, fontSize: 12 }}>{u.email}</span>
+                    <NomEditable valeur={u.email} onValider={(v) => changeUserEmail(u.id, v)} style={{ color: COLORS.craieDim, fontSize: 12 }} />
                     <select style={{ ...inputStyle, fontSize: 12 }} value={u.role} onChange={(e) => changeUserRole(u.id, e.target.value)}>
                       <option value="enseignant">Enseignant</option>
                       <option value="surveillant">Surveillant général</option>
