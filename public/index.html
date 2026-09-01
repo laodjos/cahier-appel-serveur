@@ -1858,7 +1858,7 @@ function App({ session, onLogout }) {
             <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
               <SelectClasseParNiveau classes={classes} value={selectedClasseId} onChange={(e) => setSelectedClasseId(e.target.value)} style={inputStyle} />
               <select value={selectedCreneauId || ""} onChange={(e) => setSelectedCreneauId(e.target.value)} style={inputStyle}>
-                {creneaux.map((c) => <option key={c.id} value={c.id}>{JOURS[c.jour_semaine - 1]} {c.heure_debut?.slice(0,5)} · {c.matiere}</option>)}
+                {creneaux.filter((c) => role !== "enseignant" || c.enseignant === session.user.nom).map((c) => <option key={c.id} value={c.id}>{JOURS[c.jour_semaine - 1]} {c.heure_debut?.slice(0,5)} · {c.matiere}</option>)}
               </select>
             </div>
             <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>

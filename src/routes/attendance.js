@@ -56,6 +56,18 @@ router.post("/manual", async (req, res) => {
   if (!student_id || !["present", "retard", "absent"].includes(statut)) {
     return res.status(400).json({ error: "student_id et statut (present|retard|absent) requis." });
   }
+
+  // Même contrôle que pour la validation d'appel : un enseignant ne peut marquer
+  // la présence que pour un créneau qui lui est réellement affecté.
+  if (req.user.role === "enseignant") {
+    if (!creneau_id) return res.status(400).json({ error: "creneau_id requis pour pointer en tant qu'enseignant." });
+    const { rows: creneauRows } = await pool.query("SELECT enseignant FROM creneaux WHERE id = $1", [creneau_id]);
+    if (!creneauRows[0]) return res.status(404).json({ error: "Créneau introuvable." });
+    if (creneauRows[0].enseignant !== req.user.nom) {
+      return res.status(403).json({ error: "Tu n'es pas l'enseignant affecté à ce créneau — impossible de pointer pour cette classe." });
+    }
+  }
+
   const { rows } = await pool.query(
     `INSERT INTO attendance_events (student_id, creneau_id, source, statut, saisi_par)
      VALUES ($1, $2, 'manuel', $3, $4) RETURNING *`,
@@ -173,6 +185,19 @@ router.get("/absenteisme", async (req, res) => {
 router.post("/valider-appel", async (req, res) => {
   const { classe_id, creneau_id } = req.body;
   if (!classe_id) return res.status(400).json({ error: "classe_id requis." });
+
+  // Un compte enseignant ne peut valider l'appel QUE pour un créneau qui lui est
+  // réellement affecté — sans ce contrôle, n'importe quel enseignant pouvait
+  // valider l'appel d'une classe où il n'a pas cours. Direction/Surveillant/
+  // Super-administrateur gardent un accès complet (rôle de supervision).
+  if (req.user.role === "enseignant") {
+    if (!creneau_id) return res.status(400).json({ error: "creneau_id requis pour valider un appel en tant qu'enseignant." });
+    const { rows: creneauRows } = await pool.query("SELECT enseignant FROM creneaux WHERE id = $1 AND classe_id = $2", [creneau_id, classe_id]);
+    if (!creneauRows[0]) return res.status(404).json({ error: "Créneau introuvable pour cette classe." });
+    if (creneauRows[0].enseignant !== req.user.nom) {
+      return res.status(403).json({ error: "Tu n'es pas l'enseignant affecté à ce créneau — impossible de valider cet appel." });
+    }
+  }
 
   const { rows: eleves } = await pool.query("SELECT id FROM students WHERE classe_id = $1", [classe_id]);
 
