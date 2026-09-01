@@ -519,6 +519,7 @@ function App({ session, onLogout }) {
   const [nouvelleMatiereDureeDouble, setNouvelleMatiereDureeDouble] = useState(false);
   const [editionMatiere, setEditionMatiere] = useState(null);
   const [gestionSalaireUser, setGestionSalaireUser] = useState(null);
+  const [dossierEnseignantId, setDossierEnseignantId] = useState(null);
   const [volumesHoraires, setVolumesHoraires] = useState([]);
   const [nouveauVolume, setNouveauVolume] = useState({ matiere_id: "", classe_id: "", niveau: "", cycle: "", heures_semaine: "" });
   const [sallesListe, setSallesListe] = useState([]);
@@ -2722,6 +2723,7 @@ function App({ session, onLogout }) {
                       {u.salaire_base != null ? `${Number(u.salaire_base).toLocaleString("fr-FR")} F/mois` : "— définir le salaire"}
                     </button>
                     <button onClick={() => imprimerBulletinSalaire(u.id, u.nom)} title="Imprimer le bulletin de salaire" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.scan} size={14} /></button>
+                    {u.role === "enseignant" && <button onClick={() => setDossierEnseignantId(u.id)} title="Voir le dossier complet" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.users} size={14} /></button>}
                     <button onClick={() => removeUser(u.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
                   </div>
                   {estDirectionGenerale && (
@@ -3293,6 +3295,7 @@ function App({ session, onLogout }) {
                     <NomEditable valeur={u.taux_horaire != null ? `${u.taux_horaire} F` : "— définir"} onValider={(v) => changeTauxHoraire(u.id, v)} style={{ fontSize: 12, color: u.taux_horaire != null ? COLORS.craie : COLORS.craieDim }} />
                   )}
                   <button onClick={() => imprimerBulletinSalaire(u.id, u.nom)} title="Imprimer le bulletin de salaire" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.scan} size={14} /></button>
+                  <button onClick={() => setDossierEnseignantId(u.id)} title="Voir le dossier complet" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.users} size={14} /></button>
                   <button onClick={() => removeUser(u.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
                 </div>
               ))}
@@ -3344,6 +3347,70 @@ function App({ session, onLogout }) {
             </div>
           </div>
         )}
+
+        {dossierEnseignantId && (() => {
+          // Dérivé directement de "users" à chaque rendu — reste automatiquement à jour
+          // dès qu'un des boutons ci-dessous modifie l'enseignant, sans synchronisation
+          // manuelle à ajouter à chaque fonction (source classique d'oublis/bugs).
+          const u = users.find((x) => x.id === dossierEnseignantId);
+          if (!u) return null;
+          return (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setDossierEnseignantId(null)}>
+              <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 24, width: 460, maxHeight: "85vh", overflowY: "auto" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+                  <div>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 19, fontWeight: 600 }}>
+                      <NomEditable valeur={u.nom} onValider={(v) => changeUserNom(u.id, v)} />
+                    </div>
+                    <div style={{ fontSize: 12.5, color: COLORS.craieDim, marginTop: 2 }}>
+                      <NomEditable valeur={u.email} onValider={(v) => changeUserEmail(u.id, v)} />
+                    </div>
+                  </div>
+                  <button onClick={() => setDossierEnseignantId(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={18} /></button>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+                  <select style={{ ...inputStyle, fontSize: 12.5 }} value={u.statut_emploi || ""} onChange={(e) => changeStatutEmploi(u.id, e.target.value || null)}>
+                    <option value="">Statut non renseigné</option>
+                    <option value="permanent">Permanent</option>
+                    <option value="vacataire">Vacataire</option>
+                  </select>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                  <button onClick={() => setGestionClassesUser(u)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(246,242,231,0.04)", border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "10px 12px", color: COLORS.craie, cursor: "pointer", textAlign: "left" }}>
+                    <span>📚 Classes rattachées</span>
+                    <span style={{ color: COLORS.craieDim, fontSize: 12 }}>{(u.classes_rattachees || []).length === 0 ? "Aucune" : (u.classes_rattachees || []).map((c) => c.nom).join(", ")}</span>
+                  </button>
+                  <button onClick={() => setGestionMatieresUser(u)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(246,242,231,0.04)", border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "10px 12px", color: COLORS.craie, cursor: "pointer", textAlign: "left" }}>
+                    <span>📖 Matières enseignées</span>
+                    <span style={{ color: COLORS.craieDim, fontSize: 12 }}>{u.matieres || "Aucune"}</span>
+                  </button>
+                  <button onClick={() => ouvrirDisponibilitesUser(u)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(246,242,231,0.04)", border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "10px 12px", color: COLORS.craie, cursor: "pointer", textAlign: "left" }}>
+                    <span>🕒 Disponibilités</span>
+                    <span style={{ color: COLORS.craieDim, fontSize: 12 }}>{u.statut_emploi === "vacataire" ? "À renseigner" : "Toujours disponible"}</span>
+                  </button>
+                  <button onClick={() => setGestionSalaireUser(u)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(246,242,231,0.04)", border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "10px 12px", color: COLORS.craie, cursor: "pointer", textAlign: "left" }}>
+                    <span>💰 Salaire et parts fiscales</span>
+                    <span style={{ color: COLORS.craieDim, fontSize: 12 }}>
+                      {u.statut_emploi === "permanent"
+                        ? (u.salaire_base != null ? `${Number(u.salaire_base).toLocaleString("fr-FR")} F/mois` : "Non renseigné")
+                        : (u.taux_horaire != null ? `${u.taux_horaire} F/h` : "Non renseigné")}
+                    </span>
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, marginTop: 18, paddingTop: 14, borderTop: `1px solid ${COLORS.line}` }}>
+                  <Button small variant="ghost" icon={P.scan} onClick={() => imprimerBulletinSalaire(u.id, u.nom)}>Bulletin de salaire</Button>
+                  <div style={{ flex: 1 }} />
+                  <button onClick={() => { setDossierEnseignantId(null); removeUser(u.id); }} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.alert, fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Icon path={P.trash} size={14} /> Supprimer le compte
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {renouvellementEcole && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setRenouvellementEcole(null)}>
