@@ -104,7 +104,7 @@ const P = {
 /* ============================================================
    Client API — parle au vrai backend
    ============================================================ */
-function useApi(baseUrl, token, ecoleActiveId) {
+function useApi(baseUrl, token, ecoleActiveId, onAuthError) {
   return useCallback(async (path, options = {}) => {
     const estFormData = options.body instanceof FormData;
     // Le Super-administrateur "en consultation" d'une école précise : on ajoute
@@ -129,9 +129,12 @@ function useApi(baseUrl, token, ecoleActiveId) {
     });
     let data = null;
     try { data = await res.json(); } catch {}
+    // Un jeton expiré (12h) ou invalide déclenche une déconnexion propre plutôt que
+    // de laisser l'application s'enliser dans des erreurs répétées sans explication.
+    if (res.status === 401 && onAuthError) { onAuthError(); throw new Error("Session expirée — reconnecte-toi."); }
     if (!res.ok) throw new Error(data?.error || `Erreur ${res.status}`);
     return data;
-  }, [baseUrl, token, ecoleActiveId]);
+  }, [baseUrl, token, ecoleActiveId, onAuthError]);
 }
 
 /* ============================================================
@@ -318,7 +321,7 @@ function App({ session, onLogout }) {
   // (et qui, sans cette protection, écraserait par erreur la bonne liste déjà affichée).
   const ecoleActiveIdRef = useRef(ecoleActiveId);
   useEffect(() => { ecoleActiveIdRef.current = ecoleActiveId; }, [ecoleActiveId]);
-  const api = useApi(session.baseUrl, session.token, estDirectionGenerale ? ecoleActiveId : null);
+  const api = useApi(session.baseUrl, session.token, estDirectionGenerale ? ecoleActiveId : null, onLogout);
 
   const [view, setView] = useState(availableViews[0]);
   const [sidebarOuverte, setSidebarOuverte] = useState(false);
@@ -3456,9 +3459,32 @@ function App({ session, onLogout }) {
 }
 
 function Root() {
-  const [session, setSession] = useState(null);
-  if (!session) return <LoginScreen onConnected={setSession} />;
-  return <App session={session} onLogout={() => setSession(null)} />;
+  // La session est sauvegardée dans localStorage pour survivre à une actualisation
+  // du navigateur — sans ça, chaque F5 renvoyait à l'écran de connexion, même
+  // en pleine utilisation. Elle reste valable tant que le jeton n'a pas expiré
+  // côté serveur (12h) ; si une requête échoue pour cause d'authentification
+  // invalide, la session est effacée et l'écran de connexion réapparaît.
+  const [session, setSession] = useState(() => {
+    try {
+      const sauvegardee = localStorage.getItem("cahierAppelSession");
+      return sauvegardee ? JSON.parse(sauvegardee) : null;
+    } catch {
+      return null; // session corrompue ou illisible -> redémarre proprement sur l'écran de connexion
+    }
+  });
+
+  function connecterEtSauvegarder(nouvelleSession) {
+    localStorage.setItem("cahierAppelSession", JSON.stringify(nouvelleSession));
+    setSession(nouvelleSession);
+  }
+
+  function deconnecter() {
+    localStorage.removeItem("cahierAppelSession");
+    setSession(null);
+  }
+
+  if (!session) return <LoginScreen onConnected={connecterEtSauvegarder} />;
+  return <App session={session} onLogout={deconnecter} />;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
