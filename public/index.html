@@ -531,11 +531,23 @@ function App({ session, onLogout }) {
   // Chargement initial : classes + élèves + école active (pour l'en-tête)
   useEffect(() => {
     const ecoleAuMoment = ecoleActiveId;
-    api("/classes").then((rows) => { if (ecoleActiveIdRef.current === ecoleAuMoment) { setClasses(rows); if (rows[0]) setSelectedClasseId(rows[0].id); } }).catch(catchErr);
+    api("/classes").then((rows) => { if (ecoleActiveIdRef.current === ecoleAuMoment) { setClasses(rows); setSelectedClasseId((id) => id || rows[0]?.id); } }).catch(catchErr);
     api("/students").then((rows) => { if (ecoleActiveIdRef.current === ecoleAuMoment) setStudents(rows); }).catch(catchErr);
     api("/ecoles").then(setEcoles).catch(() => {});
     api("/annees-scolaires").then(setAnneesScolaires).catch(() => {});
   }, [api]);
+
+  // La liste des classes se rafraîchit aussi périodiquement (pas seulement au
+  // chargement) — sans ça, un enseignant qui garde l'application ouverte ne
+  // verrait jamais apparaître une nouvelle classe à laquelle il vient d'être
+  // rattaché, tant qu'il ne se déconnecte/reconnecte pas.
+  useEffect(() => {
+    const ecoleAuMoment = ecoleActiveId;
+    const id = setInterval(() => {
+      api("/classes").then((rows) => { if (ecoleActiveIdRef.current === ecoleAuMoment) setClasses(rows); }).catch(() => {});
+    }, 60000);
+    return () => clearInterval(id);
+  }, [api, ecoleActiveId]);
 
   // Créneaux de la classe sélectionnée
   useEffect(() => {
