@@ -241,6 +241,26 @@ function FormPanel({ title, onClose, children, onValidate, submitLabel, error })
 
 const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 
+// Détermine si un créneau est "imminent" (commence dans les 15 minutes) ou "en
+// cours" par rapport à l'heure actuelle — pour le signaler visuellement à
+// l'enseignant dans son emploi du temps. Renvoie null le reste du temps (ou si
+// ce créneau n'a pas lieu aujourd'hui).
+function statutCreneau(creneau, maintenant) {
+  if (!creneau.heure_debut || !creneau.heure_fin) return null;
+  const jourSemaineAujourdhui = maintenant.getDay() || 7; // dimanche (0) -> 7
+  if (creneau.jour_semaine !== jourSemaineAujourdhui) return null;
+
+  const [hD, mD] = creneau.heure_debut.split(":").map(Number);
+  const [hF, mF] = creneau.heure_fin.split(":").map(Number);
+  const debutMinutes = hD * 60 + mD;
+  const finMinutes = hF * 60 + mF;
+  const maintenantMinutes = maintenant.getHours() * 60 + maintenant.getMinutes();
+
+  if (maintenantMinutes >= debutMinutes && maintenantMinutes < finMinutes) return "en_cours";
+  if (maintenantMinutes >= debutMinutes - 15 && maintenantMinutes < debutMinutes) return "imminent";
+  return null;
+}
+
 /* ============================================================
    Écran de connexion / configuration
    ============================================================ */
@@ -322,6 +342,15 @@ function App({ session, onLogout }) {
   const ecoleActiveIdRef = useRef(ecoleActiveId);
   useEffect(() => { ecoleActiveIdRef.current = ecoleActiveId; }, [ecoleActiveId]);
   const api = useApi(session.baseUrl, session.token, estDirectionGenerale ? ecoleActiveId : null, onLogout);
+
+  // Heure "vivante", mise à jour chaque minute — sert à signaler visuellement à un
+  // enseignant qu'un cours commence bientôt (dans les 15 min) ou est en cours,
+  // directement dans l'emploi du temps, sans qu'il ait besoin de recharger la page.
+  const [maintenant, setMaintenant] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setMaintenant(new Date()), 60000);
+    return () => clearInterval(id);
+  }, []);
 
   const [view, setView] = useState(availableViews[0]);
   const [sidebarOuverte, setSidebarOuverte] = useState(false);
@@ -2334,15 +2363,28 @@ function App({ session, onLogout }) {
                     <div style={{ padding: "9px 18px", background: "rgba(217,164,65,0.08)", fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 13, color: COLORS.marker, borderBottom: `1px solid ${COLORS.line}` }}>
                       {jour}
                     </div>
-                    {creneauxDuJour.map((c, i) => (
-                      <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 18px 12px 30px", borderBottom: i < creneauxDuJour.length - 1 ? `1px solid ${COLORS.line}` : "none", background: c.est_pause ? "rgba(94,156,121,0.07)" : "transparent" }}>
+                    {creneauxDuJour.map((c, i) => {
+                      const statut = statutCreneau(c, maintenant);
+                      return (
+                      <div key={c.id} style={{
+                        display: "flex", alignItems: "center", gap: 14, padding: "12px 18px 12px 30px",
+                        borderBottom: i < creneauxDuJour.length - 1 ? `1px solid ${COLORS.line}` : "none",
+                        background: statut === "en_cours" ? "rgba(94,156,121,0.15)" : statut === "imminent" ? "rgba(217,164,65,0.18)" : (c.est_pause ? "rgba(94,156,121,0.07)" : "transparent"),
+                        borderLeft: statut ? `3px solid ${statut === "en_cours" ? COLORS.success : COLORS.marker}` : "3px solid transparent",
+                      }}>
+                        {statut && (
+                          <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: statut === "en_cours" ? COLORS.success : COLORS.marker, background: statut === "en_cours" ? COLORS.successBg : "rgba(217,164,65,0.15)", borderRadius: 999, padding: "3px 8px", flexShrink: 0 }}>
+                            {statut === "en_cours" ? "● En cours" : "⏰ Dans -15 min"}
+                          </span>
+                        )}
                         <span style={{ fontSize: 12, color: COLORS.craieDim, width: 120, flexShrink: 0 }}>{c.heure_debut?.slice(0,5)}–{c.heure_fin?.slice(0,5)}</span>
                         <span style={{ fontSize: 13, fontWeight: 500, flex: 1, color: c.est_pause ? COLORS.success : COLORS.craie, fontStyle: c.est_pause ? "italic" : "normal" }}>{c.matiere}{c.est_pause ? " ☕" : ""}</span>
                         <span style={{ fontSize: 12, color: COLORS.craieDim }}>{c.enseignant}</span>
                         {c.salle_nom && <span style={{ fontSize: 11, color: COLORS.marker, background: "rgba(217,164,65,0.1)", borderRadius: 6, padding: "2px 7px" }}>{c.salle_nom}</span>}
                         {role === "direction" && <button onClick={() => removeCreneau(c.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })}
