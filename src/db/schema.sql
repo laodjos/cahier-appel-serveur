@@ -391,3 +391,18 @@ CREATE TABLE IF NOT EXISTS paiements (
   confirme_at TIMESTAMPTZ
 );
 ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS email TEXT;
+
+-- --------------------------------------------------------------------------
+-- Abonnements aux notifications web push — un enseignant peut être abonné
+-- depuis plusieurs appareils/navigateurs à la fois (d'où une table séparée
+-- plutôt qu'une seule colonne sur users). Utilisé pour le rappel "cours dans
+-- 15 min", envoyé même si l'application n'est pas ouverte à l'écran.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

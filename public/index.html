@@ -352,6 +352,59 @@ function App({ session, onLogout }) {
     return () => clearInterval(id);
   }, []);
 
+  // Créneaux du jour de l'enseignant connecté, toutes classes confondues — sert
+  // au bandeau "prochain cours" visible en permanence, sans avoir à choisir une
+  // classe. Rechargé chaque minute (même rythme que l'horloge ci-dessus) pour
+  // rester à jour au fil de la journée.
+  const [mesCreneauxAujourdhui, setMesCreneauxAujourdhui] = useState([]);
+  useEffect(() => {
+    if (role !== "enseignant") return;
+    let annule = false;
+    function charger() { api("/creneaux/mes-aujourdhui").then((d) => { if (!annule) setMesCreneauxAujourdhui(d); }).catch(() => {}); }
+    charger();
+    const id = setInterval(charger, 60000);
+    return () => { annule = true; clearInterval(id); };
+  }, [role, api]);
+
+  // Abonnement aux notifications push (rappel "cours dans 15 min" même appli
+  // fermée) — tenté une fois par session pour un enseignant, silencieusement :
+  // si le navigateur ne supporte pas les notifications, ou si l'enseignant les
+  // refuse, l'application continue de fonctionner normalement (le bandeau en
+  // haut de l'écran reste disponible dans tous les cas, lui, tant que l'appli est ouverte).
+  const [statutPush, setStatutPush] = useState("inconnu"); // inconnu | abonne | refuse | non_supporte | erreur
+  useEffect(() => {
+    if (role !== "enseignant") return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) { setStatutPush("non_supporte"); return; }
+
+    async function sAbonner() {
+      try {
+        const { publicKey } = await api("/push/vapid-public-key");
+        const registration = await navigator.serviceWorker.register("/sw.js");
+        await navigator.serviceWorker.ready;
+
+        let abonnementExistant = await registration.pushManager.getSubscription();
+        if (abonnementExistant) { setStatutPush("abonne"); return; }
+
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") { setStatutPush("refuse"); return; }
+
+        const applicationServerKey = Uint8Array.from(
+          atob(publicKey.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)
+        );
+        const nouvelAbonnement = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey,
+        });
+        await api("/push/subscribe", { method: "POST", body: nouvelAbonnement.toJSON() });
+        setStatutPush("abonne");
+      } catch (err) {
+        console.error("Abonnement push impossible :", err.message);
+        setStatutPush("erreur");
+      }
+    }
+    sAbonner();
+  }, [role, api]);
+
   const [view, setView] = useState(availableViews[0]);
   const [sidebarOuverte, setSidebarOuverte] = useState(false);
   const [classes, setClasses] = useState([]);
@@ -1725,6 +1778,37 @@ function App({ session, onLogout }) {
       </aside>
 
       <main className="app-main">
+        {(() => {
+          if (role !== "enseignant") return null;
+          // Cherche d'abord un cours EN COURS, sinon le prochain cours IMMINENT (dans
+          // les 15 min) — le premier trouvé dans cet ordre est celui à signaler.
+          const enCours = mesCreneauxAujourdhui.find((c) => statutCreneau(c, maintenant) === "en_cours");
+          const imminent = mesCreneauxAujourdhui.find((c) => statutCreneau(c, maintenant) === "imminent");
+          const c = enCours || imminent;
+          if (!c) return null;
+          const estEnCours = !!enCours;
+          return (
+            <div style={{
+              background: estEnCours ? COLORS.successBg : "rgba(217,164,65,0.15)",
+              border: `1px solid ${estEnCours ? COLORS.success : COLORS.marker}`,
+              borderRadius: 10, padding: "10px 14px", marginBottom: 18, fontSize: 13,
+              color: estEnCours ? COLORS.success : COLORS.marker, display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <span style={{ fontSize: 16 }}>{estEnCours ? "●" : "⏰"}</span>
+              <span>
+                <strong>{estEnCours ? "Cours en cours : " : "Cours dans moins de 15 min : "}</strong>
+                {c.matiere} — {c.classe_nom} ({c.heure_debut?.slice(0,5)}–{c.heure_fin?.slice(0,5)}{c.salle_nom ? `, ${c.salle_nom}` : ""})
+              </span>
+            </div>
+          );
+        })()}
+
+        {role === "enseignant" && statutPush === "refuse" && (
+          <div style={{ background: "rgba(246,242,231,0.05)", border: `1px solid ${COLORS.line}`, borderRadius: 10, padding: "8px 14px", marginBottom: 18, fontSize: 11.5, color: COLORS.craieDim }}>
+            🔕 Les notifications de rappel de cours sont désactivées pour ce navigateur. Le bandeau ci-dessus reste disponible tant que l'application est ouverte — pour recevoir aussi une alerte même appli fermée, autorise les notifications dans les réglages de ton navigateur pour ce site.
+          </div>
+        )}
+
         {globalError && (
           <div style={{ background: COLORS.alertBg, border: `1px solid ${COLORS.alert}`, borderRadius: 10, padding: "10px 14px", marginBottom: 18, fontSize: 12.5, color: COLORS.alert, display: "flex", alignItems: "center", gap: 8 }}>
             <Icon path={P.alertTriangle} size={14} /> {globalError}

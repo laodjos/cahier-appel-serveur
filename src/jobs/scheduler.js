@@ -3,6 +3,7 @@ const { pool } = require("../config/db");
 const { synchroniserLecteurZkteco } = require("../connectors/zktecoConnector");
 const { synchroniserLecteurHikvision } = require("../connectors/hikvisionConnector");
 const { envoyerNotification } = require("../services/notificationService");
+const { envoyerPushAUtilisateur } = require("../services/pushService");
 
 // Nombre d'échecs consécutifs tolérés avant de déclarer un lecteur "hors ligne" —
 // évite qu'une coupure réseau d'une seconde déclenche une fausse alerte à chaque fois.
@@ -73,4 +74,55 @@ function demarrerEnvoiNotifications() {
   console.log("⏱  Envoi des notifications programmées : vérification chaque minute");
 }
 
-module.exports = { demarrerPollingLecteurs, demarrerEnvoiNotifications };
+// --------------------------------------------------------------------------
+// 3) Rappel "cours dans 15 minutes" aux enseignants abonnés aux notifications
+//    push — fonctionne même si l'application n'est pas ouverte à l'écran.
+//    Tourne toutes les minutes ; comme les créneaux commencent toujours à une
+//    minute ronde, chaque créneau ne déclenche le rappel qu'une seule fois
+//    (exactement 15 minutes avant son heure de début).
+// --------------------------------------------------------------------------
+function demarrerRappelsCoursEnseignants() {
+  if (!process.env.VAPID_PUBLIC_KEY) {
+    console.log("⏱  Rappels de cours (push) désactivés — VAPID_PUBLIC_KEY non configuré.");
+    return;
+  }
+  cron.schedule("* * * * *", async () => {
+    const maintenant = new Date();
+    const jourSemaine = maintenant.getDay() || 7;
+    const aujourdHui = maintenant.toISOString().slice(0, 10);
+    const dans15min = new Date(maintenant.getTime() + 15 * 60000);
+    const heureCible = `${String(dans15min.getHours()).padStart(2, "0")}:${String(dans15min.getMinutes()).padStart(2, "0")}`;
+
+    const { rows: creneaux } = await pool.query(
+      `SELECT cr.*, cl.nom AS classe_nom, cl.ecole_id, sa.nom AS salle_nom FROM creneaux cr
+       JOIN classes cl ON cl.id = cr.classe_id
+       LEFT JOIN salles sa ON sa.id = cr.salle_id
+       WHERE cr.est_pause = false AND cr.enseignant IS NOT NULL
+         AND cr.heure_debut::text LIKE $1 || ':%'
+         AND (cr.jour_semaine = $2 OR cr.date_exceptionnelle = $3)`,
+      [heureCible, jourSemaine, aujourdHui]
+    );
+
+    for (const cr of creneaux) {
+      try {
+        // Filtre aussi par école pour éviter qu'une homonymie entre deux
+        // établissements différents n'envoie le rappel au mauvais enseignant.
+        const { rows: profs } = await pool.query(
+          "SELECT id FROM users WHERE nom = $1 AND role = 'enseignant' AND ecole_id IS NOT DISTINCT FROM $2",
+          [cr.enseignant, cr.ecole_id]
+        );
+        for (const prof of profs) {
+          await envoyerPushAUtilisateur(prof.id, {
+            title: "Cours dans 15 minutes",
+            body: `${cr.matiere} — ${cr.classe_nom} (${cr.heure_debut?.slice(0,5)}${cr.salle_nom ? `, ${cr.salle_nom}` : ""})`,
+          });
+        }
+      } catch (err) {
+        console.error("Échec d'envoi du rappel de cours :", err.message);
+      }
+    }
+  });
+  console.log("⏱  Rappels de cours aux enseignants (push) : vérification chaque minute");
+}
+
+module.exports = { demarrerPollingLecteurs, demarrerEnvoiNotifications, demarrerRappelsCoursEnseignants };

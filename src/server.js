@@ -22,8 +22,9 @@ const volumesHorairesRoutes = require("./routes/volumesHoraires");
 const disponibilitesRoutes = require("./routes/disponibilites");
 const anneesScolairesRoutes = require("./routes/anneesScolaires");
 const paiementsRoutes = require("./routes/paiements");
+const pushRoutes = require("./routes/push");
 
-const { demarrerPollingLecteurs, demarrerEnvoiNotifications } = require("./jobs/scheduler");
+const { demarrerPollingLecteurs, demarrerEnvoiNotifications, demarrerRappelsCoursEnseignants } = require("./jobs/scheduler");
 
 const app = express();
 
@@ -77,6 +78,7 @@ app.use("/api/volumes-horaires", volumesHorairesRoutes);
 app.use("/api/disponibilites", disponibilitesRoutes);
 app.use("/api/annees-scolaires", anneesScolairesRoutes);
 app.use("/api/paiements", paiementsRoutes);
+app.use("/api/push", pushRoutes);
 
 // Gestion d'erreurs centralisée
 app.use((err, req, res, next) => {
@@ -101,4 +103,5 @@ app.listen(PORT, () => {
     console.log("ℹ  Polling local des lecteurs désactivé — utilise l'agent-local pour relayer les lecteurs biométriques.");
   }
   demarrerEnvoiNotifications();
+  demarrerRappelsCoursEnseignants();
 });
