@@ -614,4 +614,25 @@ router.post("/generer-auto", requireRole("direction", "super_admin"), async (req
   res.status(201).json({ creees: creees.length, details_crees: creees, non_planifiees: nonPlanifiees });
 });
 
+// --------------------------------------------------------------------------
+// GET /api/creneaux/mes-aujourdhui — les créneaux de l'enseignant CONNECTÉ pour
+// la journée en cours (jour de la semaine ou date exceptionnelle), toutes ses
+// classes confondues, triés par heure. Sert au bandeau "prochain cours" visible
+// en permanence dans l'application, sans que l'enseignant ait à choisir une classe.
+// --------------------------------------------------------------------------
+router.get("/mes-aujourdhui", async (req, res) => {
+  const aujourdHui = new Date().toISOString().slice(0, 10);
+  const jourSemaineAuj = new Date().getDay() || 7;
+
+  const { rows } = await pool.query(
+    `SELECT cr.*, cl.nom AS classe_nom FROM creneaux cr
+     JOIN classes cl ON cl.id = cr.classe_id
+     WHERE cr.enseignant = $1 AND cr.est_pause = false
+       AND (cr.jour_semaine = $2 OR cr.date_exceptionnelle = $3)
+     ORDER BY cr.heure_debut`,
+    [req.user.nom, jourSemaineAuj, aujourdHui]
+  );
+  res.json(rows);
+});
+
 module.exports = router;
