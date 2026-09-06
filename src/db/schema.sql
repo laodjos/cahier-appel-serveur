@@ -176,6 +176,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS parts_fiscales NUMERIC DEFAULT 1;
 -- l'école de deviner elle-même la conversion en nombre de parts.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS statut_matrimonial TEXT CHECK (statut_matrimonial IN ('celibataire', 'marie', 'veuf', 'divorce') OR statut_matrimonial IS NULL);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS nombre_enfants INTEGER DEFAULT 0;
+-- Dernière activité connue d'un compte — mise à jour par un "battement de cœur"
+-- envoyé automatiquement par l'application toutes les 30 secondes tant qu'elle
+-- reste ouverte. Sert à afficher qui est actuellement en ligne.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS derniere_activite TIMESTAMPTZ;
 -- Cycle de référence d'un enseignant permanent — détermine son plafond réglementaire
 -- d'heures hebdomadaires (21h en 1er cycle / Collège, 18h en 2nd cycle / Lycée) :
 -- au-delà, les heures sont des heures supplémentaires, payées à part (taux_horaire).

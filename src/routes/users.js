@@ -7,6 +7,15 @@ const { authRequired, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
 router.use(authRequired);
+
+// POST /api/users/heartbeat — accessible à TOUS les rôles connectés (placée avant
+// la restriction direction/super_admin ci-dessous, qui ne doit pas s'appliquer ici).
+// Signale que ce compte est actuellement actif dans l'application.
+router.post("/heartbeat", async (req, res) => {
+  await pool.query("UPDATE users SET derniere_activite = now() WHERE id = $1", [req.user.sub]);
+  res.status(204).send();
+});
+
 router.use(requireRole("direction", "super_admin"));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -29,7 +38,7 @@ router.get("/", async (req, res) => {
   const params = [];
   const filtreEcole = clauseEcole(req, params, "u.ecole_id");
   const { rows } = await pool.query(
-    `SELECT u.id, u.nom, u.email, u.role, u.matieres, u.statut_emploi, u.taux_horaire, u.salaire_base, u.heures_mensuelles_reference, u.parts_fiscales, u.cycle_enseignement, u.statut_matrimonial, u.nombre_enfants, u.ecole_id, u.created_at, ec.nom AS ecole_nom,
+    `SELECT u.id, u.nom, u.email, u.role, u.matieres, u.statut_emploi, u.taux_horaire, u.salaire_base, u.heures_mensuelles_reference, u.parts_fiscales, u.cycle_enseignement, u.statut_matrimonial, u.nombre_enfants, u.derniere_activite, u.ecole_id, u.created_at, ec.nom AS ecole_nom,
             COALESCE(
               json_agg(
                 json_build_object('id', c.id, 'nom', c.nom, 'niveau', c.niveau)

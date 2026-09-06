@@ -325,8 +325,8 @@ function LoginScreen({ onConnected }) {
    ============================================================ */
 const ROLE_LABELS = { super_admin: "Super-administrateur", direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant général" };
 const NAV_BY_ROLE = {
-  super_admin: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "rapports", "notif", "incidents", "parametrage-lecteurs", "parametres", "ecoles"],
-  direction: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "rapports", "notif", "incidents", "parametrage-lecteurs", "parametres", "ecoles"],
+  super_admin: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
+  direction: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
   enseignant: ["appel", "students", "emploi"],
   surveillant: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "incidents"],
 };
@@ -404,6 +404,16 @@ function App({ session, onLogout }) {
     }
     sAbonner();
   }, [role, api]);
+
+  // Battement de cœur — signale que ce compte est actif, pour la section
+  // "Utilisateurs en ligne". Envoyé immédiatement puis toutes les 30 secondes
+  // tant que l'application reste ouverte.
+  useEffect(() => {
+    function battement() { api("/users/heartbeat", { method: "POST" }).catch(() => {}); }
+    battement();
+    const id = setInterval(battement, 30000);
+    return () => clearInterval(id);
+  }, [api]);
 
   const [view, setView] = useState(availableViews[0]);
   const [sidebarOuverte, setSidebarOuverte] = useState(false);
@@ -1792,6 +1802,7 @@ function App({ session, onLogout }) {
           {availableViews.includes("notif") && <NavItem label="Notifications parents" active={view === "notif"} onClick={() => { setSidebarOuverte(false); setView("notif"); }} />}
           {availableViews.includes("incidents") && <NavItem label="État des lecteurs" active={view === "incidents"} onClick={() => { setSidebarOuverte(false); setView("incidents"); }} badge={devices.some((d) => !d.en_ligne)} />}
           {availableViews.includes("parametrage-lecteurs") && <NavItem label="Paramétrage lecteurs" active={view === "parametrage-lecteurs"} onClick={() => { setSidebarOuverte(false); setView("parametrage-lecteurs"); }} count={devices.length} />}
+          {availableViews.includes("en-ligne") && <NavItem label="Utilisateurs en ligne" active={view === "en-ligne"} onClick={() => { setSidebarOuverte(false); setView("en-ligne"); }} />}
           {availableViews.includes("parametres") && <NavItem label="Paramètres" active={view === "parametres"} onClick={() => { setSidebarOuverte(false); setView("parametres"); }} count={users.length} />}
           {availableViews.includes("ecoles") && <NavItem label="Écoles" active={view === "ecoles"} onClick={() => { setSidebarOuverte(false); setView("ecoles"); }} count={ecoles.length} />}
         </nav>
@@ -2989,6 +3000,55 @@ function App({ session, onLogout }) {
             </Card>
           </div>
         )}
+
+        {view === "en-ligne" && (() => {
+          const ROLES_LIBELLE = { direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant", super_admin: "Super-administrateur" };
+          // Un compte est considéré "en ligne" si son dernier battement de cœur date
+          // de moins de 90 secondes (marge au-dessus des 30s d'intervalle d'envoi,
+          // pour absorber un léger retard réseau sans faire clignoter le statut).
+          function estEnLigne(u) {
+            if (!u.derniere_activite) return false;
+            return (maintenant.getTime() - new Date(u.derniere_activite).getTime()) < 90000;
+          }
+          function texteVu(u) {
+            if (!u.derniere_activite) return "Jamais connecté";
+            const minutes = Math.floor((maintenant.getTime() - new Date(u.derniere_activite).getTime()) / 60000);
+            if (minutes < 1) return "À l'instant";
+            if (minutes < 60) return `Vu il y a ${minutes} min`;
+            const heures = Math.floor(minutes / 60);
+            if (heures < 24) return `Vu il y a ${heures} h`;
+            return `Vu il y a ${Math.floor(heures / 24)} j`;
+          }
+          const utilisateursTries = [...users].sort((a, b) => {
+            const enLigneA = estEnLigne(a), enLigneB = estEnLigne(b);
+            if (enLigneA !== enLigneB) return enLigneA ? -1 : 1;
+            return new Date(b.derniere_activite || 0) - new Date(a.derniere_activite || 0);
+          });
+          const nombreEnLigne = users.filter(estEnLigne).length;
+
+          return (
+            <div>
+              <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Utilisateurs en ligne</h1>
+              <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>
+                {nombreEnLigne} compte{nombreEnLigne > 1 ? "s" : ""} actuellement en ligne, sur {users.length} au total.
+              </div>
+              <Card>
+                {utilisateursTries.map((u, i) => (
+                  <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: i < utilisateursTries.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                    <span style={{ width: 9, height: 9, borderRadius: "50%", background: estEnLigne(u) ? COLORS.success : COLORS.craieDim, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 500 }}>{u.nom}</div>
+                      <div style={{ fontSize: 11.5, color: COLORS.craieDim }}>{ROLES_LIBELLE[u.role] || u.role}{u.ecole_nom ? ` · ${u.ecole_nom}` : ""}</div>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: estEnLigne(u) ? 700 : 400, color: estEnLigne(u) ? COLORS.success : COLORS.craieDim }}>
+                      {estEnLigne(u) ? "En ligne" : texteVu(u)}
+                    </span>
+                  </div>
+                ))}
+              </Card>
+            </div>
+          );
+        })()}
 
         {view === "enseignants" && (
           <div>
