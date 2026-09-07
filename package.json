@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "build": "node scripts/build.js",
     "migrate": "node src/db/migrate.js",
     "seed:classes": "node src/db/seed-classes.js",
     "migrer:multi-ecoles": "node src/db/migrer-vers-multi-ecoles.js",
@@ -35,7 +36,11 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "@babel/core": "^8.0.1",
+    "@babel/preset-react": "^8.0.1",
+    "jsdom": "^30.0.1",
+    "nodemon": "^3.1.4",
+    "terser": "^5.51.2"
   },
   "engines": {
     "node": ">=18"

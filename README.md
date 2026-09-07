@@ -75,7 +75,29 @@ Le serveur écoute par défaut sur `http://localhost:4000`. Vérifiez avec :
 curl http://localhost:4000/api/health
 ```
 
-## 7. Fonctionnement des connecteurs biométriques
+## 7. Modifier l'interface (frontend)
+
+L'interface (`public/app.jsx`) est écrite en JSX lisible, mais ce n'est **pas**
+ce fichier qui est servi aux visiteurs — pour ne pas exposer le code source en
+clair dans le navigateur, une version compilée et minifiée
+(`public/app.min.js`) est générée à partir de lui, et c'est **cette version
+minifiée** que charge `public/index.html`.
+
+**Concrètement, à chaque modification de `public/app.jsx` :**
+
+```bash
+npm run build
+```
+
+Ceci régénère `public/app.min.js` à partir de `public/app.jsx`. Sans cette
+étape, tes modifications resteront invisibles pour les visiteurs — seul
+`app.min.js` est réellement chargé en production.
+
+Ne modifie jamais `public/app.min.js` directement (il est régénéré à chaque
+`npm run build` et toute modification manuelle serait perdue) — modifie
+toujours `public/app.jsx`, la source lisible.
+
+## 8. Fonctionnement des connecteurs biométriques
 
 - **ZKTeco** : le serveur interroge le lecteur toutes les `ZKTECO_POLL_INTERVAL_SECONDS` secondes (mode PULL, `node-zklib`). Aucune configuration spéciale n'est requise sur le lecteur.
 - **Hikvision** : le serveur interroge l'historique des événements via l'API ISAPI (authentification Digest). Vérifiez que le compte utilisateur déclaré dans `.env` a les droits d'accès à l'API sur le terminal.
@@ -84,21 +106,21 @@ Dans les deux cas, le **matricule** saisi lors de l'enrôlement biométrique de 
 
 Si un lecteur devient injoignable, il passe automatiquement `en_ligne = false` (table `devices`) et un incident est journalisé dans `device_incidents` — c'est ce qu'affiche l'écran "État des lecteurs" du dashboard.
 
-## 8. Appel en classe (scan QR code)
+## 9. Appel en classe (scan QR code)
 
 1. Un badge QR est généré automatiquement pour chaque élève à sa création (`POST /api/students`).
 2. Récupérez l'image à imprimer avec `GET /api/students/:id/badge`.
 3. L'application tablette/smartphone de l'enseignant envoie chaque scan à `POST /api/attendance/qr-scan`.
 4. En cas de badge perdu, recréez simplement le jeton (ré-appelez la génération) pour révoquer l'ancien badge.
 
-## 9. Notifications aux parents
+## 10. Notifications aux parents
 
 - Chaque pointage (ZKTeco, Hikvision, QR, ou saisie manuelle) programme automatiquement une notification "présence"/"retard" pour le(s) parent(s) rattaché(s).
 - L'écran "Rattachement parents" utilise `POST /api/notifications/rapport` avec `mode: "immediat"` ou `mode: "differe"` + `date_envoi`.
 - Un job toutes les minutes (`src/jobs/scheduler.js`) envoie tout ce qui est dû, via Expo Push ou Firebase Cloud Messaging selon `NOTIFICATION_PROVIDER`.
 - Le `push_token` de chaque parent est enregistré depuis l'application mobile (à connecter côté app : `PATCH /api/parents/:id/push-token` — à ajouter selon votre besoin exact).
 
-## 10. Prochaines étapes suggérées
+## 11. Prochaines étapes suggérées
 
 - Connecter le frontend web (dashboard) et l'application mobile parents à cette API
 - Ajouter l'authentification des enseignants sur l'appli tablette

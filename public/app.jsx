@@ -1,0 +1,3740 @@
+const { useState, useEffect, useRef, useCallback } = React;
+
+const COLORS = {
+  ardoise: "#243B32", ardoiseDeep: "#182B24", craie: "#F6F2E7", craieDim: "#E8E1CE",
+  encre: "#1E2422", marker: "#D9A441", success: "#5E9C79",
+  successBg: "#263E33", alert: "#C4633F", alertBg: "#3E2A24", wait: "#8AA0C4", waitBg: "#26313E",
+  line: "rgba(246,242,231,0.12)",
+};
+function fmtTime(iso) { try { return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); } catch { return "--:--"; } }
+function grouperParNiveau(listeClasses) {
+  const groupes = {};
+  listeClasses.forEach((c) => {
+    const niveau = c.niveau || "Sans niveau";
+    groupes[niveau] = groupes[niveau] || [];
+    groupes[niveau].push(c);
+  });
+  return Object.entries(groupes);
+}
+function SelectClasseParNiveau({ classes, value, onChange, style }) {
+  return (
+    <select value={value || ""} onChange={onChange} style={style}>
+      {grouperParNiveau(classes).map(([niveau, liste]) => (
+        <optgroup key={niveau} label={niveau}>
+          {liste.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+        </optgroup>
+      ))}
+    </select>
+  );
+}
+function initials(nom) { return (nom || "?").split(" ").map((p) => p[0]).slice(0, 2).join(""); }
+function genMatricule() { return "EL" + Math.floor(100000 + Math.random() * 900000); }
+
+/* ============================================================
+   Icônes simples
+   ============================================================ */
+function Icon({ path, size = 14, color = "currentColor", style }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}><path d={path} /></svg>;
+}
+const P = {
+  check: "M20 6 9 17l-5-5", x: "M18 6 6 18M6 6l12 12", clock: "M12 7v5l3 3M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z",
+  search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM21 21l-4.35-4.35", chevronRight: "m9 18 6-6-6-6", chevronDown: "m6 9 6 6 6-6",
+  wifi: "M5 13a10 10 0 0 1 14 0M8.5 16.5a5 5 0 0 1 7 0M12 20h.01", wifiOff: "M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M5 13a10 10 0 0 1 5.17-2.75M19 13a10 10 0 0 0-2.7-2.66M12 20h.01",
+  camera: "M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2ZM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z",
+  upload: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12", save: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM17 21v-8H7v8M7 3v5h8",
+  trash: "M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6",
+  plus: "M12 5v14M5 12h14", users: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
+  scan: "M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10",
+  lock: "M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2ZM7 11V7a5 5 0 0 1 10 0v4",
+  alertTriangle: "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0ZM12 9v4M12 17h.01",
+  settings: "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+  folder: "M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z",
+  arrowLeft: "M19 12H5M12 19l-7-7 7-7",
+  switchCamera: "M20 4v5h-5M4 20v-5h5M4 9a9 9 0 0 1 15-5.5L20 6M20 15a9 9 0 0 1-15 5.5L4 18",
+  pencil: "M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z",
+};
+
+/* ============================================================
+   Client API — parle au vrai backend
+   ============================================================ */
+function useApi(baseUrl, token, ecoleActiveId, onAuthError) {
+  return useCallback(async (path, options = {}) => {
+    const estFormData = options.body instanceof FormData;
+    // Le Super-administrateur "en consultation" d'une école précise : on ajoute
+    // discrètement ecole_id à chaque requête, sans que chaque écran ait à s'en soucier.
+    let pathFinal = path;
+    let bodyFinal = options.body;
+    if (ecoleActiveId) {
+      if (!estFormData && (!options.method || options.method === "GET")) {
+        pathFinal += (path.includes("?") ? "&" : "?") + `ecole_id=${ecoleActiveId}`;
+      } else if (!estFormData && options.body && typeof options.body === "object") {
+        bodyFinal = { ...options.body, ecole_id: options.body.ecole_id ?? ecoleActiveId };
+      }
+    }
+    const res = await fetch(`${baseUrl}${pathFinal}`, {
+      ...options,
+      headers: {
+        ...(estFormData ? {} : { "Content-Type": "application/json" }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {}),
+      },
+      body: estFormData ? bodyFinal : (bodyFinal ? JSON.stringify(bodyFinal) : undefined),
+    });
+    let data = null;
+    try { data = await res.json(); } catch {}
+    // Un jeton expiré (12h) ou invalide déclenche une déconnexion propre plutôt que
+    // de laisser l'application s'enliser dans des erreurs répétées sans explication.
+    if (res.status === 401 && onAuthError) { onAuthError(); throw new Error("Session expirée — reconnecte-toi."); }
+    if (!res.ok) throw new Error(data?.error || `Erreur ${res.status}`);
+    return data;
+  }, [baseUrl, token, ecoleActiveId, onAuthError]);
+}
+
+/* ============================================================
+   Composants partagés
+   ============================================================ */
+// Petit composant réutilisable : affiche un nom, avec un crayon pour le corriger sur place.
+function NomEditable({ valeur, onValider, style, tailleIcone = 12 }) {
+  const [enEdition, setEnEdition] = useState(false);
+  const [texte, setTexte] = useState(valeur);
+  useEffect(() => { setTexte(valeur); }, [valeur]);
+
+  if (enEdition) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }} onClick={(e) => e.stopPropagation()}>
+        <input
+          autoFocus
+          style={{ ...inputStyle, fontSize: "inherit", padding: "3px 7px", width: "auto", minWidth: 100 }}
+          value={texte}
+          onChange={(e) => setTexte(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { onValider(texte); setEnEdition(false); } if (e.key === "Escape") { setTexte(valeur); setEnEdition(false); } }}
+        />
+        <button onClick={() => { onValider(texte); setEnEdition(false); }} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.success }}><Icon path={P.check} size={14} /></button>
+        <button onClick={() => { setTexte(valeur); setEnEdition(false); }} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={14} /></button>
+      </div>
+    );
+  }
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, ...style }}>
+      {valeur}
+      <button onClick={(e) => { e.stopPropagation(); setEnEdition(true); }} title="Corriger" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim, opacity: 0.6, display: "inline-flex" }}>
+        <Icon path={P.pencil} size={tailleIcone} />
+      </button>
+    </span>
+  );
+}
+
+function StatusLabel({ status }) {
+  const map = {
+    present: { text: "Présent", color: COLORS.success, bg: COLORS.successBg, icon: P.check },
+    retard: { text: "En retard", color: COLORS.marker, bg: "#3E3220", icon: P.clock },
+    absent: { text: "Absent", color: COLORS.alert, bg: COLORS.alertBg, icon: P.x },
+    attente: { text: "Non pointé", color: COLORS.wait, bg: COLORS.waitBg, icon: null },
+  };
+  const s = map[status] || map.attente;
+  return (
+    <span style={{ fontSize: 11.5, fontWeight: 600, color: s.color, background: s.bg, borderRadius: 999, padding: "3px 10px", display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
+      {s.icon ? <Icon path={s.icon} size={13} color={s.color} /> : <div style={{ width: 7, height: 7, borderRadius: 999, background: s.color, opacity: 0.7 }} />}{s.text}
+    </span>
+  );
+}
+function StatCard({ label, value, sub, accent }) {
+  return (
+    <div style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: "18px 20px", flex: 1, minWidth: 150 }}>
+      <div style={{ fontSize: 12, color: COLORS.craieDim, textTransform: "uppercase", marginBottom: 10 }}>{label}</div>
+      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 34, color: COLORS.craie, fontWeight: 600 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: COLORS.craieDim, marginTop: 6 }}>{sub}</div>}
+    </div>
+  );
+}
+function NavItem({ label, active, onClick, count, badge }) {
+  return (
+    <button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "9px 14px", borderRadius: 10, border: "none", background: active ? "rgba(217,164,65,0.14)" : "transparent", color: active ? COLORS.marker : COLORS.craieDim, fontSize: 13, fontWeight: active ? 600 : 500, cursor: "pointer", textAlign: "left" }}>
+      <span style={{ flex: 1 }}>{label}</span>
+      {count != null && <span style={{ fontSize: 10.5, background: active ? COLORS.marker : "rgba(246,242,231,0.1)", color: active ? COLORS.ardoiseDeep : COLORS.craieDim, borderRadius: 999, padding: "1px 7px", fontWeight: 700 }}>{count}</span>}
+      {badge && <span style={{ width: 6, height: 6, borderRadius: 999, background: COLORS.alert }} />}
+    </button>
+  );
+}
+function Card({ title, right, children, style }) {
+  return (
+    <div style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, overflow: "hidden", ...style }}>
+      {title && <div style={{ padding: "14px 18px", borderBottom: `1px solid ${COLORS.line}`, display: "flex", justifyContent: "space-between" }}><span style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600 }}>{title}</span>{right}</div>}
+      {children}
+    </div>
+  );
+}
+function Button({ children, onClick, variant = "primary", icon, small, disabled }) {
+  const styles = { primary: { background: COLORS.marker, color: COLORS.ardoiseDeep, border: "none" }, ghost: { background: "rgba(246,242,231,0.06)", color: COLORS.craie, border: `1px solid ${COLORS.line}` } };
+  return (
+    <button onClick={onClick} disabled={disabled} style={{ ...styles[variant], opacity: disabled ? 0.5 : 1, display: "inline-flex", alignItems: "center", gap: 7, borderRadius: 9, padding: small ? "6px 11px" : "9px 15px", fontWeight: 600, fontSize: small ? 12 : 12.5, cursor: disabled ? "not-allowed" : "pointer" }}>
+      {icon && <Icon path={icon} size={small ? 13 : 14} />}{children}
+    </button>
+  );
+}
+function Field({ label, children }) {
+  return <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12, color: COLORS.craieDim, flex: 1 }}>{label}{children}</label>;
+}
+const inputStyle = { background: COLORS.ardoise, border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "8px 10px", color: COLORS.craie, fontSize: 12.5, fontFamily: "'IBM Plex Sans', sans-serif" };
+function FormPanel({ title, onClose, children, onValidate, submitLabel, error }) {
+  return (
+    <div style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.marker}`, borderRadius: 14, padding: 18, marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+        <span style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600 }}>{title}</span>
+        <button onClick={onClose} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {children}
+        {error && <div style={{ fontSize: 12, color: COLORS.alert }}>{error}</div>}
+        <div style={{ display: "flex", gap: 8 }}><Button icon={P.check} onClick={onValidate}>{submitLabel}</Button><Button variant="ghost" onClick={onClose}>Annuler</Button></div>
+      </div>
+    </div>
+  );
+}
+
+const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+
+// Détermine si un créneau est "imminent" (commence dans les 15 minutes) ou "en
+// cours" par rapport à l'heure actuelle — pour le signaler visuellement à
+// l'enseignant dans son emploi du temps. Renvoie null le reste du temps (ou si
+// ce créneau n'a pas lieu aujourd'hui).
+function statutCreneau(creneau, maintenant) {
+  if (!creneau.heure_debut || !creneau.heure_fin) return null;
+  const jourSemaineAujourdhui = maintenant.getDay() || 7; // dimanche (0) -> 7
+  if (creneau.jour_semaine !== jourSemaineAujourdhui) return null;
+
+  const [hD, mD] = creneau.heure_debut.split(":").map(Number);
+  const [hF, mF] = creneau.heure_fin.split(":").map(Number);
+  const debutMinutes = hD * 60 + mD;
+  const finMinutes = hF * 60 + mF;
+  const maintenantMinutes = maintenant.getHours() * 60 + maintenant.getMinutes();
+
+  if (maintenantMinutes >= debutMinutes && maintenantMinutes < finMinutes) return "en_cours";
+  if (maintenantMinutes >= debutMinutes - 15 && maintenantMinutes < debutMinutes) return "imminent";
+  return null;
+}
+
+/* ============================================================
+   Écran de connexion / configuration
+   ============================================================ */
+function LoginScreen({ onConnected }) {
+  // Devine automatiquement l'adresse du serveur à partir de celle utilisée pour ouvrir
+  // cette page (ex. http://192.168.1.42:4000) — évite de retaper "localhost" par erreur
+  // depuis un téléphone, où localhost désignerait le téléphone lui-même.
+  const adresseDevinee = `${window.location.protocol}//${window.location.host}/api`;
+  const adresseSauvegardee = localStorage.getItem("cahierAppelApiUrl");
+  // Si une ancienne adresse "localhost" traîne en mémoire alors qu'on n'est PAS sur
+  // localhost actuellement (ex. accès depuis un téléphone), on l'ignore : elle ne
+  // pourrait de toute façon pas fonctionner depuis cet appareil.
+  const adresseSauvegardeeValide = adresseSauvegardee && !(adresseSauvegardee.includes("localhost") && window.location.hostname !== "localhost");
+  const [baseUrl, setBaseUrl] = useState(adresseSauvegardeeValide ? adresseSauvegardee : adresseDevinee);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const api = useApi(baseUrl, null);
+
+  async function handleLogin() {
+    setError(""); setLoading(true);
+    try {
+      const data = await api("/auth/login", { method: "POST", body: { email, mot_de_passe: password } });
+      localStorage.setItem("cahierAppelApiUrl", baseUrl);
+      onConnected({ baseUrl, token: data.token, user: data.user });
+    } catch (e) {
+      setError(e.message.includes("fetch") ? "Impossible de joindre le serveur — vérifie l'adresse et que le backend tourne." : e.message);
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.ardoise, color: COLORS.craie }}>
+      <div style={{ width: 360, background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 16, padding: 28 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 9, background: COLORS.marker, display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.ardoiseDeep, fontWeight: 700 }}>CA</div>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 17, fontWeight: 600 }}>Cahier d'Appel</div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Field label="Adresse du serveur backend">
+            <input style={inputStyle} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="http://localhost:4000/api" />
+          </Field>
+          <Field label="Email">
+            <input style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="direction@ecole.example" />
+          </Field>
+          <Field label="Mot de passe">
+            <input type="password" style={inputStyle} value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
+          </Field>
+          {error && <div style={{ fontSize: 12, color: COLORS.alert }}>{error}</div>}
+          <Button icon={P.lock} onClick={handleLogin} disabled={loading}>{loading ? "Connexion..." : "Se connecter"}</Button>
+          <div style={{ fontSize: 11, color: COLORS.craieDim, lineHeight: 1.5 }}>
+            Renseigne l'adresse de ton backend (voir README, section 5, pour créer ton premier compte Direction).
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Application principale — connectée à l'API
+   ============================================================ */
+const ROLE_LABELS = { super_admin: "Super-administrateur", direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant général" };
+const NAV_BY_ROLE = {
+  super_admin: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
+  direction: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
+  enseignant: ["appel", "students", "emploi"],
+  surveillant: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "incidents"],
+};
+
+function App({ session, onLogout }) {
+  const role = session.user.role;
+  const estDirectionGenerale = role === "super_admin";
+  const availableViews = NAV_BY_ROLE[role] || ["dashboard"];
+  const [ecoleActiveId, setEcoleActiveId] = useState(() => localStorage.getItem("cahierAppelEcoleActive") || null);
+  // Référence toujours à jour de l'école consultée — permet de détecter et ignorer
+  // une réponse "en retard" du serveur qui arriverait APRÈS un changement d'école
+  // (et qui, sans cette protection, écraserait par erreur la bonne liste déjà affichée).
+  const ecoleActiveIdRef = useRef(ecoleActiveId);
+  useEffect(() => { ecoleActiveIdRef.current = ecoleActiveId; }, [ecoleActiveId]);
+  const api = useApi(session.baseUrl, session.token, estDirectionGenerale ? ecoleActiveId : null, onLogout);
+
+  // Heure "vivante", mise à jour chaque minute — sert à signaler visuellement à un
+  // enseignant qu'un cours commence bientôt (dans les 15 min) ou est en cours,
+  // directement dans l'emploi du temps, sans qu'il ait besoin de recharger la page.
+  const [maintenant, setMaintenant] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setMaintenant(new Date()), 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Créneaux du jour de l'enseignant connecté, toutes classes confondues — sert
+  // au bandeau "prochain cours" visible en permanence, sans avoir à choisir une
+  // classe. Rechargé chaque minute (même rythme que l'horloge ci-dessus) pour
+  // rester à jour au fil de la journée.
+  const [mesCreneauxAujourdhui, setMesCreneauxAujourdhui] = useState([]);
+  useEffect(() => {
+    if (role !== "enseignant") return;
+    let annule = false;
+    function charger() { api("/creneaux/mes-aujourdhui").then((d) => { if (!annule) setMesCreneauxAujourdhui(d); }).catch(() => {}); }
+    charger();
+    const id = setInterval(charger, 60000);
+    return () => { annule = true; clearInterval(id); };
+  }, [role, api]);
+
+  // Abonnement aux notifications push (rappel "cours dans 15 min" même appli
+  // fermée) — tenté une fois par session pour un enseignant, silencieusement :
+  // si le navigateur ne supporte pas les notifications, ou si l'enseignant les
+  // refuse, l'application continue de fonctionner normalement (le bandeau en
+  // haut de l'écran reste disponible dans tous les cas, lui, tant que l'appli est ouverte).
+  const [statutPush, setStatutPush] = useState("inconnu"); // inconnu | abonne | refuse | non_supporte | erreur
+  useEffect(() => {
+    if (role !== "enseignant") return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) { setStatutPush("non_supporte"); return; }
+
+    async function sAbonner() {
+      try {
+        const { publicKey } = await api("/push/vapid-public-key");
+        const registration = await navigator.serviceWorker.register("/sw.js");
+        await navigator.serviceWorker.ready;
+
+        let abonnementExistant = await registration.pushManager.getSubscription();
+        if (abonnementExistant) { setStatutPush("abonne"); return; }
+
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") { setStatutPush("refuse"); return; }
+
+        const applicationServerKey = Uint8Array.from(
+          atob(publicKey.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)
+        );
+        const nouvelAbonnement = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey,
+        });
+        await api("/push/subscribe", { method: "POST", body: nouvelAbonnement.toJSON() });
+        setStatutPush("abonne");
+      } catch (err) {
+        console.error("Abonnement push impossible :", err.message);
+        setStatutPush("erreur");
+      }
+    }
+    sAbonner();
+  }, [role, api]);
+
+  // Battement de cœur — signale que ce compte est actif, pour la section
+  // "Utilisateurs en ligne". Envoyé immédiatement puis toutes les 30 secondes
+  // tant que l'application reste ouverte.
+  useEffect(() => {
+    function battement() {
+      api("/users/heartbeat", { method: "POST" }).catch((e) => {
+        // Cas précis et volontaire : l'établissement vient d'être suspendu par le
+        // Super-administrateur — déconnexion immédiate, contrairement aux autres
+        // erreurs 403 de l'application (ex. "ce n'est pas ton cours") qui, elles,
+        // ne doivent surtout pas déconnecter l'utilisateur.
+        if (e.message?.includes("établissement a été fermé")) onLogout();
+      });
+    }
+    battement();
+    const id = setInterval(battement, 30000);
+    return () => clearInterval(id);
+  }, [api]);
+
+  const [view, setView] = useState(availableViews[0]);
+  const [sidebarOuverte, setSidebarOuverte] = useState(false);
+  const [classes, setClasses] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [creneaux, setCreneaux] = useState([]);
+  const [selectedClasseId, setSelectedClasseId] = useState(null);
+  const [selectedCreneauId, setSelectedCreneauId] = useState(null);
+  const [registre, setRegistre] = useState([]);
+  const [stats, setStats] = useState({ present: 0, retard: 0, absent: 0, total_eleves: 0 });
+  const [creneauxSansAppel, setCreneauxSansAppel] = useState([]);
+  const [suiviEnseignants, setSuiviEnseignants] = useState([]);
+  const [payeEnseignants, setPayeEnseignants] = useState([]);
+  const [suiviEnseignantsDebut, setSuiviEnseignantsDebut] = useState(() => new Date().toISOString().slice(0, 8) + "01");
+  const [suiviEnseignantsFin, setSuiviEnseignantsFin] = useState(() => new Date().toISOString().slice(0, 10));
+  const [enseignantDetailOuvert, setEnseignantDetailOuvert] = useState(null);
+  const [joursFeries, setJoursFeries] = useState([]);
+  const [feriesCI2026Charges, setFeriesCI2026Charges] = useState(null);
+  const [nouveauFerieDate, setNouveauFerieDate] = useState("");
+  const [nouveauFerieLibelle, setNouveauFerieLibelle] = useState("");
+  const [absenteisme, setAbsenteisme] = useState([]);
+  const [notifJournal, setNotifJournal] = useState([]);
+  const [devices, setDevices] = useState([]);
+  const [incidents, setIncidents] = useState([]);
+  const [search, setSearch] = useState("");
+  const [classesEtendues, setClassesEtendues] = useState({});
+  const [globalError, setGlobalError] = useState("");
+  const [globalInfo, setGlobalInfo] = useState("");
+
+  const [showAddClasse, setShowAddClasse] = useState(false);
+  const [showAddEleve, setShowAddEleve] = useState(false);
+  const [showAddCreneau, setShowAddCreneau] = useState(false);
+  const [newClasseNom, setNewClasseNom] = useState("");
+  const [newClasseNiveau, setNewClasseNiveau] = useState("");
+  const [newClasseEcoleId, setNewClasseEcoleId] = useState(null);
+  const [newClasseVacation, setNewClasseVacation] = useState(null);
+  const [resultatGenerationAuto, setResultatGenerationAuto] = useState(null);
+  const [resultatImportCreneaux, setResultatImportCreneaux] = useState(null);
+  const [inclureSamedi, setInclureSamedi] = useState(false);
+  const [resultatImport, setResultatImport] = useState(null);
+  const [resultatImportEnseignants, setResultatImportEnseignants] = useState(null);
+  const [newEleve, setNewEleve] = useState({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "" });
+  const [newCreneau, setNewCreneau] = useState({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "09:00", matiere: "", enseignant: "", estRattrapage: false, date_exceptionnelle: "", salle_id: null, est_pause: false });
+  const [formError, setFormError] = useState("");
+
+  const [appelMode, setAppelMode] = useState("qr");
+  const [scannerOn, setScannerOn] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState(null);
+  const [scanTokenInput, setScanTokenInput] = useState("");
+
+  const [parentEdits, setParentEdits] = useState({});
+  const [envoiMode, setEnvoiMode] = useState("immediat");
+  const [envoiDate, setEnvoiDate] = useState("");
+  const [envoiHeure, setEnvoiHeure] = useState("17:00");
+  const [envoiResult, setEnvoiResult] = useState(null);
+
+  const [users, setUsers] = useState([]);
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [newUser, setNewUser] = useState({ nom: "", email: "", mot_de_passe: "", role: "enseignant", ecole_id: null, statut_emploi: "" });
+  const [userFormError, setUserFormError] = useState("");
+
+  // Dossier élève (fiche détaillée)
+  const [dossierEleve, setDossierEleve] = useState(null);
+  const [dossierParents, setDossierParents] = useState([]);
+  const [dossierAttendance, setDossierAttendance] = useState([]);
+
+  // Scanner caméra réel
+  const [cameraList, setCameraList] = useState([]);
+  const [selectedCameraId, setSelectedCameraId] = useState(null);
+  const [cameraError, setCameraError] = useState("");
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const scanLoopRef = useRef(null);
+
+  // Rattachement enseignant ↔ classes
+  const [gestionClassesUser, setGestionClassesUser] = useState(null);
+  const [gestionMatieresUser, setGestionMatieresUser] = useState(null);
+  const [gestionDisponibilitesUser, setGestionDisponibilitesUser] = useState(null);
+  const [disponibilitesUser, setDisponibilitesUser] = useState([]);
+  const [nouvelleDispo, setNouvelleDispo] = useState({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "12:00" });
+  const [anneesScolaires, setAnneesScolaires] = useState([]);
+  const [nouvelleAnnee, setNouvelleAnnee] = useState({ libelle: "", date_debut: "", date_fin: "" });
+  const [rapportDate, setRapportDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [rapportEleveId, setRapportEleveId] = useState("");
+  const [rapportUserId, setRapportUserId] = useState("");
+  const [afficherInfosRhCreation, setAfficherInfosRhCreation] = useState(false);
+  const [afficherVolumesClasses, setAfficherVolumesClasses] = useState(false);
+  const [renouvellementEcole, setRenouvellementEcole] = useState(null);
+  const [renouvellementMontant, setRenouvellementMontant] = useState("25000");
+  const [renouvellementMois, setRenouvellementMois] = useState("1");
+
+  // Paramétrage des lecteurs biométriques
+  const [showAddDevice, setShowAddDevice] = useState(false);
+  const [editingDeviceId, setEditingDeviceId] = useState(null);
+  const [newDevice, setNewDevice] = useState({ nom: "", marque: "zkteco", adresse_ip: "", emplacement: "", ecole_id: null });
+  const [deviceFormError, setDeviceFormError] = useState("");
+
+  // Matières enseignées (édition rapide depuis Paramètres)
+  const [editingMatieresUserId, setEditingMatieresUserId] = useState(null);
+  const [matieresInput, setMatieresInput] = useState("");
+  const [newUserMatieres, setNewUserMatieres] = useState("");
+
+  // Écoles
+  const [ecoles, setEcoles] = useState([]);
+  const [showAddEcole, setShowAddEcole] = useState(false);
+  const [editingEcoleId, setEditingEcoleId] = useState(null);
+  const [newEcole, setNewEcole] = useState({ nom: "", adresse: "", ville: "", telephone: "", annee_scolaire: "", active: false, email: "", registre_commerce: "" });
+  const [horairesEdits, setHorairesEdits] = useState({});
+  const [matieresListe, setMatieresListe] = useState([]);
+  const [nouvelleMatiere, setNouvelleMatiere] = useState("");
+  const [nouvelleMatiereCycle, setNouvelleMatiereCycle] = useState("");
+  const [nouvelleMatiereCategorie, setNouvelleMatiereCategorie] = useState("");
+  const [nouvelleMatiereDureeDouble, setNouvelleMatiereDureeDouble] = useState(false);
+  const [editionMatiere, setEditionMatiere] = useState(null);
+  const [gestionSalaireUser, setGestionSalaireUser] = useState(null);
+  const [dossierEnseignantId, setDossierEnseignantId] = useState(null);
+  const [volumesHoraires, setVolumesHoraires] = useState([]);
+  const [nouveauVolume, setNouveauVolume] = useState({ matiere_id: "", classe_id: "", niveau: "", cycle: "", heures_semaine: "" });
+  const [sallesListe, setSallesListe] = useState([]);
+  const [nouvelleSalle, setNouvelleSalle] = useState("");
+  const [ecoleFormError, setEcoleFormError] = useState("");
+
+  const catchErr = (e) => setGlobalError(e.message);
+
+  // Chargement initial : classes + élèves + école active (pour l'en-tête)
+  useEffect(() => {
+    const ecoleAuMoment = ecoleActiveId;
+    api("/classes").then((rows) => { if (ecoleActiveIdRef.current === ecoleAuMoment) { setClasses(rows); setSelectedClasseId((id) => id || rows[0]?.id); } }).catch(catchErr);
+    api("/students").then((rows) => { if (ecoleActiveIdRef.current === ecoleAuMoment) setStudents(rows); }).catch(catchErr);
+    api("/ecoles").then(setEcoles).catch(() => {});
+    api("/annees-scolaires").then(setAnneesScolaires).catch(() => {});
+  }, [api]);
+
+  // La liste des classes se rafraîchit aussi périodiquement (pas seulement au
+  // chargement) — sans ça, un enseignant qui garde l'application ouverte ne
+  // verrait jamais apparaître une nouvelle classe à laquelle il vient d'être
+  // rattaché, tant qu'il ne se déconnecte/reconnecte pas.
+  useEffect(() => {
+    const ecoleAuMoment = ecoleActiveId;
+    const id = setInterval(() => {
+      api("/classes").then((rows) => { if (ecoleActiveIdRef.current === ecoleAuMoment) setClasses(rows); }).catch(() => {});
+    }, 60000);
+    return () => clearInterval(id);
+  }, [api, ecoleActiveId]);
+
+  // Créneaux de la classe sélectionnée
+  useEffect(() => {
+    if (!selectedClasseId) return;
+    api(`/creneaux?classe_id=${selectedClasseId}`).then((rows) => { setCreneaux(rows); setSelectedCreneauId(rows[0]?.id || null); }).catch(catchErr);
+  }, [api, selectedClasseId]);
+
+  // Registre de la classe (polling léger, toutes les 4s, pour voir arriver les vrais pointages)
+  useEffect(() => {
+    if (!selectedClasseId) return;
+    let stop = false;
+    const load = () => api(`/attendance/registre?classe_id=${selectedClasseId}`).then((rows) => { if (!stop) setRegistre(rows); }).catch(catchErr);
+    load();
+    const t = setInterval(load, 4000);
+    return () => { stop = true; clearInterval(t); };
+  }, [api, selectedClasseId]);
+
+  // Stats dashboard + absentéisme + notifications + lecteurs (polling toutes les 8s)
+  useEffect(() => {
+    if (!availableViews.includes("dashboard") && !availableViews.includes("incidents")) return;
+    const load = () => {
+      const ecoleAuMoment = ecoleActiveId;
+      const siEcoleInchangee = (fn) => (data) => { if (ecoleActiveIdRef.current === ecoleAuMoment) fn(data); };
+
+      if (availableViews.includes("dashboard")) {
+        api("/attendance/stats/today").then(setStats).catch(catchErr);
+        api("/attendance/creneaux-sans-appel").then(setCreneauxSansAppel).catch(catchErr);
+      }
+      if (availableViews.includes("absenteisme")) {
+        api("/attendance/absenteisme?seuil=3").then(setAbsenteisme).catch(catchErr);
+        if (view === "absenteisme" && suiviEnseignants.length === 0) chargerSuiviEnseignants();
+        if ((view === "absenteisme" || view === "paie") && payeEnseignants.length === 0) chargerPayeEnseignants();
+        if (view === "absenteisme" && feriesCI2026Charges === null) chargerJoursFeries();
+      }
+      if (availableViews.includes("notif")) api("/notifications/journal").then(setNotifJournal).catch(catchErr);
+      if (availableViews.includes("incidents")) {
+        api("/devices").then(siEcoleInchangee(setDevices)).catch(catchErr);
+        api("/devices/incidents/journal").then(setIncidents).catch(catchErr);
+      }
+      if (availableViews.includes("parametrage-lecteurs")) api("/devices").then(siEcoleInchangee(setDevices)).catch(catchErr);
+      if (availableViews.includes("parametres") || availableViews.includes("enseignants")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
+      if (availableViews.includes("enseignants")) api("/matieres").then(siEcoleInchangee(setMatieresListe)).catch(catchErr);
+      if (availableViews.includes("enseignants")) api("/volumes-horaires").then(siEcoleInchangee(setVolumesHoraires)).catch(catchErr);
+      if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
+      if (availableViews.includes("emploi")) api("/salles").then(siEcoleInchangee(setSallesListe)).catch(catchErr);
+      if (availableViews.includes("ecoles")) api("/ecoles").then(setEcoles).catch(catchErr);
+    };
+    load();
+    const t = setInterval(load, 8000);
+    return () => clearInterval(t);
+  }, [api, view]);
+
+  const filteredStudents = students.filter((s) => s.nom.toLowerCase().includes(search.toLowerCase()));
+  const classeEleves = students.filter((s) => s.classe_id === selectedClasseId);
+  const registreMap = Object.fromEntries(registre.map((r) => [r.student_id, r.statut]));
+  const classeSelectionnee = classes.find((c) => c.id === selectedClasseId);
+  const creneauSelectionne = creneaux.find((c) => c.id === selectedCreneauId);
+
+  async function refreshStudents() { api("/students").then(setStudents).catch(catchErr); }
+  async function refreshRegistre() { if (selectedClasseId) api(`/attendance/registre?classe_id=${selectedClasseId}`).then(setRegistre).catch(catchErr); }
+
+  async function handleAddClasse() {
+    setFormError("");
+    if (!newClasseNom.trim()) return setFormError("Le nom de la classe est requis.");
+    if (estDirectionGenerale && !newClasseEcoleId) return setFormError("Choisis d'abord une école pour cette classe.");
+    try {
+      const created = await api("/classes", { method: "POST", body: { nom: newClasseNom.trim(), niveau: newClasseNiveau.trim(), ecole_id: newClasseEcoleId, vacation: newClasseVacation } });
+      setClasses((c) => [...c, created]);
+      setSelectedClasseId(created.id);
+      setNewClasseNom(""); setNewClasseNiveau(""); setNewClasseEcoleId(null); setNewClasseVacation(null); setShowAddClasse(false);
+    } catch (e) { setFormError(e.message); }
+  }
+
+  async function genererClassesParDefaut() {
+    try {
+      const res = await api("/classes/generer-defaut", { method: "POST" });
+      if (res.creees.length > 0) setClasses((c) => [...c, ...res.creees].sort((a, b) => (a.niveau || "").localeCompare(b.niveau || "")));
+      setGlobalInfo(`${res.creees.length} classe(s) créée(s) sur ${res.total_demandees} niveaux (les autres existaient déjà).`);
+      setTimeout(() => setGlobalInfo(""), 5000);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function handleImportFichier(e) {
+    const fichier = e.target.files?.[0];
+    e.target.value = ""; // permet de réimporter le même fichier une seconde fois si besoin
+    if (!fichier) return;
+    setGlobalInfo("Import en cours...");
+    try {
+      const formData = new FormData();
+      formData.append("fichier", fichier);
+      const res = await api("/students/import", { method: "POST", body: formData });
+      setResultatImport(res);
+      setGlobalInfo("");
+      await refreshStudents();
+    } catch (err) { catchErr(err); setGlobalInfo(""); }
+  }
+
+  async function handleImportEnseignants(e) {
+    const fichier = e.target.files?.[0];
+    e.target.value = "";
+    if (!fichier) return;
+    setGlobalInfo("Import en cours...");
+    try {
+      const formData = new FormData();
+      formData.append("fichier", fichier);
+      const res = await api("/users/import", { method: "POST", body: formData });
+      setResultatImportEnseignants(res);
+      setGlobalInfo("");
+      const fraiche = await api("/users");
+      setUsers(fraiche);
+    } catch (err) { catchErr(err); setGlobalInfo(""); }
+  }
+
+  // L'export renvoie un fichier binaire (.xlsx), pas du JSON — on ne peut pas
+  // passer par le client api() habituel, on fait un fetch direct.
+  async function exporterEnseignants() {
+    try {
+      const res = await fetch(`${session.baseUrl}/users/export`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!res.ok) throw new Error("Échec de l'export.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const lien = document.createElement("a");
+      lien.href = url;
+      lien.download = "enseignants.xlsx";
+      document.body.appendChild(lien);
+      lien.click();
+      document.body.removeChild(lien);
+      URL.revokeObjectURL(url);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function exporterElevesExcel() {
+    try {
+      const res = await fetch(`${session.baseUrl}/students/export`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!res.ok) throw new Error("Échec de l'export.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const lien = document.createElement("a");
+      lien.href = url;
+      lien.download = "eleves.xlsx";
+      document.body.appendChild(lien);
+      lien.click();
+      document.body.removeChild(lien);
+      URL.revokeObjectURL(url);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function exporterRegistreJourPdf(date) {
+    try {
+      const res = await api(`/attendance/registre-jour?date=${date}`);
+      const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
+      const parClasse = {};
+      for (const e of res.eleves) {
+        const cle = `${e.niveau || ""} · ${e.classe_nom}`;
+        if (!parClasse[cle]) parClasse[cle] = [];
+        parClasse[cle].push(e);
+      }
+      const LIBELLES = { present: "Présent", retard: "En retard", absent: "Absent", attente: "Non pointé" };
+      const lignes = Object.entries(parClasse).map(([classe, eleves]) => `
+        <h3>${classe}</h3>
+        <table>
+          <thead><tr><th>Élève</th><th>Statut</th></tr></thead>
+          <tbody>${eleves.map((e) => `<tr><td>${e.nom}</td><td style="color:${e.statut === "absent" ? "#b33" : e.statut === "attente" ? "#999" : "#2a2"};">${LIBELLES[e.statut] || e.statut}</td></tr>`).join("")}</tbody>
+        </table>
+      `).join("");
+
+      const fenetre = window.open("", "_blank", "width=800,height=900");
+      fenetre.document.write(`
+        <html><head><title>Registre d'appel — ${date}</title>
+        <style>
+          @page { size: A4 portrait; margin: 14mm; }
+          body { font-family: Arial, sans-serif; color: #222; }
+          h1 { font-size: 18px; margin-bottom: 2px; }
+          h3 { font-size: 13px; text-transform: uppercase; background: #f0ece0; padding: 5px 8px; border-radius: 4px; margin-top: 20px; margin-bottom: 4px; break-inside: avoid; }
+          .sous-titre { font-size: 12px; color: #666; margin-bottom: 18px; }
+          table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+          td, th { padding: 5px 8px; border-bottom: 1px solid #eee; text-align: left; }
+        </style></head>
+        <body onload="window.print()">
+          ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:50px;margin-bottom:8px;" />` : ""}
+          <h1>Registre d'appel journalier</h1>
+          <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""} · ${new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div>
+          ${lignes || "<p>Aucun élève enregistré.</p>"}
+        <div style="margin-top:24px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:10px;">
+            <div style="font-size:10px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:25mm;" />` : ""}
+          </div>
+        </body></html>
+      `);
+      fenetre.document.close();
+    } catch (e) { catchErr(e); }
+  }
+
+  async function exporterBulletinPresence(studentId, nomEleve, debut, fin) {
+    try {
+      const historique = await api(`/students/${studentId}/attendance?debut=${debut}&fin=${fin}`);
+      const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
+      const LIBELLES = { present: "Présent", retard: "En retard", absent: "Absent" };
+      const lignes = historique.map((h) => `
+        <tr><td>${new Date(h.horodatage).toLocaleDateString("fr-FR")}</td><td>${h.matiere || "—"}</td><td>${LIBELLES[h.statut] || h.statut}</td></tr>
+      `).join("");
+      const totaux = historique.reduce((acc, h) => { acc[h.statut] = (acc[h.statut] || 0) + 1; return acc; }, {});
+
+      const fenetre = window.open("", "_blank", "width=700,height=850");
+      fenetre.document.write(`
+        <html><head><title>Bulletin de présence — ${nomEleve}</title>
+        <style>
+          @page { size: A4 portrait; margin: 16mm; }
+          body { font-family: Arial, sans-serif; color: #222; font-size: 13px; }
+          h1 { font-size: 18px; margin-bottom: 2px; }
+          .sous-titre { font-size: 12px; color: #666; margin-bottom: 18px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          td, th { padding: 7px 8px; border-bottom: 1px solid #ddd; text-align: left; }
+          .totaux { display: flex; gap: 20px; margin: 16px 0; font-size: 13px; }
+        </style></head>
+        <body onload="window.print()">
+          ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:50px;margin-bottom:8px;" />` : ""}
+          <h1>Bulletin de présence</h1>
+          <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""} · ${nomEleve} · Période du ${debut} au ${fin}</div>
+          <div class="totaux">
+            <span>✔ Présences : ${totaux.present || 0}</span>
+            <span>⏱ Retards : ${totaux.retard || 0}</span>
+            <span style="color:#b33">✘ Absences : ${totaux.absent || 0}</span>
+          </div>
+          <table><thead><tr><th>Date</th><th>Matière</th><th>Statut</th></tr></thead><tbody>${lignes || '<tr><td colspan="3">Aucun pointage sur cette période.</td></tr>'}</tbody></table>
+        <div style="margin-top:24px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:10px;">
+            <div style="font-size:10px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:25mm;" />` : ""}
+          </div>
+        </body></html>
+      `);
+      fenetre.document.close();
+    } catch (e) { catchErr(e); }
+  }
+
+  function exporterAbsenteismePdf() {
+    const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
+    const lignes = absenteisme.map((s) => `<tr><td>${s.nom}</td><td>${s.classe_nom}</td><td style="text-align:right; color:#b33;">${s.absences_mois}</td></tr>`).join("");
+    const fenetre = window.open("", "_blank", "width=700,height=850");
+    fenetre.document.write(`
+      <html><head><title>Rapport d'absentéisme</title>
+      <style>
+        @page { size: A4 portrait; margin: 16mm; }
+        body { font-family: Arial, sans-serif; color: #222; font-size: 13px; }
+        h1 { font-size: 18px; margin-bottom: 2px; }
+        .sous-titre { font-size: 12px; color: #666; margin-bottom: 18px; }
+        table { width: 100%; border-collapse: collapse; }
+        td, th { padding: 7px 8px; border-bottom: 1px solid #ddd; text-align: left; }
+      </style></head>
+      <body onload="window.print()">
+        ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:50px;margin-bottom:8px;" />` : ""}
+        <h1>Rapport d'absentéisme</h1>
+        <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""} · Élèves à 3 absences ou plus ce mois-ci</div>
+        <table><thead><tr><th>Élève</th><th>Classe</th><th>Absences ce mois</th></tr></thead><tbody>${lignes || '<tr><td colspan="3">Aucun élève au-dessus du seuil.</td></tr>'}</tbody></table>
+      <div style="margin-top:24px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:10px;">
+            <div style="font-size:10px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:25mm;" />` : ""}
+          </div>
+      </body></html>
+    `);
+    fenetre.document.close();
+  }
+
+  async function handleAddEleve() {
+    setFormError("");
+    if (!newEleve.nom.trim() || !newEleve.matricule.trim()) return setFormError("Matricule et nom sont requis.");
+    if (!selectedClasseId) return setFormError("Sélectionne d'abord une classe.");
+    if (!newEleve.parentTel.trim()) return setFormError("Le téléphone du parent/tuteur est obligatoire dès l'inscription.");
+    try {
+      const created = await api("/students", { method: "POST", body: { matricule: newEleve.matricule.trim(), nom: newEleve.nom.trim(), classe_id: selectedClasseId, methode_biometrique: newEleve.methode_biometrique, parent_nom: newEleve.parentNom.trim(), parent_telephone: newEleve.parentTel.trim(), date_naissance: newEleve.date_naissance || null, lieu_naissance: newEleve.lieu_naissance.trim() || null } });
+      await refreshStudents();
+      setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "" });
+      setShowAddEleve(false);
+    } catch (e) { setFormError(e.message); }
+  }
+
+  async function handleAddCreneau() {
+    setFormError("");
+    if (!newCreneau.matiere.trim()) return setFormError("La matière est requise.");
+    if (newCreneau.estRattrapage && !newCreneau.date_exceptionnelle) return setFormError("Choisis la date du rattrapage.");
+    try {
+      const body = {
+        classe_id: selectedClasseId,
+        heure_debut: newCreneau.heure_debut,
+        heure_fin: newCreneau.heure_fin,
+        matiere: newCreneau.matiere.trim(),
+        enseignant: newCreneau.enseignant.trim(),
+        salle_id: newCreneau.salle_id || null,
+        est_pause: !!newCreneau.est_pause,
+      };
+      if (newCreneau.estRattrapage) body.date_exceptionnelle = newCreneau.date_exceptionnelle;
+      else body.jour_semaine = Number(newCreneau.jour_semaine);
+
+      const created = await api("/creneaux", { method: "POST", body });
+      // On ne l'ajoute à l'affichage que si c'est un créneau récurrent de la classe affichée
+      // (un rattrapage ponctuel n'apparaît pas dans la grille hebdomadaire habituelle).
+      if (!newCreneau.estRattrapage) setCreneaux((c) => [...c, created]);
+      else setGlobalInfo(`Rattrapage programmé le ${newCreneau.date_exceptionnelle} pour ${classeSelectionnee?.nom || "cette classe"}.`);
+      setNewCreneau({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "09:00", matiere: "", enseignant: "", estRattrapage: false, date_exceptionnelle: "", salle_id: null, est_pause: false });
+      setShowAddCreneau(false);
+    } catch (e) { setFormError(e.message); }
+  }
+
+  async function removeCreneau(id) {
+    await api(`/creneaux/${id}`, { method: "DELETE" }).catch(catchErr);
+    setCreneaux((c) => c.filter((x) => x.id !== id));
+  }
+
+  function exporterEmploiPdf() {
+    const nomClasse = classeSelectionnee?.nom || "";
+    const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
+    const parJour = {};
+    for (const c of creneaux) {
+      if (!parJour[c.jour_semaine]) parJour[c.jour_semaine] = [];
+      parJour[c.jour_semaine].push(c);
+    }
+    Object.values(parJour).forEach((liste) => liste.sort((a, b) => a.heure_debut.localeCompare(b.heure_debut)));
+
+    const lignesParJour = JOURS.map((nomJour, i) => {
+      const jourNum = i + 1;
+      const items = parJour[jourNum] || [];
+      if (items.length === 0) return "";
+      return `
+        <div class="jour">
+          <div class="jour-titre">${nomJour}</div>
+          ${items.map((c) => `
+            <div class="creneau ${c.est_pause ? "pause" : ""}">
+              <span class="heure">${c.heure_debut?.slice(0,5)}–${c.heure_fin?.slice(0,5)}</span>
+              <span class="matiere">${c.matiere}</span>
+              <span class="detail">${c.enseignant || ""}${c.salle_nom ? " · " + c.salle_nom : ""}</span>
+            </div>
+          `).join("")}
+        </div>`;
+    }).join("");
+
+    const fenetre = window.open("", "_blank", "width=800,height=900");
+    fenetre.document.write(`
+      <html><head><title>Emploi du temps — ${nomClasse}</title>
+      <style>
+        @page { size: A4 portrait; margin: 14mm; }
+        body { font-family: Arial, sans-serif; color: #222; }
+        h1 { font-size: 18px; margin-bottom: 2px; }
+        .sous-titre { font-size: 12px; color: #666; margin-bottom: 18px; }
+        .jour { margin-bottom: 14px; break-inside: avoid; }
+        .jour-titre { font-size: 13px; font-weight: bold; text-transform: uppercase; background: #f0ece0; padding: 4px 8px; border-radius: 4px; margin-bottom: 4px; }
+        .creneau { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-bottom: 1px solid #eee; font-size: 12px; }
+        .creneau.pause { color: #6b8f76; font-style: italic; }
+        .heure { width: 100px; flex-shrink: 0; color: #555; }
+        .matiere { flex: 1; font-weight: 600; }
+        .detail { color: #777; font-size: 11px; }
+      </style></head>
+      <body onload="window.print()">
+        ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:50px;margin-bottom:8px;" />` : ""}
+        <h1>Emploi du temps — ${nomClasse}</h1>
+        <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""}</div>
+        ${lignesParJour || "<p>Aucun créneau enregistré pour cette classe.</p>"}
+      <div style="margin-top:24px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:10px;">
+            <div style="font-size:10px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:25mm;" />` : ""}
+          </div>
+      </body></html>
+    `);
+    fenetre.document.close();
+  }
+
+  async function genererEmploiAuto() {
+    setGlobalInfo("Génération en cours...");
+    try {
+      const jours = inclureSamedi ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5];
+      const res = await api("/creneaux/generer-auto", { method: "POST", body: { classe_ids: [selectedClasseId], jours } });
+      setResultatGenerationAuto(res);
+      setGlobalInfo("");
+      const fraiche = await api(`/creneaux?classe_id=${selectedClasseId}`);
+      setCreneaux(fraiche);
+    } catch (e) { catchErr(e); setGlobalInfo(""); }
+  }
+
+  async function handleImportCreneaux(e) {
+    const fichier = e.target.files?.[0];
+    e.target.value = "";
+    if (!fichier) return;
+    if (!selectedClasseId) { setGlobalError("Sélectionne d'abord une classe."); setTimeout(() => setGlobalError(""), 4000); return; }
+    setGlobalInfo("Import en cours...");
+    try {
+      const formData = new FormData();
+      formData.append("fichier", fichier);
+      formData.append("classe_id", selectedClasseId);
+      const res = await api("/creneaux/import", { method: "POST", body: formData });
+      setResultatImportCreneaux(res);
+      setGlobalInfo("");
+      const fraiche = await api(`/creneaux?classe_id=${selectedClasseId}`);
+      setCreneaux(fraiche);
+    } catch (err) { catchErr(err); setGlobalInfo(""); }
+  }
+
+  async function manualToggle(studentId, statut) {
+    try {
+      await api("/attendance/manual", { method: "POST", body: { student_id: studentId, creneau_id: selectedCreneauId, statut } });
+      refreshRegistre();
+    } catch (e) { catchErr(e); }
+  }
+
+  async function validerAppel() {
+    try {
+      const res = await api("/attendance/valider-appel", { method: "POST", body: { classe_id: selectedClasseId, creneau_id: selectedCreneauId } });
+      setGlobalInfo(`Appel validé : ${res.marques_presents} élève(s) confirmé(s) présent(s) automatiquement (${res.total_eleves} au total).`);
+      setTimeout(() => setGlobalInfo(""), 6000);
+      refreshRegistre();
+    } catch (e) { catchErr(e); }
+  }
+
+  async function chargerSuiviEnseignants() {
+    try {
+      const res = await api(`/attendance/suivi-enseignants?debut=${suiviEnseignantsDebut}&fin=${suiviEnseignantsFin}`);
+      setSuiviEnseignants(res.enseignants);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function chargerPayeEnseignants() {
+    try {
+      const res = await api(`/attendance/paye-enseignants?debut=${suiviEnseignantsDebut}&fin=${suiviEnseignantsFin}`);
+      setPayeEnseignants(res.enseignants);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function imprimerBulletinSalaire(userId, nomAffiche) {
+    try {
+      const b = await api(`/attendance/bulletin-salaire/${userId}?debut=${suiviEnseignantsDebut}&fin=${suiviEnseignantsFin}`);
+      const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
+
+      if (b.mode_calcul === "non_renseigne") {
+        setGlobalError(`Aucun salaire renseigné pour ${nomAffiche} — impossible de générer le bulletin.`);
+        setTimeout(() => setGlobalError(""), 5000);
+        return;
+      }
+
+      const lignesDetail = b.mode_calcul === "salaire_reel" ? `
+        <tr><td>Salaire de base</td><td style="text-align:right">${b.salaire_base.toLocaleString("fr-FR")} F</td></tr>
+        ${b.deduction_absences > 0 ? `<tr><td>Déduction heures manquées${b.heures_manquees ? ` (${b.heures_manquees} h)` : ""}</td><td style="text-align:right; color:#b33;">−${b.deduction_absences.toLocaleString("fr-FR")} F</td></tr>` : ""}
+        ${b.heures_supplementaires > 0 ? `<tr><td>Heures supplémentaires (${b.heures_supplementaires} h)</td><td style="text-align:right">+${(b.montant_heures_supp || 0).toLocaleString("fr-FR")} F</td></tr>` : ""}
+        <tr><td><strong>Salaire brut</strong></td><td style="text-align:right"><strong>${b.salaire_brut_ajuste.toLocaleString("fr-FR")} F</strong></td></tr>
+        <tr><td>CNPS (6,3%)</td><td style="text-align:right; color:#b33;">−${b.cnps.toLocaleString("fr-FR")} F</td></tr>
+        <tr><td>ITS (impôt sur salaire)</td><td style="text-align:right; color:#b33;">−${b.its_net.toLocaleString("fr-FR")} F</td></tr>
+      ` : `
+        <tr><td>Heures travaillées</td><td style="text-align:right">${b.heures_travaillees} h</td></tr>
+        ${b.heures_manquees > 0 ? `<tr><td>Heures manquées (non payées)</td><td style="text-align:right; color:#b33;">${b.heures_manquees} h</td></tr>` : ""}
+        <tr><td>Taux horaire</td><td style="text-align:right">${b.taux_horaire != null ? b.taux_horaire.toLocaleString("fr-FR") + " F/h" : "—"}</td></tr>
+      `;
+
+      const fenetre = window.open("", "_blank", "width=700,height=850");
+      fenetre.document.write(`
+        <html><head><title>Bulletin de salaire — ${nomAffiche}</title>
+        <style>
+          @page { size: A4 portrait; margin: 16mm; }
+          body { font-family: Arial, sans-serif; color: #222; font-size: 13px; }
+          h1 { font-size: 18px; margin-bottom: 2px; }
+          .sous-titre { font-size: 12px; color: #666; margin-bottom: 4px; }
+          .entete { display: flex; justify-content: space-between; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 2px solid #333; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          td { padding: 8px 4px; border-bottom: 1px solid #ddd; }
+          .net { font-size: 17px; font-weight: bold; }
+          .net-row td { border-top: 2px solid #333; border-bottom: none; padding-top: 14px; }
+          .avertissement { margin-top: 30px; font-size: 10px; color: #888; border-top: 1px solid #ddd; padding-top: 10px; }
+        </style></head>
+        <body onload="window.print()">
+          ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:50px;margin-bottom:8px;" />` : ""}
+          <div class="entete">
+            <div>
+              <h1>Bulletin de salaire</h1>
+              <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""}</div>
+            </div>
+            <div style="text-align:right">
+              <div><strong>${nomAffiche}</strong></div>
+              <div class="sous-titre">${b.personne.role === "enseignant" ? "Enseignant" : b.personne.role === "direction" ? "Direction" : b.personne.role === "surveillant" ? "Surveillant" : b.personne.role}</div>
+              <div class="sous-titre">Période : ${b.debut} au ${b.fin}</div>
+            </div>
+          </div>
+          <table>${lignesDetail}</table>
+          <table>
+            <tr class="net-row"><td class="net">NET À PAYER</td><td class="net" style="text-align:right">${b.montant_a_payer != null ? b.montant_a_payer.toLocaleString("fr-FR") + " F" : "Non calculable"}</td></tr>
+          </table>
+          <div class="avertissement">
+            Document généré automatiquement à titre indicatif — barème CNPS/ITS en vigueur depuis la réforme du 1er janvier 2024.
+            À faire vérifier par un comptable avant tout usage officiel ; les taux peuvent évoluer par loi de finances.
+          </div>
+        <div style="margin-top:24px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:10px;">
+            <div style="font-size:10px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:25mm;" />` : ""}
+          </div>
+        </body></html>
+      `);
+      fenetre.document.close();
+    } catch (e) { catchErr(e); }
+  }
+
+  function exporterPayePdf() {
+    const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
+    const total = payeEnseignants.reduce((s, e) => s + (e.montant_a_payer || 0), 0);
+    const lignes = payeEnseignants.map((e) => `
+      <tr>
+        <td>${e.enseignant}</td>
+        <td>${e.statut_emploi === "permanent" ? "Permanent" : e.statut_emploi === "vacataire" ? "Vacataire" : "—"}</td>
+        <td style="text-align:right">${e.heures_travaillees} h</td>
+        <td style="text-align:right; color:#b33;">${e.heures_manquees > 0 ? e.heures_manquees + " h" : "—"}</td>
+        <td style="text-align:right">${e.taux_horaire != null ? e.taux_horaire + " F" : "—"}</td>
+        <td style="text-align:right; font-weight:bold;">${e.montant_a_payer != null ? e.montant_a_payer.toLocaleString("fr-FR") + " F" : "Taux manquant"}</td>
+      </tr>`).join("");
+
+    const fenetre = window.open("", "_blank", "width=850,height=900");
+    fenetre.document.write(`
+      <html><head><title>Paie des enseignants — ${suiviEnseignantsDebut} au ${suiviEnseignantsFin}</title>
+      <style>
+        @page { size: A4 landscape; margin: 14mm; }
+        body { font-family: Arial, sans-serif; color: #222; }
+        h1 { font-size: 18px; margin-bottom: 2px; }
+        .sous-titre { font-size: 12px; color: #666; margin-bottom: 18px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+        th, td { padding: 8px 10px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: #f0ece0; text-transform: uppercase; font-size: 10.5px; }
+        tfoot td { font-weight: bold; font-size: 14px; border-top: 2px solid #333; }
+      </style></head>
+      <body onload="window.print()">
+        ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:50px;margin-bottom:8px;" />` : ""}
+        <h1>Paie des enseignants</h1>
+        <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""} · Période du ${suiviEnseignantsDebut} au ${suiviEnseignantsFin}</div>
+        <table>
+          <thead><tr><th>Enseignant</th><th>Statut</th><th>Heures travaillées</th><th>Heures manquées</th><th>Taux/h</th><th>Montant à payer</th></tr></thead>
+          <tbody>${lignes || '<tr><td colspan="6">Aucune donnée pour cette période.</td></tr>'}</tbody>
+          <tfoot><tr><td colspan="5" style="text-align:right">TOTAL À PAYER</td><td style="text-align:right">${total.toLocaleString("fr-FR")} F</td></tr></tfoot>
+        </table>
+      <div style="margin-top:24px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:10px;">
+            <div style="font-size:10px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:25mm;" />` : ""}
+          </div>
+      </body></html>
+    `);
+    fenetre.document.close();
+  }
+
+  async function chargerJoursFeries() {
+    try {
+      const res = await api("/jours-non-scolaires?annee=2026");
+      setJoursFeries(res);
+      setFeriesCI2026Charges(res.some((f) => f.date === "2026-01-01"));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function preremplirFeries2026() {
+    try {
+      const res = await api("/jours-non-scolaires/preremplir-2026", { method: "POST" });
+      setGlobalInfo(`${res.ajoutes} jour(s) férié(s) 2026 ajouté(s) — vérifie les dates lunaires (Aïd, Tabaski) une fois confirmées officiellement.`);
+      setTimeout(() => setGlobalInfo(""), 8000);
+      chargerJoursFeries();
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ajouterFerie() {
+    if (!nouveauFerieDate) return;
+    try {
+      await api("/jours-non-scolaires", { method: "POST", body: { date: nouveauFerieDate, libelle: nouveauFerieLibelle } });
+      setNouveauFerieDate(""); setNouveauFerieLibelle("");
+      chargerJoursFeries();
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerFerie(date) {
+    try {
+      await api(`/jours-non-scolaires/${date}`, { method: "DELETE" });
+      setJoursFeries((f) => f.filter((x) => x.date !== date));
+    } catch (e) { catchErr(e); }
+  }
+
+
+  const dernierScanRef = useRef({ token: null, time: 0 });
+
+  async function scannerToken(token) {
+    if (!token) return;
+    const maintenant = Date.now();
+    // Anti-spam : ignore un même badge scanné deux fois en moins de 3 secondes
+    // (évite d'enregistrer 30 présences par seconde tant que le badge reste face caméra)
+    if (dernierScanRef.current.token === token && maintenant - dernierScanRef.current.time < 3000) return;
+    dernierScanRef.current = { token, time: maintenant };
+
+    try {
+      const res = await api("/attendance/qr-scan", { method: "POST", body: { token, creneau_id: selectedCreneauId } });
+      setScanFeedback({ nom: res.eleve.nom, time: new Date(), ok: true });
+      refreshRegistre();
+    } catch (e) {
+      setScanFeedback({ nom: null, time: new Date(), ok: false, message: e.message });
+    }
+    setTimeout(() => setScanFeedback(null), 1800);
+  }
+
+  function updateParentEdit(studentId, field, value) { setParentEdits((p) => ({ ...p, [studentId]: { ...p[studentId], [field]: value } })); }
+  async function saveParentInfo(studentId) {
+    const edit = parentEdits[studentId];
+    if (!edit || !edit.parentTel) return;
+    try {
+      await api(`/students/${studentId}/parents`, { method: "POST", body: { nom: edit.parentNom || "Parent", telephone: edit.parentTel } });
+      setParentEdits((p) => { const cp = { ...p }; delete cp[studentId]; return cp; });
+    } catch (e) { catchErr(e); }
+  }
+
+  async function envoyerRapports() {
+    setEnvoiResult(null);
+    try {
+      const body = { mode: envoiMode, contenu: "Le rapport de présence de votre enfant est disponible." };
+      if (envoiMode === "differe") body.date_envoi = `${envoiDate}T${envoiHeure}:00`;
+      const res = await api("/notifications/rapport", { method: "POST", body });
+      setEnvoiResult(res);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function handleAddUser() {
+    setUserFormError("");
+    if (!newUser.nom.trim() || !newUser.email.trim() || !newUser.mot_de_passe) {
+      return setUserFormError("Nom, email et mot de passe sont requis.");
+    }
+    try {
+      const created = await api("/users", { method: "POST", body: { ...newUser, matieres: newUser.role === "enseignant" ? newUserMatieres : null } });
+      setUsers((u) => [created, ...u]);
+      setNewUser({ nom: "", email: "", mot_de_passe: "", role: "enseignant", ecole_id: null, statut_emploi: "", statut_matrimonial: "", nombre_enfants: "" });
+      setNewUserMatieres("");
+      setAfficherInfosRhCreation(false);
+      setShowAddUser(false);
+    } catch (e) { setUserFormError(e.message); }
+  }
+
+  async function removeUser(id) {
+    try {
+      await api(`/users/${id}`, { method: "DELETE" });
+      setUsers((u) => u.filter((x) => x.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changeUserRole(id, role) {
+    try {
+      const updated = await api(`/users/${id}/role`, { method: "PATCH", body: { role } });
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changeStatutEmploi(id, statut_emploi) {
+    try {
+      const updated = await api(`/users/${id}/statut-emploi`, { method: "PATCH", body: { statut_emploi } });
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changeTauxHoraire(id, valeurTexte) {
+    const nombre = parseFloat(valeurTexte.replace(/[^\d.,]/g, "").replace(",", "."));
+    if (isNaN(nombre)) return;
+    try {
+      const updated = await api(`/users/${id}/taux-horaire`, { method: "PATCH", body: { taux_horaire: nombre } });
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function enregistrerSalaire(id, patch) {
+    try {
+      const updated = await api(`/users/${id}/salaire`, { method: "PATCH", body: patch });
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
+      setGestionSalaireUser((g) => g && g.id === id ? { ...g, ...updated } : g);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changeUserNom(id, nom) {
+    if (!nom.trim()) return;
+    try {
+      const updated = await api(`/users/${id}/nom`, { method: "PATCH", body: { nom } });
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changeUserEmail(id, email) {
+    if (!email.trim()) return;
+    try {
+      const updated = await api(`/users/${id}/email`, { method: "PATCH", body: { email } });
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changeUserMatieres(id, matieres) {
+    try {
+      const updated = await api(`/users/${id}/matieres`, { method: "PATCH", body: { matieres: matieres === "—" ? "" : matieres } });
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ouvrirDisponibilitesUser(u) {
+    setGestionDisponibilitesUser(u);
+    try {
+      const res = await api(`/disponibilites?user_id=${u.id}`);
+      setDisponibilitesUser(res);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ajouterDisponibilite() {
+    if (!gestionDisponibilitesUser) return;
+    try {
+      const created = await api("/disponibilites", { method: "POST", body: { user_id: gestionDisponibilitesUser.id, ...nouvelleDispo, jour_semaine: Number(nouvelleDispo.jour_semaine) } });
+      setDisponibilitesUser((d) => [...d, created].sort((a, b) => a.jour_semaine - b.jour_semaine || a.heure_debut.localeCompare(b.heure_debut)));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerDisponibilite(id) {
+    try {
+      await api(`/disponibilites/${id}`, { method: "DELETE" });
+      setDisponibilitesUser((d) => d.filter((x) => x.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changeUserEcole(id, ecole_id) {
+    try {
+      await api(`/users/${id}/ecole`, { method: "PATCH", body: { ecole_id } });
+      const fraiche = await api("/users");
+      setUsers(fraiche);
+    } catch (e) { catchErr(e); }
+  }
+
+  // -------------------- Dossier élève --------------------
+  async function ouvrirDossierEleve(studentId) {
+    try {
+      const [fiche, parentsListe, historique] = await Promise.all([
+        api(`/students/${studentId}`),
+        api(`/students/${studentId}/parents`),
+        api(`/students/${studentId}/attendance`),
+      ]);
+      setDossierEleve(fiche);
+      setDossierParents(parentsListe);
+      setDossierAttendance(historique);
+    } catch (e) { catchErr(e); }
+  }
+  function fermerDossierEleve() { setDossierEleve(null); setDossierParents([]); setDossierAttendance([]); }
+
+  async function changeEleveNom(id, nom) {
+    if (!nom.trim()) return;
+    try {
+      const updated = await api(`/students/${id}`, { method: "PATCH", body: { nom } });
+      setDossierEleve((d) => d && d.id === id ? { ...d, nom: updated.nom } : d);
+      await refreshStudents();
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changeDateNaissanceEleve(id, date_naissance) {
+    try {
+      const updated = await api(`/students/${id}`, { method: "PATCH", body: { date_naissance: date_naissance || "" } });
+      setDossierEleve((d) => d && d.id === id ? { ...d, date_naissance: updated.date_naissance } : d);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changeLieuNaissanceEleve(id, lieu_naissance) {
+    try {
+      const updated = await api(`/students/${id}`, { method: "PATCH", body: { lieu_naissance: lieu_naissance || "" } });
+      setDossierEleve((d) => d && d.id === id ? { ...d, lieu_naissance: updated.lieu_naissance } : d);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function handleUploadPhotoEleve(id, e) {
+    const fichier = e.target.files?.[0];
+    e.target.value = "";
+    if (!fichier) return;
+    try {
+      const formData = new FormData();
+      formData.append("photo", fichier);
+      const updated = await api(`/students/${id}/photo`, { method: "POST", body: formData });
+      setDossierEleve((d) => d && d.id === id ? { ...d, photo_url: updated.photo_url } : d);
+      await refreshStudents();
+    } catch (e2) { catchErr(e2); }
+  }
+
+  // Imprime un badge au format carte (CR80, comme une carte RFID/bancaire) avec le QR code.
+  // Important : ceci imprime le QR code SUR une carte (RFID imprimable ou non) — ça ne
+  // programme pas la puce RFID elle-même, ce qui demande un encodeur RFID dédié, hors
+  // de portée d'un navigateur web.
+  async function imprimerBadge(eleve) {
+    try {
+      const { image } = await api(`/students/${eleve.id}/badge`);
+      const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
+      const photoAbsolue = eleve.photo_url ? `${session.baseUrl.replace(/\/api$/, "")}${eleve.photo_url}` : null;
+      const fenetre = window.open("", "_blank", "width=500,height=350");
+      fenetre.document.write(`
+        <html><head><title>Badge — ${eleve.nom}</title>
+        <style>
+          @page { size: 85.6mm 54mm; margin: 0; }
+          body { margin: 0; font-family: Arial, sans-serif; }
+          .badge { width: 85.6mm; height: 54mm; box-sizing: border-box; padding: 3.5mm; display: flex; align-items: center; gap: 3mm; border: 1px solid #ccc; }
+          .photo { width: 16mm; height: 20mm; object-fit: cover; border-radius: 2px; border: 1px solid #ccc; flex-shrink: 0; }
+          .photo-placeholder { width: 16mm; height: 20mm; border-radius: 2px; border: 1px solid #ccc; flex-shrink: 0; background: #eee; }
+          .qr { width: 20mm; height: 20mm; flex-shrink: 0; }
+          .infos { flex: 1; min-width: 0; }
+          .ecole { font-size: 8px; text-transform: uppercase; color: #666; margin-bottom: 2mm; }
+          .nom { font-size: 12px; font-weight: bold; margin-bottom: 1mm; }
+          .classe { font-size: 10px; color: #333; }
+          .matricule { font-size: 7.5px; color: #999; margin-top: 2mm; }
+        </style></head>
+        <body onload="window.print()">
+          <div class="badge">
+            ${photoAbsolue ? `<img class="photo" src="${photoAbsolue}" />` : `<div class="photo-placeholder"></div>`}
+            <img class="qr" src="${image}" />
+            <div class="infos">
+              <div class="ecole" style="display:flex; align-items:center; gap:1.5mm;">
+                ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:5mm; width:5mm; object-fit:contain;" />` : ""}
+                ${ecoleNom}
+              </div>
+              <div class="nom">${eleve.nom}</div>
+              <div class="classe">${eleve.classe_nom || ""}</div>
+              <div class="matricule">${eleve.matricule}</div>
+            </div>
+          </div>
+        </body></html>
+      `);
+      fenetre.document.close();
+    } catch (e) { catchErr(e); }
+  }
+
+  // -------------------- Rattachement enseignant ↔ classes --------------------
+  async function toggleClasseEnseignant(userId, classeId, dejaRattachee) {
+    try {
+      if (dejaRattachee) {
+        await api(`/users/${userId}/classes/${classeId}`, { method: "DELETE" });
+      } else {
+        await api(`/users/${userId}/classes`, { method: "POST", body: { classe_id: classeId } });
+      }
+      const fraiche = await api("/users");
+      setUsers(fraiche);
+      setGestionClassesUser(fraiche.find((u) => u.id === userId) || null);
+    } catch (e) { catchErr(e); }
+  }
+
+  // -------------------- Paramétrage des lecteurs biométriques --------------------
+  async function handleSaveDevice() {
+    setDeviceFormError("");
+    if (!newDevice.nom.trim() || !newDevice.adresse_ip.trim()) {
+      return setDeviceFormError("Nom et adresse IP sont requis.");
+    }
+    try {
+      if (editingDeviceId) {
+        const updated = await api(`/devices/${editingDeviceId}`, { method: "PUT", body: newDevice });
+        setDevices((d) => d.map((x) => x.id === editingDeviceId ? updated : x));
+      } else {
+        const created = await api("/devices", { method: "POST", body: newDevice });
+        setDevices((d) => [...d, created]);
+      }
+      setNewDevice({ nom: "", marque: "zkteco", adresse_ip: "", emplacement: "", ecole_id: null });
+      setEditingDeviceId(null);
+      setShowAddDevice(false);
+    } catch (e) { setDeviceFormError(e.message); }
+  }
+  function commencerEditionDevice(d) {
+    setNewDevice({ nom: d.nom, marque: d.marque, adresse_ip: d.adresse_ip, emplacement: d.emplacement || "" });
+    setEditingDeviceId(d.id);
+    setShowAddDevice(true);
+  }
+  async function supprimerDevice(id) {
+    try {
+      await api(`/devices/${id}`, { method: "DELETE" });
+      setDevices((d) => d.filter((x) => x.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function testerDevice(id) {
+    setGlobalInfo("Test en cours...");
+    try {
+      const res = await api(`/devices/${id}/tester`, { method: "POST" });
+      setGlobalInfo(res.ok ? `✔ Connexion réussie (${res.duree_ms} ms).` : `✘ Échec : ${res.erreur}`);
+      const fraiche = await api("/devices");
+      setDevices(fraiche);
+      setTimeout(() => setGlobalInfo(""), 6000);
+    } catch (e) { catchErr(e); }
+  }
+
+  // -------------------- Suppression de classes / niveaux --------------------
+  async function supprimerClasse(id) {
+    if (!window.confirm("Supprimer cette classe ? Les élèves qui y sont rattachés ne seront pas supprimés, juste détachés de la classe.")) return;
+    try {
+      await api(`/classes/${id}`, { method: "DELETE" });
+      setClasses((c) => c.filter((x) => x.id !== id));
+      setGlobalInfo("Classe supprimée.");
+      setTimeout(() => setGlobalInfo(""), 4000);
+    } catch (e) { catchErr(e); }
+  }
+  async function changeClasseNom(id, nom) {
+    if (!nom.trim()) return;
+    try {
+      const updated = await api(`/classes/${id}`, { method: "PATCH", body: { nom } });
+      setClasses((c) => c.map((x) => x.id === id ? updated : x));
+      await refreshStudents();
+    } catch (e) { catchErr(e); }
+  }
+  async function supprimerNiveau(niveau) {
+    if (!window.confirm(`Supprimer TOUTES les classes du niveau "${niveau}" ? Les élèves qui y sont rattachés ne seront pas supprimés, juste détachés.`)) return;
+    try {
+      const res = await api(`/classes/niveau/${encodeURIComponent(niveau)}`, { method: "DELETE" });
+      setClasses((c) => c.filter((x) => x.niveau !== niveau));
+      setGlobalInfo(`${res.supprimees} classe(s) supprimée(s) pour le niveau ${niveau}.`);
+      setTimeout(() => setGlobalInfo(""), 4000);
+    } catch (e) { catchErr(e); }
+  }
+
+  // -------------------- Matières enseignées --------------------
+  async function saveMatieres(userId) {
+    try {
+      const updated = await api(`/users/${userId}/matieres`, { method: "PATCH", body: { matieres: matieresInput } });
+      setUsers((u) => u.map((x) => x.id === userId ? { ...x, ...updated } : x));
+      setEditingMatieresUserId(null);
+    } catch (e) { catchErr(e); }
+  }
+
+  // -------------------- Écoles --------------------
+  async function handleSaveEcole() {
+    setEcoleFormError("");
+    if (!newEcole.nom.trim()) return setEcoleFormError("Le nom de l'école est requis.");
+    try {
+      if (editingEcoleId) {
+        const updated = await api(`/ecoles/${editingEcoleId}`, { method: "PUT", body: newEcole });
+        setEcoles((liste) => liste.map((x) => x.id === editingEcoleId ? updated : x).map((x) => updated.active && x.id !== updated.id ? { ...x, active: false } : x));
+      } else {
+        const created = await api("/ecoles", { method: "POST", body: newEcole });
+        setEcoles((liste) => [created, ...liste].map((x) => created.active && x.id !== created.id ? { ...x, active: false } : x));
+      }
+      setNewEcole({ nom: "", adresse: "", ville: "", telephone: "", annee_scolaire: "", active: false, email: "", registre_commerce: "" });
+      setEditingEcoleId(null);
+      setShowAddEcole(false);
+    } catch (e) { setEcoleFormError(e.message); }
+  }
+  function commencerEditionEcole(e) {
+    setNewEcole({ nom: e.nom, adresse: e.adresse || "", ville: e.ville || "", telephone: e.telephone || "", annee_scolaire: e.annee_scolaire || "", active: e.active, email: e.email || "", registre_commerce: e.registre_commerce || "" });
+    setEditingEcoleId(e.id);
+    setEcoleFormError("");
+    setShowAddEcole(true);
+  }
+  async function supprimerEcole(id) {
+    if (!window.confirm("Supprimer cette école ?")) return;
+    try {
+      await api(`/ecoles/${id}`, { method: "DELETE" });
+      setEcoles((liste) => liste.filter((x) => x.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function genererCleAgent(id) {
+    if (!window.confirm("Générer une nouvelle clé désactive l'ancienne — l'agent local devra être reconfiguré avec la nouvelle. Continuer ?")) return;
+    try {
+      const updated = await api(`/ecoles/${id}/generer-cle-agent`, { method: "POST" });
+      setEcoles((liste) => liste.map((x) => x.id === id ? updated : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function handleUploadImageEcole(ecoleId, type, e) {
+    const fichier = e.target.files?.[0];
+    e.target.value = "";
+    if (!fichier) return;
+    try {
+      const formData = new FormData();
+      formData.append("image", fichier);
+      const updated = await api(`/ecoles/${ecoleId}/${type}`, { method: "POST", body: formData });
+      setEcoles((liste) => liste.map((x) => x.id === ecoleId ? { ...x, ...updated } : x));
+    } catch (e2) { catchErr(e2); }
+  }
+
+  async function ajouterAnneeScolaire() {
+    if (!nouvelleAnnee.libelle.trim()) return;
+    try {
+      const created = await api("/annees-scolaires", { method: "POST", body: nouvelleAnnee });
+      setAnneesScolaires((a) => [created, ...a]);
+      setNouvelleAnnee({ libelle: "", date_debut: "", date_fin: "" });
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerAnneeScolaire(id) {
+    if (!window.confirm("Supprimer cette année scolaire ? Les écoles qui y sont rattachées perdront cette information.")) return;
+    try {
+      await api(`/annees-scolaires/${id}`, { method: "DELETE" });
+      setAnneesScolaires((a) => a.filter((x) => x.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function assignerAnneeScolaire(ecoleId, patch) {
+    try {
+      const updated = await api(`/ecoles/${ecoleId}/annee-scolaire`, { method: "PATCH", body: patch });
+      setEcoles((liste) => liste.map((x) => x.id === ecoleId ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function basculerSuspensionEcole(ecole) {
+    const nouvelEtat = !ecole.suspendue;
+    const message = nouvelEtat
+      ? `Fermer "${ecole.nom}" ? Plus aucun compte de cet établissement ne pourra se connecter tant que tu ne l'auras pas rouvert.`
+      : `Rouvrir "${ecole.nom}" ? Les comptes de cet établissement pourront de nouveau se connecter.`;
+    if (!window.confirm(message)) return;
+    try {
+      const updated = await api(`/ecoles/${ecole.id}/suspension`, { method: "PATCH", body: { suspendue: nouvelEtat } });
+      setEcoles((liste) => liste.map((x) => x.id === ecole.id ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function lancerPaiementRenouvellement() {
+    try {
+      const res = await api("/paiements/initier", {
+        method: "POST",
+        body: { ecole_id: renouvellementEcole.id, montant: Number(renouvellementMontant), mois_ajoutes: Number(renouvellementMois) },
+      });
+      window.open(res.payment_url, "_blank");
+      setRenouvellementEcole(null);
+      setGlobalInfo("Paiement lancé dans un nouvel onglet — la date de fin d'utilisation se mettra à jour automatiquement une fois le paiement confirmé par Orange Money.");
+      setTimeout(() => setGlobalInfo(""), 8000);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function enregistrerHoraires(id) {
+    const edit = horairesEdits[id] || {};
+    try {
+      const updated = await api(`/ecoles/${id}/horaires`, { method: "PATCH", body: edit });
+      setEcoles((liste) => liste.map((x) => x.id === id ? updated : x));
+      setHorairesEdits((v) => { const cp = { ...v }; delete cp[id]; return cp; });
+      setGlobalInfo("Horaires enregistrés.");
+      setTimeout(() => setGlobalInfo(""), 4000);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ajouterMatiere() {
+    if (!nouvelleMatiere.trim()) return;
+    try {
+      const created = await api("/matieres", { method: "POST", body: { nom: nouvelleMatiere.trim(), cycle: nouvelleMatiereCycle || null, categorie: nouvelleMatiereCategorie || null, duree_double: nouvelleMatiereDureeDouble } });
+      setMatieresListe((m) => [...m, created].sort((a, b) => a.nom.localeCompare(b.nom)));
+      setNouvelleMatiere(""); setNouvelleMatiereCycle(""); setNouvelleMatiereCategorie(""); setNouvelleMatiereDureeDouble(false);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function genererMatieresParDefaut() {
+    try {
+      const res = await api("/matieres/generer-defaut", { method: "POST" });
+      if (res.creees.length > 0) setMatieresListe((m) => [...m, ...res.creees].sort((a, b) => a.nom.localeCompare(b.nom)));
+      setGlobalInfo(`${res.creees.length} matière(s) ajoutée(s) sur ${res.total_demandees} (les autres existaient déjà).`);
+      setTimeout(() => setGlobalInfo(""), 5000);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ajouterSalle() {
+    if (!nouvelleSalle.trim()) return;
+    try {
+      const created = await api("/salles", { method: "POST", body: { nom: nouvelleSalle.trim() } });
+      setSallesListe((s) => [...s, created].sort((a, b) => a.nom.localeCompare(b.nom)));
+      setNouvelleSalle("");
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerSalle(id) {
+    try {
+      await api(`/salles/${id}`, { method: "DELETE" });
+      setSallesListe((s) => s.filter((x) => x.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerMatiere(id) {
+    try {
+      await api(`/matieres/${id}`, { method: "DELETE" });
+      setMatieresListe((m) => m.filter((x) => x.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function enregistrerReglagesMatiere(id, patch) {
+    try {
+      const updated = await api(`/matieres/${id}`, { method: "PATCH", body: patch });
+      setMatieresListe((m) => m.map((x) => x.id === id ? updated : x));
+      setEditionMatiere(updated);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function genererVolumesOfficiels() {
+    try {
+      const res = await api("/volumes-horaires/generer-officiel-1er-cycle", { method: "POST" });
+      if (res.creees.length > 0) {
+        setVolumesHoraires((v) => [...v, ...res.creees]);
+        const fraicheMatieres = await api("/matieres");
+        setMatieresListe(fraicheMatieres);
+      }
+      setGlobalInfo(`${res.creees.length} matière(s) préremplie(s) pour le 1er cycle (Anglais, Arts Plastiques/Éd. Musicale, EDHC, EPS). Le reste du tableau (Français, Mathématiques, L.V.2, Histoire-Géo, et tout le lycée) doit être saisi à la main — vérifie bien contre ta circulaire officielle.`);
+      setTimeout(() => setGlobalInfo(""), 10000);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ajouterVolumeHoraire() {
+    if (!nouveauVolume.matiere_id || !nouveauVolume.heures_semaine || (!nouveauVolume.classe_id && !nouveauVolume.niveau && !nouveauVolume.cycle)) {
+      setGlobalError("Choisis une matière, un nombre d'heures, et une classe, un niveau OU un cycle.");
+      setTimeout(() => setGlobalError(""), 4000);
+      return;
+    }
+    try {
+      const created = await api("/volumes-horaires", { method: "POST", body: nouveauVolume });
+      const matiereNom = matieresListe.find((m) => m.id === nouveauVolume.matiere_id)?.nom || "";
+      const classeNom = classes.find((c) => c.id === nouveauVolume.classe_id)?.nom || null;
+      setVolumesHoraires((v) => [...v, { ...created, matiere_nom: matiereNom, classe_nom: classeNom }]);
+      setNouveauVolume({ matiere_id: "", classe_id: "", niveau: "", cycle: "", heures_semaine: "" });
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerVolumeHoraire(id) {
+    try {
+      await api(`/volumes-horaires/${id}`, { method: "DELETE" });
+      setVolumesHoraires((v) => v.filter((x) => x.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  // Coche/décoche une matière dans la liste "matieres" (texte séparé par virgules) d'un enseignant
+  function toggleMatiereEnseignant(matieresActuelles, nomMatiere) {
+    const liste = (matieresActuelles || "").split(",").map((m) => m.trim()).filter(Boolean);
+    const dejaPresente = liste.includes(nomMatiere);
+    const nouvelleListe = dejaPresente ? liste.filter((m) => m !== nomMatiere) : [...liste, nomMatiere];
+    return nouvelleListe.join(", ");
+  }
+
+  // -------------------- Scanner caméra réel --------------------
+  useEffect(() => {
+    if (appelMode !== "qr" || !scannerOn) return;
+    navigator.mediaDevices?.enumerateDevices?.().then((devicesList) => {
+      setCameraList(devicesList.filter((d) => d.kind === "videoinput"));
+    }).catch(() => {});
+  }, [appelMode, scannerOn]);
+
+  useEffect(() => {
+    if (appelMode !== "qr" || !scannerOn) {
+      if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
+      if (scanLoopRef.current) { cancelAnimationFrame(scanLoopRef.current); scanLoopRef.current = null; }
+      return;
+    }
+    setCameraError("");
+    const contraintes = { video: selectedCameraId ? { deviceId: { exact: selectedCameraId } } : { facingMode: "environment" } };
+
+    navigator.mediaDevices.getUserMedia(contraintes).then((stream) => {
+      streamRef.current = stream;
+      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
+
+      if (!("BarcodeDetector" in window)) {
+        setCameraError("Ce navigateur ne sait pas lire les QR codes nativement. Utilise la saisie manuelle du jeton ci-dessous, ou passe sur une version récente de Chrome/Edge.");
+        return;
+      }
+      const detecteur = new window.BarcodeDetector({ formats: ["qr_code"] });
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      const boucle = async () => {
+        if (videoRef.current && videoRef.current.readyState === 4) {
+          canvas.width = videoRef.current.videoWidth;
+          canvas.height = videoRef.current.videoHeight;
+          ctx.drawImage(videoRef.current, 0, 0);
+          try {
+            const codes = await detecteur.detect(canvas);
+            if (codes.length > 0) { scannerToken(codes[0].rawValue); }
+          } catch {}
+        }
+        scanLoopRef.current = requestAnimationFrame(boucle);
+      };
+      scanLoopRef.current = requestAnimationFrame(boucle);
+    }).catch((err) => {
+      setCameraError("Impossible d'accéder à la caméra : " + err.message + " (vérifie que le navigateur a bien la permission caméra).");
+    });
+
+    return () => {
+      if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
+      if (scanLoopRef.current) { cancelAnimationFrame(scanLoopRef.current); scanLoopRef.current = null; }
+    };
+  }, [appelMode, scannerOn, selectedCameraId]);
+
+  return (
+    <div className="app-shell" style={{ background: COLORS.ardoise, color: COLORS.craie }}>
+      <div className={`sidebar-overlay ${sidebarOuverte ? "ouverte" : ""}`} onClick={() => setSidebarOuverte(false)} />
+      <div className="mobile-header" style={{ position: "fixed", top: 0, left: 0, right: 0, height: 56, background: COLORS.ardoiseDeep, borderBottom: `1px solid ${COLORS.line}`, alignItems: "center", padding: "0 14px", gap: 12, zIndex: 80 }}>
+        <button onClick={() => setSidebarOuverte(true)} style={{ background: "transparent", border: "none", color: COLORS.craie, cursor: "pointer", padding: 6 }}>
+          <Icon path="M3 6h18M3 12h18M3 18h18" size={20} />
+        </button>
+        <span style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600 }}>Cahier d'Appel</span>
+      </div>
+      <aside className={`app-sidebar ${sidebarOuverte ? "ouverte" : ""}`} style={{ background: COLORS.ardoiseDeep, borderRight: `1px solid ${COLORS.line}`, padding: "22px 14px", display: "flex", flexDirection: "column", gap: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 9, background: COLORS.marker, display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.ardoiseDeep, fontWeight: 700 }}>CA</div>
+          <div><div style={{ fontFamily: "'Fraunces', serif", fontSize: 15.5, fontWeight: 600 }}>Cahier d'Appel</div><div style={{ fontSize: 10.5, color: COLORS.craieDim }}>Connecté au serveur</div></div>
+        </div>
+        {ecoles.find((e) => e.active) && (
+          <div style={{ fontSize: 11, color: COLORS.marker, fontWeight: 600, padding: "0 2px" }}>
+            {ecoles.find((e) => e.active).nom}{ecoles.find((e) => e.active).annee_scolaire ? ` · ${ecoles.find((e) => e.active).annee_scolaire}` : ""}
+          </div>
+        )}
+        <div style={{ background: "rgba(246,242,231,0.05)", border: `1px solid ${COLORS.line}`, borderRadius: 9, padding: "8px 10px", fontSize: 12 }}>
+          <div style={{ fontWeight: 600 }}>{session.user.nom}</div>
+          <div style={{ color: COLORS.craieDim, fontSize: 11 }}>{ROLE_LABELS[role] || role}</div>
+        </div>
+        {estDirectionGenerale && (
+          <div>
+            <div style={{ fontSize: 10.5, color: COLORS.craieDim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>École en consultation</div>
+            <select
+              style={{ ...inputStyle, width: "100%", fontSize: 12, borderColor: ecoleActiveId ? COLORS.marker : COLORS.line }}
+              value={ecoleActiveId || ""}
+              onChange={(e) => {
+                const val = e.target.value || null;
+                setEcoleActiveId(val);
+                if (val) localStorage.setItem("cahierAppelEcoleActive", val); else localStorage.removeItem("cahierAppelEcoleActive");
+              }}
+            >
+              <option value="">— Vue globale (toutes écoles) —</option>
+              {ecoles.map((e) => <option key={e.id} value={e.id}>{e.nom}</option>)}
+            </select>
+          </div>
+        )}
+        <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {availableViews.includes("dashboard") && <NavItem label="Tableau de bord" active={view === "dashboard"} onClick={() => { setSidebarOuverte(false); setView("dashboard"); }} />}
+          {availableViews.includes("appel") && <NavItem label="Appel par classe" active={view === "appel"} onClick={() => { setSidebarOuverte(false); setView("appel"); }} />}
+          {availableViews.includes("students") && <NavItem label="Élèves" active={view === "students"} onClick={() => { setSidebarOuverte(false); setView("students"); }} count={students.length} />}
+          {availableViews.includes("enseignants") && <NavItem label="Enseignants" active={view === "enseignants"} onClick={() => { setSidebarOuverte(false); setView("enseignants"); }} count={users.filter((u) => u.role === "enseignant").length} />}
+          {availableViews.includes("parents") && <NavItem label="Rattachement parents" active={view === "parents"} onClick={() => { setSidebarOuverte(false); setView("parents"); }} />}
+          {availableViews.includes("absenteisme") && <NavItem label="Absentéisme" active={view === "absenteisme"} onClick={() => { setSidebarOuverte(false); setView("absenteisme"); }} count={absenteisme.length} badge={absenteisme.length > 0} />}
+          {availableViews.includes("paie") && <NavItem label="Paie" active={view === "paie"} onClick={() => { setSidebarOuverte(false); setView("paie"); }} />}
+          {availableViews.includes("emploi") && <NavItem label="Emploi du temps" active={view === "emploi"} onClick={() => { setSidebarOuverte(false); setView("emploi"); }} />}
+          {availableViews.includes("rapports") && <NavItem label="Rapports" active={view === "rapports"} onClick={() => { setSidebarOuverte(false); setView("rapports"); }} />}
+          {availableViews.includes("notif") && <NavItem label="Notifications parents" active={view === "notif"} onClick={() => { setSidebarOuverte(false); setView("notif"); }} />}
+          {availableViews.includes("incidents") && <NavItem label="État des lecteurs" active={view === "incidents"} onClick={() => { setSidebarOuverte(false); setView("incidents"); }} badge={devices.some((d) => !d.en_ligne)} />}
+          {availableViews.includes("parametrage-lecteurs") && <NavItem label="Paramétrage lecteurs" active={view === "parametrage-lecteurs"} onClick={() => { setSidebarOuverte(false); setView("parametrage-lecteurs"); }} count={devices.length} />}
+          {availableViews.includes("en-ligne") && <NavItem label="Utilisateurs en ligne" active={view === "en-ligne"} onClick={() => { setSidebarOuverte(false); setView("en-ligne"); }} />}
+          {availableViews.includes("parametres") && <NavItem label="Paramètres" active={view === "parametres"} onClick={() => { setSidebarOuverte(false); setView("parametres"); }} count={users.length} />}
+          {availableViews.includes("ecoles") && <NavItem label="Écoles" active={view === "ecoles"} onClick={() => { setSidebarOuverte(false); setView("ecoles"); }} count={ecoles.length} />}
+        </nav>
+        <div style={{ marginTop: "auto" }}><Button variant="ghost" small onClick={onLogout}>Se déconnecter</Button></div>
+      </aside>
+
+      <main className="app-main">
+        {(() => {
+          if (role !== "enseignant") return null;
+          // Cherche d'abord un cours EN COURS, sinon le prochain cours IMMINENT (dans
+          // les 15 min) — le premier trouvé dans cet ordre est celui à signaler.
+          const enCours = mesCreneauxAujourdhui.find((c) => statutCreneau(c, maintenant) === "en_cours");
+          const imminent = mesCreneauxAujourdhui.find((c) => statutCreneau(c, maintenant) === "imminent");
+          const c = enCours || imminent;
+          if (!c) return null;
+          const estEnCours = !!enCours;
+          return (
+            <div style={{
+              background: estEnCours ? COLORS.successBg : "rgba(217,164,65,0.15)",
+              border: `1px solid ${estEnCours ? COLORS.success : COLORS.marker}`,
+              borderRadius: 10, padding: "10px 14px", marginBottom: 18, fontSize: 13,
+              color: estEnCours ? COLORS.success : COLORS.marker, display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <span style={{ fontSize: 16 }}>{estEnCours ? "●" : "⏰"}</span>
+              <span>
+                <strong>{estEnCours ? "Cours en cours : " : "Cours dans moins de 15 min : "}</strong>
+                {c.matiere} — {c.classe_nom} ({c.heure_debut?.slice(0,5)}–{c.heure_fin?.slice(0,5)}{c.salle_nom ? `, ${c.salle_nom}` : ""})
+              </span>
+            </div>
+          );
+        })()}
+
+        {role === "enseignant" && statutPush === "refuse" && (
+          <div style={{ background: "rgba(246,242,231,0.05)", border: `1px solid ${COLORS.line}`, borderRadius: 10, padding: "8px 14px", marginBottom: 18, fontSize: 11.5, color: COLORS.craieDim }}>
+            🔕 Les notifications de rappel de cours sont désactivées pour ce navigateur. Le bandeau ci-dessus reste disponible tant que l'application est ouverte — pour recevoir aussi une alerte même appli fermée, autorise les notifications dans les réglages de ton navigateur pour ce site.
+          </div>
+        )}
+
+        {globalError && (
+          <div style={{ background: COLORS.alertBg, border: `1px solid ${COLORS.alert}`, borderRadius: 10, padding: "10px 14px", marginBottom: 18, fontSize: 12.5, color: COLORS.alert, display: "flex", alignItems: "center", gap: 8 }}>
+            <Icon path={P.alertTriangle} size={14} /> {globalError}
+            <button onClick={() => setGlobalError("")} style={{ marginLeft: "auto", background: "transparent", border: "none", color: COLORS.alert, cursor: "pointer" }}><Icon path={P.x} size={14} /></button>
+          </div>
+        )}
+        {globalInfo && (
+          <div style={{ background: COLORS.successBg, border: `1px solid ${COLORS.success}`, borderRadius: 10, padding: "10px 14px", marginBottom: 18, fontSize: 12.5, color: COLORS.success, display: "flex", alignItems: "center", gap: 8 }}>
+            <Icon path={P.check} size={14} /> {globalInfo}
+            <button onClick={() => setGlobalInfo("")} style={{ marginLeft: "auto", background: "transparent", border: "none", color: COLORS.success, cursor: "pointer" }}><Icon path={P.x} size={14} /></button>
+          </div>
+        )}
+
+        {view === "dashboard" && (
+          <React.Fragment>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Présence du jour</h1>
+            <div style={{ display: "flex", gap: 14, marginBottom: 26, flexWrap: "wrap" }}>
+              <StatCard label="Présents" value={stats.present} accent={COLORS.success} sub={`${stats.total_eleves} élèves inscrits`} />
+              <StatCard label="En retard" value={stats.retard} accent={COLORS.marker} />
+              <StatCard label="Absents" value={stats.absent} accent={COLORS.alert} />
+            </div>
+
+            {creneauxSansAppel.length > 0 && (
+              <Card title="⚠ Créneaux sans appel aujourd'hui (enseignant probablement absent)" style={{ marginBottom: 20, borderColor: COLORS.alert }}>
+                {creneauxSansAppel.map((c, i) => (
+                  <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 18px", borderBottom: i < creneauxSansAppel.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                    <Icon path={P.alertTriangle} size={14} color={COLORS.alert} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{c.classe_nom} · {c.matiere}</div>
+                      <div style={{ fontSize: 11.5, color: COLORS.craieDim }}>{c.enseignant || "Enseignant non renseigné"} · {c.heure_debut?.slice(0,5)}–{c.heure_fin?.slice(0,5)}</div>
+                    </div>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", borderRadius: 999, padding: "3px 9px", background: c.termine ? "rgba(196,90,74,0.15)" : "rgba(217,164,65,0.18)", color: c.termine ? COLORS.alert : COLORS.marker }}>
+                      {c.termine ? "Terminé" : "En cours — intervenir maintenant"}
+                    </span>
+                  </div>
+                ))}
+              </Card>
+            )}
+
+            <div style={{ fontSize: 12, color: COLORS.craieDim }}>Ces chiffres viennent en direct du serveur (rafraîchi toutes les 8 secondes).</div>
+          </React.Fragment>
+        )}
+
+        {view === "appel" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Appel par classe et créneau</h1>
+            <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+              <SelectClasseParNiveau classes={classes} value={selectedClasseId} onChange={(e) => setSelectedClasseId(e.target.value)} style={inputStyle} />
+              <select value={selectedCreneauId || ""} onChange={(e) => setSelectedCreneauId(e.target.value)} style={inputStyle}>
+                {creneaux.filter((c) => role !== "enseignant" || c.enseignant === session.user.nom).map((c) => <option key={c.id} value={c.id}>{JOURS[c.jour_semaine - 1]} {c.heure_debut?.slice(0,5)} · {c.matiere}</option>)}
+              </select>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <button onClick={() => setAppelMode("qr")} style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 9, border: `1px solid ${appelMode === "qr" ? COLORS.marker : COLORS.line}`, background: appelMode === "qr" ? "rgba(217,164,65,0.14)" : "transparent", color: appelMode === "qr" ? COLORS.marker : COLORS.craieDim, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}><Icon path={P.scan} size={14} /> Scan QR code</button>
+              <button onClick={() => setAppelMode("manuel")} style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 9, border: `1px solid ${appelMode === "manuel" ? COLORS.marker : COLORS.line}`, background: appelMode === "manuel" ? "rgba(217,164,65,0.14)" : "transparent", color: appelMode === "manuel" ? COLORS.marker : COLORS.craieDim, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}><Icon path={P.check} size={14} /> Pointage manuel</button>
+            </div>
+
+            {appelMode === "qr" && (
+              <Card title="Scanner" style={{ marginBottom: 20 }}>
+                <div style={{ padding: 18 }}>
+                  {!scannerOn ? (
+                    <div style={{ textAlign: "center", padding: "20px 10px" }}>
+                      <Icon path={P.camera} size={30} color={COLORS.craieDim} />
+                      <div style={{ fontSize: 12.5, color: COLORS.craieDim, margin: "10px 0 14px" }}>
+                        Utilise la caméra de cet appareil (tablette, smartphone, webcam) pour scanner le badge QR d'un élève.
+                      </div>
+                      <Button icon={P.camera} onClick={() => setScannerOn(true)}>Ouvrir la caméra</Button>
+                    </div>
+                  ) : (
+                    <div>
+                      {cameraList.length > 1 && (
+                        <div style={{ marginBottom: 10 }}>
+                          <Field label="Caméra / objectif à utiliser">
+                            <select style={inputStyle} value={selectedCameraId || ""} onChange={(e) => setSelectedCameraId(e.target.value || null)}>
+                              <option value="">Choix automatique (caméra arrière si disponible)</option>
+                              {cameraList.map((c, i) => <option key={c.deviceId} value={c.deviceId}>{c.label || `Caméra ${i + 1}`}</option>)}
+                            </select>
+                          </Field>
+                        </div>
+                      )}
+
+                      <div style={{ position: "relative", background: COLORS.encre, borderRadius: 12, overflow: "hidden", marginBottom: 12, aspectRatio: "4/3" }}>
+                        <video ref={videoRef} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <div style={{ position: "absolute", inset: 24, border: `2px solid ${COLORS.marker}`, borderRadius: 10, opacity: 0.7, pointerEvents: "none" }} />
+                        {scanFeedback && (
+                          <div className="row-flash" style={{ position: "absolute", inset: 0, background: "rgba(94,156,121,0.25)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                            <Icon path={P.check} size={30} color={COLORS.success} />
+                            <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.craie }}>{scanFeedback.ok ? scanFeedback.nom : "Échec"}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {cameraError && (
+                        <div style={{ background: COLORS.alertBg, color: COLORS.alert, borderRadius: 9, padding: "10px 12px", fontSize: 12, marginBottom: 12 }}>{cameraError}</div>
+                      )}
+
+                      {scanFeedback && (
+                        <div style={{ padding: "10px 14px", borderRadius: 9, background: scanFeedback.ok ? COLORS.successBg : COLORS.alertBg, color: scanFeedback.ok ? COLORS.success : COLORS.alert, fontSize: 12.5, marginBottom: 12 }}>
+                          {scanFeedback.ok ? `${scanFeedback.nom} — présence enregistrée à ${fmtTime(scanFeedback.time)}` : `Échec du scan : ${scanFeedback.message}`}
+                        </div>
+                      )}
+
+                      <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginBottom: 8 }}>La caméra ne détecte pas ? Colle le jeton du badge manuellement en secours :</div>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                        <input style={{ ...inputStyle, flex: 1 }} value={scanTokenInput} onChange={(e) => setScanTokenInput(e.target.value)} placeholder="Coller le jeton du badge élève ici" />
+                        <Button small icon={P.scan} onClick={() => { scannerToken(scanTokenInput.trim()); setScanTokenInput(""); }}>Valider</Button>
+                      </div>
+
+                      <Button small variant="ghost" onClick={() => setScannerOn(false)}>Fermer la caméra</Button>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )}
+
+            <Card
+              title="Registre de la classe — tout le monde est présent par défaut, coche uniquement les absents"
+              right={<Button small icon={P.check} onClick={validerAppel}>Valider l'appel</Button>}
+            >
+              <div className="grille-responsive" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
+                <span>Élève</span><span>Statut</span><span>Correction</span>
+              </div>
+              {classeEleves.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun élève dans cette classe.</div>}
+              {classeEleves.map((s, i) => {
+                // Par défaut (aucun pointage enregistré), l'élève est affiché "présent" —
+                // seul un clic sur "Marquer absent" enregistre une exception.
+                const statutReel = registreMap[s.id];
+                const statutAffiche = statutReel || "present";
+                return (
+                  <div key={s.id} className="grille-responsive" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", alignItems: "center", padding: "11px 18px", borderBottom: i < classeEleves.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 26, height: 26, borderRadius: 999, background: COLORS.craieDim, color: COLORS.ardoiseDeep, fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>{initials(s.nom)}</div>
+                      <span style={{ fontSize: 13 }}>{s.nom}</span>
+                    </div>
+                    <StatusLabel status={statutAffiche} />
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {statutAffiche === "absent" ? (
+                        <Button small variant="ghost" onClick={() => manualToggle(s.id, "present")}>Marquer présent</Button>
+                      ) : (
+                        <Button small variant="ghost" onClick={() => manualToggle(s.id, "absent")}>Marquer absent</Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </Card>
+            <div style={{ fontSize: 11, color: COLORS.craieDim, marginTop: 8 }}>
+              "Valider l'appel" enregistre officiellement "présent" pour tous les élèves non cochés absents — indispensable pour que l'appel compte dans les statistiques et ne soit pas signalé comme "non fait".
+            </div>
+          </div>
+        )}
+
+        {view === "students" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Registre des élèves</h1>
+            <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+              <div style={{ position: "relative", flex: 1, minWidth: 220, maxWidth: 320 }}>
+                <div style={{ position: "absolute", left: 12, top: 9 }}><Icon path={P.search} size={14} color={COLORS.craieDim} /></div>
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher un élève..." style={{ ...inputStyle, width: "100%", padding: "9px 12px 9px 34px" }} />
+              </div>
+              <div style={{ flex: 1 }} />
+              <Button small variant="ghost" onClick={() => setClassesEtendues(Object.fromEntries(classes.map((c) => [c.id, true])))}>Tout déplier</Button>
+              <Button small variant="ghost" onClick={() => setClassesEtendues({})}>Tout replier</Button>
+              {role === "direction" && <Button variant="ghost" icon={P.plus} onClick={() => { setShowAddClasse((v) => !v); setShowAddEleve(false); setFormError(""); }}>Nouvelle classe</Button>}
+              {role === "direction" && <Button variant="ghost" icon={P.folder} onClick={genererClassesParDefaut}>Générer les classes (6ème → Terminale)</Button>}
+              {(role === "direction" || role === "surveillant") && (
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 7, borderRadius: 9, padding: "9px 15px", fontWeight: 600, fontSize: 12.5, cursor: "pointer", background: "rgba(246,242,231,0.06)", border: `1px solid ${COLORS.line}`, color: COLORS.craie }}>
+                  <Icon path={P.upload} size={14} />
+                  Importer (Excel/CSV)
+                  <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={handleImportFichier} />
+                </label>
+              )}
+              {(role === "direction" || role === "surveillant") && <Button icon={P.users} onClick={() => { setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "" }); setShowAddEleve(true); setShowAddClasse(false); setFormError(""); }}>Ajouter un élève</Button>}
+            </div>
+            {resultatImport && (
+              <div style={{ background: resultatImport.erreurs.length > 0 ? COLORS.alertBg : COLORS.successBg, border: `1px solid ${resultatImport.erreurs.length > 0 ? COLORS.alert : COLORS.success}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 12.5 }}>
+                <div style={{ color: COLORS.craie, fontWeight: 600, marginBottom: 4 }}>{resultatImport.crees} élève(s) importé(s) sur {resultatImport.total_lignes} ligne(s).</div>
+                {resultatImport.erreurs.length > 0 && (
+                  <ul style={{ margin: "6px 0 0 18px", padding: 0, color: COLORS.alert }}>
+                    {resultatImport.erreurs.map((e, i) => <li key={i}>Ligne {e.ligne} : {e.raison}</li>)}
+                  </ul>
+                )}
+                <button onClick={() => setResultatImport(null)} style={{ marginTop: 8, background: "transparent", border: "none", color: COLORS.craie, cursor: "pointer", fontSize: 11.5, textDecoration: "underline" }}>Fermer</button>
+              </div>
+            )}
+
+            {showAddClasse && (
+              <FormPanel title="Créer une nouvelle classe" onClose={() => setShowAddClasse(false)} onValidate={handleAddClasse} submitLabel="Créer la classe" error={formError}>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Niveau (ex. CM2, 6ème)"><input style={inputStyle} value={newClasseNiveau} onChange={(e) => setNewClasseNiveau(e.target.value)} placeholder="ex. CM2" /></Field>
+                  <Field label="Nom de la classe"><input style={inputStyle} value={newClasseNom} onChange={(e) => setNewClasseNom(e.target.value)} placeholder="ex. CM2-D" autoFocus /></Field>
+                </div>
+                <Field label="Vacation (double vacation seulement)">
+                  <select style={inputStyle} value={newClasseVacation || ""} onChange={(e) => setNewClasseVacation(e.target.value || null)}>
+                    <option value="">Journée normale (pas de double vacation)</option>
+                    <option value="matin">Matin (07h30-12h30)</option>
+                    <option value="apres_midi">Après-midi (13h00-18h00)</option>
+                  </select>
+                </Field>
+                {estDirectionGenerale && (
+                  <Field label="École">
+                    <select style={inputStyle} value={newClasseEcoleId || ""} onChange={(e) => setNewClasseEcoleId(e.target.value || null)}>
+                      <option value="">— Choisir une école —</option>
+                      {ecoles.map((e) => <option key={e.id} value={e.id}>{e.nom}</option>)}
+                    </select>
+                  </Field>
+                )}
+              </FormPanel>
+            )}
+
+            {showAddEleve && (
+              <FormPanel title={`Ajouter un élève — ${classeSelectionnee?.nom || "sélectionne une classe"}`} onClose={() => setShowAddEleve(false)} onValidate={handleAddEleve} submitLabel="Ajouter l'élève" error={formError}>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Classe">
+                    <SelectClasseParNiveau classes={classes} value={selectedClasseId} onChange={(e) => setSelectedClasseId(e.target.value)} style={inputStyle} />
+                  </Field>
+                  <Field label="Matricule national (ex. 1234567 A)">
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input style={{ ...inputStyle, flex: 1 }} value={newEleve.matricule} onChange={(e) => setNewEleve((v) => ({ ...v, matricule: e.target.value }))} placeholder="1234567 A" />
+                      <Button small variant="ghost" onClick={() => setNewEleve((v) => ({ ...v, matricule: genMatricule() }))}>Générer</Button>
+                    </div>
+                  </Field>
+                </div>
+                <Field label="Nom complet"><input style={inputStyle} value={newEleve.nom} onChange={(e) => setNewEleve((v) => ({ ...v, nom: e.target.value }))} placeholder="ex. Aïcha Kouassi" /></Field>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Date de naissance"><input type="date" style={inputStyle} value={newEleve.date_naissance} onChange={(e) => setNewEleve((v) => ({ ...v, date_naissance: e.target.value }))} /></Field>
+                  <Field label="Lieu de naissance"><input style={inputStyle} value={newEleve.lieu_naissance} onChange={(e) => setNewEleve((v) => ({ ...v, lieu_naissance: e.target.value }))} placeholder="ex. Abidjan" /></Field>
+                </div>
+                <Field label="Méthode de pointage">
+                  <select style={inputStyle} value={newEleve.methode_biometrique} onChange={(e) => setNewEleve((v) => ({ ...v, methode_biometrique: e.target.value }))}>
+                    <option value="aucune">Aucune (badge QR seulement)</option><option value="empreinte">Empreinte digitale</option><option value="visage">Reconnaissance faciale</option>
+                  </select>
+                </Field>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Nom du parent / tuteur"><input style={inputStyle} value={newEleve.parentNom} onChange={(e) => setNewEleve((v) => ({ ...v, parentNom: e.target.value }))} placeholder="ex. M. Kouassi" /></Field>
+                  <Field label="Téléphone du parent (obligatoire)"><input style={inputStyle} value={newEleve.parentTel} onChange={(e) => setNewEleve((v) => ({ ...v, parentTel: e.target.value }))} placeholder="+225 07 00 00 00 00" /></Field>
+                </div>
+                <div style={{ fontSize: 11, color: COLORS.craieDim }}>Utilise de préférence le matricule national de l'élève — c'est aussi celui à saisir sur le lecteur ZKTeco/Hikvision lors de l'enrôlement, pour que les pointages se relient au bon élève. Le bouton "Générer" ne sert qu'en dépannage, pour un élève sans matricule national.</div>
+              </FormPanel>
+            )}
+
+            <Card>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
+                <span>Élève</span><span>Matricule</span><span></span>
+              </div>
+              {classes.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucune classe créée pour l'instant.</div>}
+              {Object.entries(
+                (() => {
+                  // Part de TOUTES les classes (pas seulement celles qui ont déjà des élèves),
+                  // pour qu'une classe fraîchement créée reste visible — et supprimable — même vide.
+                  const acc = {};
+                  for (const c of classes) {
+                    const niveau = c.niveau || "Sans niveau défini";
+                    acc[niveau] = acc[niveau] || {};
+                    acc[niveau][c.nom] = acc[niveau][c.nom] || { classeObj: c, eleves: [] };
+                  }
+                  for (const s of filteredStudents) {
+                    const niveau = s.classe_niveau || "Sans niveau défini";
+                    const classe = s.classe_nom || "Sans classe";
+                    acc[niveau] = acc[niveau] || {};
+                    acc[niveau][classe] = acc[niveau][classe] || { classeObj: null, eleves: [] };
+                    acc[niveau][classe].eleves.push(s);
+                  }
+                  return acc;
+                })()
+              ).sort(([a], [b]) => a.localeCompare(b)).map(([niveau, parClasse]) => (
+                <div key={niveau}>
+                  <div style={{ padding: "10px 18px", background: "rgba(217,164,65,0.08)", fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 13.5, color: COLORS.marker, borderBottom: `1px solid ${COLORS.line}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span>{niveau}</span>
+                    {role === "direction" && niveau !== "Sans niveau défini" && (
+                      <button onClick={() => supprimerNiveau(niveau)} title="Supprimer tout ce niveau" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.marker, opacity: 0.7 }}><Icon path={P.trash} size={14} /></button>
+                    )}
+                  </div>
+                  {Object.entries(parClasse).sort(([a], [b]) => a.localeCompare(b)).map(([classe, { classeObj, eleves: listeEleves }]) => {
+                    const cleClasse = classeObj?.id || classe;
+                    // En recherche active, on force l'ouverture (sinon un résultat resterait caché dans une classe repliée).
+                    // Sinon, repliée par défaut la première fois — l'état choisi par l'utilisateur est mémorisé ensuite.
+                    const etendue = search.trim() ? true : (classesEtendues[cleClasse] ?? false);
+                    return (
+                    <div key={classe}>
+                      <div
+                        onClick={() => !search.trim() && setClassesEtendues((v) => ({ ...v, [cleClasse]: !etendue }))}
+                        style={{ padding: "7px 18px 7px 30px", fontSize: 11.5, fontWeight: 600, color: COLORS.craieDim, textTransform: "uppercase", letterSpacing: 0.4, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: search.trim() ? "default" : "pointer" }}
+                      >
+                        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          {!search.trim() && <Icon path={P.chevronRight} size={11} color={COLORS.craieDim} style={{ transform: etendue ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />}
+                          {classeObj ? <NomEditable valeur={classe} onValider={(v) => changeClasseNom(classeObj.id, v)} tailleIcone={11} /> : classe}
+                          {" "}<span style={{ opacity: 0.6 }}>· {listeEleves.length} élève{listeEleves.length > 1 ? "s" : ""}</span>
+                        </span>
+                        {role === "direction" && classeObj && (
+                          <button onClick={(e) => { e.stopPropagation(); supprimerClasse(classeObj.id); }} title="Supprimer cette classe" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={12} /></button>
+                        )}
+                      </div>
+                      {etendue && listeEleves.length === 0 && <div style={{ padding: "8px 18px 8px 30px", fontSize: 11.5, color: COLORS.craieDim, fontStyle: "italic" }}>Aucun élève dans cette classe pour l'instant.</div>}
+                      {etendue && listeEleves.map((s) => (
+                        <div key={s.id} onClick={() => ouvrirDossierEleve(s.id)} style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", alignItems: "center", padding: "9px 18px 9px 30px", borderBottom: `1px solid ${COLORS.line}`, fontSize: 13, cursor: "pointer" }}>
+                          <span style={{ fontWeight: 500 }}>{s.nom}</span>
+                          <span style={{ color: COLORS.craieDim, fontSize: 11.5 }}>{s.matricule}</span>
+                          <Icon path={P.chevronRight} size={14} color={COLORS.craieDim} />
+                        </div>
+                      ))}
+                    </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </Card>
+          </div>
+        )}
+
+        {view === "parents" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Rattachement des parents</h1>
+            <Card title="Rattachement élève ↔ parent" style={{ marginBottom: 20 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1.4fr 1.4fr auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
+                <span>Élève</span><span>Nom du parent</span><span>Téléphone</span><span></span>
+              </div>
+              {students.map((s, i, arr) => {
+                const edit = parentEdits[s.id] || {};
+                // Reprend automatiquement le parent déjà rattaché à l'inscription — plus besoin de le ressaisir.
+                const parentNomAffiche = edit.parentNom ?? s.parent_nom ?? "";
+                const parentTelAffiche = edit.parentTel ?? s.parent_telephone ?? "";
+                return (
+                  <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1.6fr 1.4fr 1.4fr auto", alignItems: "center", padding: "10px 18px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none", gap: 8 }}>
+                    <div><div style={{ fontSize: 13, fontWeight: 500 }}>{s.nom}</div><div style={{ fontSize: 11, color: COLORS.craieDim }}>{s.classe_nom}</div></div>
+                    <input style={{ ...inputStyle, width: "100%" }} value={parentNomAffiche} onChange={(e) => updateParentEdit(s.id, "parentNom", e.target.value)} placeholder="Nom du parent/tuteur" />
+                    <input style={{ ...inputStyle, width: "100%" }} value={parentTelAffiche} onChange={(e) => updateParentEdit(s.id, "parentTel", e.target.value)} placeholder="+225 07 00 00 00 00" />
+                    <Button small variant="ghost" icon={P.save} onClick={() => saveParentInfo(s.id)}>Enregistrer</Button>
+                  </div>
+                );
+              })}
+            </Card>
+            <Card title="Envoi du rapport de présence aux parents">
+              <div style={{ padding: 18 }}>
+                <div style={{ display: "flex", gap: 18, marginBottom: 14 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, cursor: "pointer" }}><input type="radio" checked={envoiMode === "immediat"} onChange={() => setEnvoiMode("immediat")} />Envoyer maintenant</label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, cursor: "pointer" }}><input type="radio" checked={envoiMode === "differe"} onChange={() => setEnvoiMode("differe")} />Envoi différé</label>
+                </div>
+                {envoiMode === "differe" && (
+                  <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+                    <Field label="Date"><input type="date" style={inputStyle} value={envoiDate} onChange={(e) => setEnvoiDate(e.target.value)} /></Field>
+                    <Field label="Heure"><input type="time" style={inputStyle} value={envoiHeure} onChange={(e) => setEnvoiHeure(e.target.value)} /></Field>
+                  </div>
+                )}
+                <Button icon={envoiMode === "differe" ? P.clock : P.check} onClick={envoyerRapports}>{envoiMode === "differe" ? "Programmer l'envoi" : "Envoyer maintenant"}</Button>
+                {envoiResult && <div style={{ marginTop: 12, fontSize: 12.5, color: COLORS.success }}>{envoiResult.programmes} notification(s) programmée(s) ({envoiResult.mode}).</div>}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {view === "absenteisme" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Suivi de l'absentéisme</h1>
+            <Card title="Élèves à surveiller (3 absences ou plus ce mois)" style={{ marginBottom: 20 }}>
+              {absenteisme.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun élève au-dessus du seuil ce mois-ci.</div>}
+              {absenteisme.map((s, i) => (
+                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: i < absenteisme.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                  <Icon path={P.alertTriangle} size={15} color={COLORS.alert} />
+                  <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 500 }}>{s.nom} · {s.classe_nom}</div><div style={{ fontSize: 11.5, color: COLORS.craieDim }}>{s.absences_mois} absences ce mois</div></div>
+                </div>
+              ))}
+            </Card>
+
+            {(role === "direction" || role === "super_admin") && (
+              <Card
+                title="Enseignants — créneaux sans appel (base pour la paie à l'heure)"
+                right={
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="date" style={{ ...inputStyle, fontSize: 11.5, padding: "5px 8px" }} value={suiviEnseignantsDebut} onChange={(e) => setSuiviEnseignantsDebut(e.target.value)} />
+                    <span style={{ fontSize: 11, color: COLORS.craieDim }}>→</span>
+                    <input type="date" style={{ ...inputStyle, fontSize: 11.5, padding: "5px 8px" }} value={suiviEnseignantsFin} onChange={(e) => setSuiviEnseignantsFin(e.target.value)} />
+                    <Button small variant="ghost" onClick={chargerSuiviEnseignants}>Actualiser</Button>
+                  </div>
+                }
+              >
+                <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                  Un créneau compte comme "sans appel" si aucun pointage n'a été enregistré dans la classe pour ce cours — l'enseignant n'est probablement pas venu, ou a oublié de faire l'appel.
+                </div>
+                {suiviEnseignants.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun créneau manqué sur cette période — ou clique "Actualiser" pour charger.</div>}
+                {suiviEnseignants.map((e, i) => (
+                  <div key={e.enseignant} style={{ borderBottom: i < suiviEnseignants.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                    <button onClick={() => setEnseignantDetailOuvert(enseignantDetailOuvert === e.enseignant ? null : e.enseignant)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
+                      <Icon path={P.chevronRight} size={13} color={COLORS.craieDim} style={{ transform: enseignantDetailOuvert === e.enseignant ? "rotate(90deg)" : "none" }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: COLORS.craie }}>{e.enseignant}</div>
+                      </div>
+                      <span style={{ fontSize: 12.5, color: COLORS.alert, fontWeight: 600 }}>{e.absences} créneau{e.absences > 1 ? "x" : ""} manqué{e.absences > 1 ? "s" : ""}</span>
+                      <span style={{ fontSize: 12.5, color: COLORS.craieDim, minWidth: 70, textAlign: "right" }}>{e.heures} h</span>
+                    </button>
+                    {enseignantDetailOuvert === e.enseignant && (
+                      <div style={{ padding: "0 18px 12px 43px" }}>
+                        {e.details.map((d, j) => (
+                          <div key={j} style={{ fontSize: 11.5, color: COLORS.craieDim, padding: "4px 0" }}>
+                            {d.date} · {d.classe} · {d.matiere} · {d.heure_debut?.slice(0,5)}–{d.heure_fin?.slice(0,5)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </Card>
+            )}
+
+            {(role === "direction" || role === "super_admin") && (
+              <Card
+                title="Jours fériés et non scolaires"
+                style={{ marginTop: 20 }}
+                right={
+                  feriesCI2026Charges === false ? (
+                    <Button small variant="ghost" onClick={preremplirFeries2026}>Préremplir 2026 (Côte d'Ivoire)</Button>
+                  ) : null
+                }
+              >
+                <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                  Ces dates sont automatiquement exclues du calcul des heures manquées des enseignants. ⚠ Les fêtes musulmanes (Aïd, Tabaski) peuvent glisser d'un jour selon l'observation officielle du croissant lunaire — corrige si besoin une fois la date confirmée par le gouvernement.
+                </div>
+                <div style={{ display: "flex", gap: 8, padding: 14, flexWrap: "wrap", alignItems: "flex-end" }}>
+                  <Field label="Date"><input type="date" style={inputStyle} value={nouveauFerieDate} onChange={(e) => setNouveauFerieDate(e.target.value)} /></Field>
+                  <Field label="Libellé"><input style={inputStyle} value={nouveauFerieLibelle} onChange={(e) => setNouveauFerieLibelle(e.target.value)} placeholder="ex. Journée pédagogique" /></Field>
+                  <Button small icon={P.plus} onClick={ajouterFerie}>Ajouter</Button>
+                </div>
+                {joursFeries.length === 0 && <div style={{ padding: "0 18px 18px", fontSize: 12.5, color: COLORS.craieDim }}>Aucun jour férié enregistré pour l'instant.</div>}
+                {joursFeries.map((f, i) => (
+                  <div key={f.date} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderTop: `1px solid ${COLORS.line}` }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, width: 100 }}>{f.date}</span>
+                    <span style={{ fontSize: 12.5, color: COLORS.craieDim, flex: 1 }}>{f.libelle || "—"}</span>
+                    <button onClick={() => supprimerFerie(f.date)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                  </div>
+                ))}
+              </Card>
+            )}
+          </div>
+        )}
+
+        {view === "paie" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Paie</h1>
+            <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Calculée sur les heures où l'appel a réellement été fait — jamais sur les heures simplement prévues à l'emploi du temps.</div>
+
+            <Card
+              title="Paie des enseignants (heures réellement travaillées)"
+              right={
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="date" style={{ ...inputStyle, fontSize: 11.5, padding: "5px 8px" }} value={suiviEnseignantsDebut} onChange={(e) => setSuiviEnseignantsDebut(e.target.value)} />
+                  <span style={{ fontSize: 11, color: COLORS.craieDim }}>→</span>
+                  <input type="date" style={{ ...inputStyle, fontSize: 11.5, padding: "5px 8px" }} value={suiviEnseignantsFin} onChange={(e) => setSuiviEnseignantsFin(e.target.value)} />
+                  <Button small variant="ghost" onClick={chargerPayeEnseignants}>Actualiser</Button>
+                  <Button small variant="ghost" onClick={exporterPayePdf}>Exporter en PDF</Button>
+                </div>
+              }
+            >
+              <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                Les créneaux "sans appel" (voir "Absentéisme") ne sont jamais payés. Renseigne le taux horaire (vacataires) ou le salaire de base (permanents) dans la page "Enseignants". ⚠ Le calcul CNPS/ITS des permanents suit le barème 2024 en vigueur — fais-le vérifier périodiquement par un comptable, les taux pouvant changer par loi de finances.
+              </div>
+              {payeEnseignants.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Clique "Actualiser" pour charger la paie de la période choisie.</div>}
+              {payeEnseignants.map((e, i) => (
+                <div key={e.enseignant} style={{ padding: "11px 18px", borderBottom: i < payeEnseignants.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{e.enseignant}</div>
+                      <div style={{ fontSize: 11, color: COLORS.craieDim }}>
+                        {e.statut_emploi === "permanent" ? "Permanent" : e.statut_emploi === "vacataire" ? "Vacataire" : "Statut non renseigné"}
+                        {e.mode_calcul === "taux_horaire" && (e.taux_horaire != null ? ` · ${e.taux_horaire} F/h` : " · Taux horaire non renseigné")}
+                        {e.mode_calcul === "salaire_reel" && ` · Salaire réel : ${Number(e.salaire_base).toLocaleString("fr-FR")} F/mois`}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 12, color: COLORS.success }}>{e.heures_travaillees} h travaillées</span>
+                    {e.heures_manquees > 0 && <span style={{ fontSize: 12, color: COLORS.alert }}>{e.heures_manquees} h manquées</span>}
+                    <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.marker, minWidth: 110, textAlign: "right" }}>
+                      {e.montant_a_payer != null ? `${e.montant_a_payer.toLocaleString("fr-FR")} F` : "Taux manquant"}
+                    </span>
+                  </div>
+                  {e.mode_calcul === "salaire_reel" && (
+                    <div style={{ display: "flex", gap: 16, marginTop: 6, paddingLeft: 2, fontSize: 11, color: COLORS.craieDim, flexWrap: "wrap" }}>
+                      <span>Déduction absences : −{e.deduction_absences.toLocaleString("fr-FR")} F</span>
+                      {e.heures_supplementaires > 0 && (
+                        <span style={{ color: COLORS.marker, fontWeight: 600 }}>+{e.heures_supplementaires} h sup. : +{e.montant_heures_supp.toLocaleString("fr-FR")} F</span>
+                      )}
+                      <span>Brut ajusté : {e.salaire_brut_ajuste.toLocaleString("fr-FR")} F</span>
+                      <span>CNPS (6,3%) : −{e.cnps.toLocaleString("fr-FR")} F</span>
+                      <span>ITS : −{e.its_net.toLocaleString("fr-FR")} F</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {payeEnseignants.length > 0 && (
+                <div style={{ display: "flex", justifyContent: "flex-end", padding: "14px 18px", borderTop: `2px solid ${COLORS.line}`, fontSize: 15, fontWeight: 700, color: COLORS.marker }}>
+                  Total à payer : {payeEnseignants.reduce((s, e) => s + (e.montant_a_payer || 0), 0).toLocaleString("fr-FR")} F
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {view === "emploi" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Emploi du temps</h1>
+
+            {role === "direction" && (
+              <Card title="Salles disponibles" style={{ marginBottom: 16 }}>
+                <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  {sallesListe.map((s) => (
+                    <span key={s.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(217,164,65,0.1)", color: COLORS.marker, borderRadius: 999, padding: "5px 10px 5px 12px", fontSize: 12 }}>
+                      {s.nom}
+                      <button onClick={() => supprimerSalle(s.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.marker, display: "flex" }}><Icon path={P.x} size={12} /></button>
+                    </span>
+                  ))}
+                  {sallesListe.length === 0 && <span style={{ fontSize: 12, color: COLORS.craieDim }}>Aucune salle déclarée — la génération automatique fonctionnera quand même, juste sans vérifier les salles.</span>}
+                </div>
+                <div style={{ padding: "0 14px 14px", display: "flex", gap: 8 }}>
+                  <input style={{ ...inputStyle, flex: 1 }} value={nouvelleSalle} onChange={(e) => setNouvelleSalle(e.target.value)} placeholder="ex. Salle 12, Labo Sciences" onKeyDown={(e) => e.key === "Enter" && ajouterSalle()} />
+                  <Button small icon={P.plus} onClick={ajouterSalle}>Ajouter</Button>
+                </div>
+              </Card>
+            )}
+
+            <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+              <SelectClasseParNiveau classes={classes} value={selectedClasseId} onChange={(e) => setSelectedClasseId(e.target.value)} style={inputStyle} />
+              <div style={{ flex: 1 }} />
+              {role === "direction" && (
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: COLORS.craieDim, cursor: "pointer" }}>
+                  <input type="checkbox" checked={inclureSamedi} onChange={(e) => setInclureSamedi(e.target.checked)} />
+                  Inclure le samedi
+                </label>
+              )}
+              {role === "direction" && <Button variant="ghost" icon={P.folder} onClick={genererEmploiAuto}>Générer automatiquement</Button>}
+              <Button small variant="ghost" onClick={exporterEmploiPdf}>Exporter en PDF</Button>
+              {role === "direction" && (
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 7, borderRadius: 9, padding: "9px 15px", fontWeight: 600, fontSize: 12.5, cursor: "pointer", background: "rgba(246,242,231,0.06)", border: `1px solid ${COLORS.line}`, color: COLORS.craie }}>
+                  <Icon path={P.upload} size={14} />
+                  Importer (Excel/CSV)
+                  <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={handleImportCreneaux} />
+                </label>
+              )}
+              {role === "direction" && <Button variant="ghost" icon={P.plus} onClick={() => { setNewCreneau((v) => ({ ...v, estRattrapage: true, date_exceptionnelle: new Date().toISOString().slice(0,10) })); setShowAddCreneau(true); setFormError(""); }}>Créneau de rattrapage</Button>}
+              {role === "direction" && <Button icon={P.plus} onClick={() => { setNewCreneau((v) => ({ ...v, estRattrapage: false })); setShowAddCreneau((v) => !v); setFormError(""); }}>Ajouter un créneau</Button>}
+            </div>
+            {resultatImportCreneaux && (
+              <div style={{ background: resultatImportCreneaux.erreurs.length > 0 ? COLORS.alertBg : COLORS.successBg, border: `1px solid ${resultatImportCreneaux.erreurs.length > 0 ? COLORS.alert : COLORS.success}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 12.5 }}>
+                <div style={{ color: COLORS.craie, fontWeight: 600, marginBottom: 4 }}>{resultatImportCreneaux.crees} créneau(x) importé(s) sur {resultatImportCreneaux.total_lignes} ligne(s).</div>
+                {resultatImportCreneaux.erreurs.length > 0 && (
+                  <ul style={{ margin: "6px 0 0 18px", padding: 0, color: COLORS.alert }}>
+                    {resultatImportCreneaux.erreurs.map((e, i) => <li key={i}>Ligne {e.ligne} : {e.raison}</li>)}
+                  </ul>
+                )}
+                <button onClick={() => setResultatImportCreneaux(null)} style={{ marginTop: 8, background: "transparent", border: "none", color: COLORS.craie, cursor: "pointer", fontSize: 11.5, textDecoration: "underline" }}>Fermer</button>
+              </div>
+            )}
+            {resultatGenerationAuto && (
+              <div style={{ background: COLORS.successBg, border: `1px solid ${COLORS.success}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 12.5 }}>
+                <div style={{ color: COLORS.success, fontWeight: 600, marginBottom: 4 }}>{resultatGenerationAuto.creees} créneau(x) créé(s) automatiquement.</div>
+                {resultatGenerationAuto.non_planifiees.length > 0 && (
+                  <div style={{ color: COLORS.marker }}>
+                    ⚠ {resultatGenerationAuto.non_planifiees.length} séance(s) n'ont pas pu être placées (plus de créneau libre commun) :
+                    <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+                      {resultatGenerationAuto.non_planifiees.map((n, i) => (
+                        <li key={i}>{n.classe} · {n.matiere} ({n.enseignant}) — {n.manquantes} séance(s) à ajouter à la main</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <button onClick={() => setResultatGenerationAuto(null)} style={{ marginTop: 8, background: "transparent", border: "none", color: COLORS.success, cursor: "pointer", fontSize: 11.5, textDecoration: "underline" }}>Fermer</button>
+              </div>
+            )}
+            {showAddCreneau && (
+              <FormPanel title={newCreneau.estRattrapage ? `Créneau de rattrapage — ${classeSelectionnee?.nom || ""}` : `Nouveau créneau — ${classeSelectionnee?.nom || ""}`} onClose={() => setShowAddCreneau(false)} onValidate={handleAddCreneau} submitLabel={newCreneau.estRattrapage ? "Programmer le rattrapage" : "Ajouter au planning"} error={formError}>
+                {newCreneau.estRattrapage && (
+                  <div style={{ fontSize: 11, color: COLORS.craieDim, background: "rgba(217,164,65,0.08)", borderRadius: 8, padding: "8px 10px" }}>
+                    Un créneau de rattrapage n'a lieu qu'une seule fois, à la date choisie — même un jour férié, il compte comme "travaillé" si l'appel est fait.
+                  </div>
+                )}
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, cursor: "pointer" }}>
+                  <input type="checkbox" checked={!!newCreneau.est_pause} onChange={(e) => setNewCreneau((v) => ({ ...v, est_pause: e.target.checked, matiere: e.target.checked ? "Récréation" : (v.matiere === "Récréation" ? "" : v.matiere), enseignant: e.target.checked ? "" : v.enseignant }))} />
+                  Ceci est une pause / récréation (pas un cours — aucun appel ne sera attendu)
+                </label>
+                <div style={{ display: "flex", gap: 12 }}>
+                  {newCreneau.estRattrapage ? (
+                    <Field label="Date du rattrapage">
+                      <input type="date" style={inputStyle} value={newCreneau.date_exceptionnelle} onChange={(e) => setNewCreneau((v) => ({ ...v, date_exceptionnelle: e.target.value }))} />
+                    </Field>
+                  ) : (
+                    <Field label="Jour">
+                      <select style={inputStyle} value={newCreneau.jour_semaine} onChange={(e) => setNewCreneau((v) => ({ ...v, jour_semaine: e.target.value }))}>
+                        {JOURS.map((j, i) => <option key={j} value={i + 1}>{j}</option>)}
+                      </select>
+                    </Field>
+                  )}
+                  <Field label="Début"><input type="time" style={inputStyle} value={newCreneau.heure_debut} onChange={(e) => setNewCreneau((v) => ({ ...v, heure_debut: e.target.value }))} /></Field>
+                  <Field label="Fin"><input type="time" style={inputStyle} value={newCreneau.heure_fin} onChange={(e) => setNewCreneau((v) => ({ ...v, heure_fin: e.target.value }))} /></Field>
+                </div>
+                {newCreneau.est_pause ? (
+                  <Field label="Libellé">
+                    <select style={inputStyle} value={newCreneau.matiere} onChange={(e) => setNewCreneau((v) => ({ ...v, matiere: e.target.value }))}>
+                      <option value="Récréation">Récréation</option>
+                      <option value="Pause café">Pause café</option>
+                      <option value="Pause déjeuner">Pause déjeuner</option>
+                    </select>
+                  </Field>
+                ) : (
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Matière"><input style={inputStyle} value={newCreneau.matiere} onChange={(e) => setNewCreneau((v) => ({ ...v, matiere: e.target.value }))} placeholder="ex. Musique" /></Field>
+                  <Field label="Enseignant">
+                    <select style={inputStyle} value={newCreneau.enseignant} onChange={(e) => setNewCreneau((v) => ({ ...v, enseignant: e.target.value }))}>
+                      <option value="">— Choisir un enseignant —</option>
+                      {(() => {
+                        const tousEnseignants = users.filter((u) => u.role === "enseignant");
+                        const rattachesACetteClasse = tousEnseignants.filter((u) => (u.classes_rattachees || []).some((c) => c.id === selectedClasseId));
+                        const liste = rattachesACetteClasse.length > 0 ? rattachesACetteClasse : tousEnseignants;
+                        return liste.map((u) => <option key={u.id} value={u.nom}>{u.nom}</option>);
+                      })()}
+                    </select>
+                  </Field>
+                  {users.filter((u) => u.role === "enseignant" && (u.classes_rattachees || []).some((c) => c.id === selectedClasseId)).length === 0 && (
+                    <div style={{ fontSize: 10.5, color: COLORS.craieDim, alignSelf: "flex-end", paddingBottom: 8 }}>
+                      Aucun enseignant rattaché à cette classe — la liste montre tout le monde. Pense à faire le rattachement depuis Paramètres.
+                    </div>
+                  )}
+                </div>
+                )}
+                <Field label="Salle (optionnel)">
+                  <select style={inputStyle} value={newCreneau.salle_id || ""} onChange={(e) => setNewCreneau((v) => ({ ...v, salle_id: e.target.value || null }))}>
+                    <option value="">— Aucune salle précisée —</option>
+                    {sallesListe.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+                  </select>
+                </Field>
+              </FormPanel>
+            )}
+            <Card title={`Emploi du temps — ${classeSelectionnee?.nom || ""}`}>
+              {creneaux.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun créneau défini pour cette classe.</div>}
+              {JOURS.map((jour, idxJour) => {
+                const creneauxDuJour = creneaux.filter((c) => c.jour_semaine === idxJour + 1);
+                if (creneauxDuJour.length === 0) return null;
+                return (
+                  <div key={jour}>
+                    <div style={{ padding: "9px 18px", background: "rgba(217,164,65,0.08)", fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 13, color: COLORS.marker, borderBottom: `1px solid ${COLORS.line}` }}>
+                      {jour}
+                    </div>
+                    {creneauxDuJour.map((c, i) => {
+                      const statut = statutCreneau(c, maintenant);
+                      return (
+                      <div key={c.id} style={{
+                        display: "flex", alignItems: "center", gap: 14, padding: "12px 18px 12px 30px",
+                        borderBottom: i < creneauxDuJour.length - 1 ? `1px solid ${COLORS.line}` : "none",
+                        background: statut === "en_cours" ? "rgba(94,156,121,0.15)" : statut === "imminent" ? "rgba(217,164,65,0.18)" : (c.est_pause ? "rgba(94,156,121,0.07)" : "transparent"),
+                        borderLeft: statut ? `3px solid ${statut === "en_cours" ? COLORS.success : COLORS.marker}` : "3px solid transparent",
+                      }}>
+                        {statut && (
+                          <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: statut === "en_cours" ? COLORS.success : COLORS.marker, background: statut === "en_cours" ? COLORS.successBg : "rgba(217,164,65,0.15)", borderRadius: 999, padding: "3px 8px", flexShrink: 0 }}>
+                            {statut === "en_cours" ? "● En cours" : "⏰ Dans -15 min"}
+                          </span>
+                        )}
+                        <span style={{ fontSize: 12, color: COLORS.craieDim, width: 120, flexShrink: 0 }}>{c.heure_debut?.slice(0,5)}–{c.heure_fin?.slice(0,5)}</span>
+                        <span style={{ fontSize: 13, fontWeight: 500, flex: 1, color: c.est_pause ? COLORS.success : COLORS.craie, fontStyle: c.est_pause ? "italic" : "normal" }}>{c.matiere}{c.est_pause ? " ☕" : ""}</span>
+                        <span style={{ fontSize: 12, color: COLORS.craieDim }}>{c.enseignant}</span>
+                        {c.salle_nom && <span style={{ fontSize: 11, color: COLORS.marker, background: "rgba(217,164,65,0.1)", borderRadius: 6, padding: "2px 7px" }}>{c.salle_nom}</span>}
+                        {role === "direction" && <button onClick={() => removeCreneau(c.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>}
+                      </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </Card>
+          </div>
+        )}
+
+        {view === "rapports" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Rapports et documents</h1>
+            <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Tous les exports du système, réunis au même endroit.</div>
+
+            {/* ---- ÉLÈVES ---- */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.marker, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10, marginTop: 4 }}>Élèves</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14, marginBottom: 24 }}>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Export académique (Excel)</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>Liste complète des élèves, classes, dates de naissance et contacts parents.</div>
+                  <Button small variant="ghost" onClick={exporterElevesExcel}>Télécharger le fichier Excel</Button>
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Registre d'appel journalier</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>PDF de toutes les classes pour un jour donné, à archiver.</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="date" style={{ ...inputStyle, fontSize: 12, padding: "6px 8px" }} value={rapportDate} onChange={(e) => setRapportDate(e.target.value)} />
+                    <Button small variant="ghost" onClick={() => exporterRegistreJourPdf(rapportDate)}>Générer le PDF</Button>
+                  </div>
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Bulletin de présence mensuel</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Historique d'un élève sur une période, imprimable pour les parents.</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <select style={{ ...inputStyle, fontSize: 12, padding: "6px 8px", flex: 1, minWidth: 140 }} value={rapportEleveId} onChange={(e) => setRapportEleveId(e.target.value)}>
+                      <option value="">— Choisir un élève —</option>
+                      {students.map((s) => <option key={s.id} value={s.id}>{s.nom} ({s.classe_nom})</option>)}
+                    </select>
+                    <input type="date" style={{ ...inputStyle, fontSize: 12, padding: "6px 8px" }} value={suiviEnseignantsDebut} onChange={(e) => setSuiviEnseignantsDebut(e.target.value)} />
+                    <input type="date" style={{ ...inputStyle, fontSize: 12, padding: "6px 8px" }} value={suiviEnseignantsFin} onChange={(e) => setSuiviEnseignantsFin(e.target.value)} />
+                    <Button small variant="ghost" onClick={() => { const el = students.find((s) => s.id === rapportEleveId); if (el) exporterBulletinPresence(el.id, el.nom, suiviEnseignantsDebut, suiviEnseignantsFin); }}>Générer le PDF</Button>
+                  </div>
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Rapport d'absentéisme</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>Élèves à 3 absences ou plus ce mois-ci (même liste que la page "Absentéisme").</div>
+                  <Button small variant="ghost" onClick={exporterAbsenteismePdf}>Générer le PDF</Button>
+                </div>
+              </Card>
+            </div>
+
+            {/* ---- EMPLOI DU TEMPS ---- */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.marker, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Emploi du temps</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14, marginBottom: 24 }}>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Emploi du temps d'une classe</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>PDF complet de la semaine, organisé par jour.</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <SelectClasseParNiveau classes={classes} value={selectedClasseId} onChange={(e) => setSelectedClasseId(e.target.value)} style={{ ...inputStyle, fontSize: 12, padding: "6px 8px", flex: 1 }} />
+                    <Button small variant="ghost" onClick={exporterEmploiPdf}>Générer le PDF</Button>
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* ---- ENSEIGNANTS & PAIE ---- */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.marker, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Enseignants & paie</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14, marginBottom: 24 }}>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Export enseignants (Excel)</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>Liste complète, matières, statut, classes rattachées.</div>
+                  <Button small variant="ghost" onClick={exporterEnseignants}>Télécharger le fichier Excel</Button>
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Paie collective (PDF)</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Tous les enseignants, sur la période choisie ci-dessous.</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="date" style={{ ...inputStyle, fontSize: 12, padding: "6px 8px" }} value={suiviEnseignantsDebut} onChange={(e) => setSuiviEnseignantsDebut(e.target.value)} />
+                    <input type="date" style={{ ...inputStyle, fontSize: 12, padding: "6px 8px" }} value={suiviEnseignantsFin} onChange={(e) => setSuiviEnseignantsFin(e.target.value)} />
+                    <Button small variant="ghost" onClick={async () => { await chargerPayeEnseignants(); exporterPayePdf(); }}>Générer le PDF</Button>
+                  </div>
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Bulletin de salaire individuel</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Enseignant ou membre de l'administration, sur la période ci-dessus.</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <select style={{ ...inputStyle, fontSize: 12, padding: "6px 8px", flex: 1 }} value={rapportUserId} onChange={(e) => setRapportUserId(e.target.value)}>
+                      <option value="">— Choisir une personne —</option>
+                      {users.map((u) => <option key={u.id} value={u.id}>{u.nom}</option>)}
+                    </select>
+                    <Button small variant="ghost" onClick={() => { const u = users.find((x) => x.id === rapportUserId); if (u) imprimerBulletinSalaire(u.id, u.nom); }}>Générer le PDF</Button>
+                  </div>
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Suivi des heures manquées</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>Voir le détail complet dans la page "Absentéisme" — export PDF disponible là-bas.</div>
+                  <Button small variant="ghost" onClick={() => setView("absenteisme")}>Ouvrir "Absentéisme"</Button>
+                </div>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {view === "notif" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Notifications envoyées aux parents</h1>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 460 }}>
+              {notifJournal.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucune notification pour l'instant.</div>}
+              {notifJournal.map((n) => (
+                <div key={n.id} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 12, padding: "14px 16px" }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{n.eleve_nom} → {n.parent_nom}</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginTop: 2 }}>{n.contenu}</div>
+                  <div style={{ fontSize: 10.5, color: COLORS.craieDim, marginTop: 4 }}>{n.statut === "envoyee" ? "Envoyée" : n.statut === "echouee" ? "Échec" : "Programmée"} · {fmtTime(n.envoyer_a)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {view === "incidents" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>État des lecteurs biométriques</h1>
+            <div style={{ display: "flex", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
+              {devices.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucun lecteur déclaré (ajoute-les en base, voir README section 4).</div>}
+              {devices.map((d) => (
+                <div key={d.id} style={{ flex: 1, minWidth: 220, background: COLORS.ardoiseDeep, border: `1px solid ${d.en_ligne ? COLORS.line : COLORS.alert}`, borderRadius: 12, padding: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><Icon path={d.en_ligne ? P.wifi : P.wifiOff} size={16} color={d.en_ligne ? COLORS.success : COLORS.alert} /><span style={{ fontSize: 13, fontWeight: 600 }}>{d.nom}</span></div>
+                  <span style={{ fontSize: 12, color: d.en_ligne ? COLORS.success : COLORS.alert }}>{d.en_ligne ? "En ligne" : "Hors ligne"}</span>
+                </div>
+              ))}
+            </div>
+            <Card title="Historique des incidents">
+              {incidents.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun incident enregistré.</div>}
+              {incidents.map((inc, i) => (
+                <div key={inc.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: i < incidents.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                  <Icon path={inc.type === "deconnecte" ? P.wifiOff : P.wifi} size={14} color={inc.type === "deconnecte" ? COLORS.alert : COLORS.success} />
+                  <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 500 }}>{inc.device_nom}</div><div style={{ fontSize: 11.5, color: COLORS.craieDim }}>{inc.detail}</div></div>
+                  <span style={{ fontSize: 11, color: COLORS.craieDim }}>{fmtTime(inc.created_at)}</span>
+                </div>
+              ))}
+            </Card>
+          </div>
+        )}
+
+        {view === "parametres" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Paramètres — Utilisateurs et rôles</h1>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+              <Button icon={P.users} onClick={() => { setShowAddUser((v) => !v); setUserFormError(""); }}>Créer un utilisateur</Button>
+            </div>
+
+            {showAddUser && (
+              <FormPanel title="Créer un utilisateur" onClose={() => setShowAddUser(false)} onValidate={handleAddUser} submitLabel="Créer le compte" error={userFormError}>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Nom complet"><input style={inputStyle} value={newUser.nom} onChange={(e) => setNewUser((v) => ({ ...v, nom: e.target.value }))} placeholder="ex. Mme Kader" autoFocus /></Field>
+                  <Field label="Email"><input style={inputStyle} value={newUser.email} onChange={(e) => setNewUser((v) => ({ ...v, email: e.target.value }))} placeholder="ex. m.kader@ecole.example" /></Field>
+                </div>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Mot de passe (6 caractères min.)"><input type="password" style={inputStyle} value={newUser.mot_de_passe} onChange={(e) => setNewUser((v) => ({ ...v, mot_de_passe: e.target.value }))} /></Field>
+                  <Field label="Rôle">
+                    <select style={inputStyle} value={newUser.role} onChange={(e) => setNewUser((v) => ({ ...v, role: e.target.value }))}>
+                      <option value="enseignant">Enseignant</option>
+                      <option value="surveillant">Surveillant général</option>
+                      <option value="direction">Direction</option>
+                    </select>
+                  </Field>
+                </div>
+                {newUser.role === "enseignant" && (
+                  <div style={{ display: "flex", gap: 12 }}>
+                    <Field label="Matières enseignées">
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, background: COLORS.ardoise, border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "10px 12px" }}>
+                        {matieresListe.length === 0 && <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>Aucune matière définie (voir la page "Enseignants").</span>}
+                        {matieresListe.map((m) => {
+                          const coche = newUserMatieres.split(",").map((x) => x.trim()).includes(m.nom);
+                          return (
+                            <label key={m.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer" }}>
+                              <input type="checkbox" checked={coche} onChange={() => setNewUserMatieres((val) => toggleMatiereEnseignant(val, m.nom))} />
+                              {m.nom}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </Field>
+                    <Field label="Statut">
+                      <div style={{ display: "flex", gap: 14, alignItems: "center", height: 34 }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer" }}>
+                          <input type="radio" checked={newUser.statut_emploi === "permanent"} onChange={() => setNewUser((v) => ({ ...v, statut_emploi: "permanent" }))} />
+                          Permanent
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer" }}>
+                          <input type="radio" checked={newUser.statut_emploi === "vacataire"} onChange={() => setNewUser((v) => ({ ...v, statut_emploi: "vacataire" }))} />
+                          Vacataire
+                        </label>
+                      </div>
+                    </Field>
+                  </div>
+                )}
+                {estDirectionGenerale && (
+                  <Field label="École de rattachement (laisser vide pour un autre compte direction générale)">
+                    <select style={inputStyle} value={newUser.ecole_id || ""} onChange={(e) => setNewUser((v) => ({ ...v, ecole_id: e.target.value || null }))}>
+                      <option value="">— Direction générale (toutes écoles) —</option>
+                      {ecoles.map((e) => <option key={e.id} value={e.id}>{e.nom}</option>)}
+                    </select>
+                  </Field>
+                )}
+              </FormPanel>
+            )}
+
+            <Card title="Comptes existants">
+              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.4fr 0.9fr 1.4fr 1.1fr auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
+                <span>Nom</span><span>Email</span><span>Rôle</span><span>Classes rattachées</span><span>Salaire</span><span></span>
+              </div>
+              {users.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun utilisateur pour l'instant.</div>}
+              {users.map((u, i) => (
+                <div key={u.id} style={{ borderBottom: i < users.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.4fr 0.9fr 1.4fr 1.1fr auto", alignItems: "center", padding: "10px 18px", fontSize: 13, gap: 8 }}>
+                    <NomEditable valeur={u.nom} onValider={(v) => changeUserNom(u.id, v)} style={{ fontWeight: 500 }} />
+                    <NomEditable valeur={u.email} onValider={(v) => changeUserEmail(u.id, v)} style={{ color: COLORS.craieDim, fontSize: 12 }} />
+                    <select style={{ ...inputStyle, fontSize: 12 }} value={u.role} onChange={(e) => changeUserRole(u.id, e.target.value)}>
+                      <option value="enseignant">Enseignant</option>
+                      <option value="surveillant">Surveillant général</option>
+                      <option value="direction">Direction</option>
+                    </select>
+                    {u.role === "enseignant" ? (
+                      <button onClick={() => setGestionClassesUser(u)} style={{ background: "rgba(246,242,231,0.06)", border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "6px 10px", color: COLORS.craie, fontSize: 11.5, textAlign: "left", cursor: "pointer" }}>
+                        {(u.classes_rattachees || []).length === 0 ? "Aucune — cliquer pour rattacher" : (u.classes_rattachees || []).map((c) => c.nom).join(", ")}
+                      </button>
+                    ) : <span style={{ color: COLORS.craieDim, fontSize: 11.5 }}>—</span>}
+                    <button onClick={() => setGestionSalaireUser(u)} style={{ background: "transparent", border: "none", cursor: "pointer", color: u.salaire_base != null ? COLORS.craie : COLORS.craieDim, fontSize: 11.5, textAlign: "left", padding: 0 }}>
+                      {u.salaire_base != null ? `${Number(u.salaire_base).toLocaleString("fr-FR")} F/mois` : "— définir le salaire"}
+                    </button>
+                    <button onClick={() => imprimerBulletinSalaire(u.id, u.nom)} title="Imprimer le bulletin de salaire" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.scan} size={14} /></button>
+                    {u.role === "enseignant" && <button onClick={() => setDossierEnseignantId(u.id)} title="Voir le dossier complet" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.users} size={14} /></button>}
+                    <button onClick={() => removeUser(u.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
+                  </div>
+                  {estDirectionGenerale && (
+                    <div style={{ padding: "0 18px 10px 18px", display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: COLORS.craieDim }}>
+                      École :
+                      <select style={{ ...inputStyle, fontSize: 11.5, padding: "4px 8px" }} value={u.ecole_id || ""} onChange={(e) => changeUserEcole(u.id, e.target.value || null)}>
+                        <option value="">— Direction générale (toutes écoles) —</option>
+                        {ecoles.map((e) => <option key={e.id} value={e.id}>{e.nom}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {u.role === "enseignant" && (
+                    <div style={{ padding: "0 18px 12px 18px", display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: COLORS.craieDim, flexShrink: 0 }}>Matières :</span>
+                      <button onClick={() => setGestionMatieresUser(u)} style={{ background: "transparent", border: "none", cursor: "pointer", color: u.matieres ? COLORS.craie : COLORS.craieDim, fontSize: 12, textAlign: "left", padding: 0 }}>
+                        {u.matieres || "Non renseignées — cliquer pour choisir"}
+                      </button>
+                    </div>
+                  )}
+                  {u.role === "enseignant" && (
+                    <div style={{ padding: "0 18px 12px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+                      <span style={{ fontSize: 11, color: COLORS.craieDim, flexShrink: 0 }}>Statut :</span>
+                      <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, cursor: "pointer" }}>
+                        <input type="checkbox" checked={u.statut_emploi === "permanent"} onChange={() => changeStatutEmploi(u.id, u.statut_emploi === "permanent" ? null : "permanent")} />
+                        Permanent
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, cursor: "pointer" }}>
+                        <input type="checkbox" checked={u.statut_emploi === "vacataire"} onChange={() => changeStatutEmploi(u.id, u.statut_emploi === "vacataire" ? null : "vacataire")} />
+                        Vacataire
+                      </label>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </Card>
+
+            <Card title="Description des rôles" style={{ marginTop: 20 }}>
+              {[
+                { role: "Direction", access: "Accès complet — toutes les classes, tous les rapports, gestion des lecteurs, des utilisateurs et des rôles." },
+                { role: "Enseignant", access: "Ses classes uniquement — appel, registre, emploi du temps." },
+                { role: "Surveillant général", access: "Toutes les classes — appel, absentéisme, incidents lecteurs, rattachement parents." },
+              ].map((r, i, arr) => (
+                <div key={r.role} style={{ padding: "12px 18px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.marker, marginBottom: 2 }}>{r.role}</div>
+                  <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>{r.access}</div>
+                </div>
+              ))}
+            </Card>
+          </div>
+        )}
+
+        {view === "ecoles" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Paramétrage des écoles</h1>
+            <div style={{ fontSize: 12.5, color: COLORS.craieDim, marginBottom: 16 }}>
+              Chaque école a ses propres classes, élèves, lecteurs et comptes — totalement séparés des autres écoles. Ton compte actuel {estDirectionGenerale ? "est un compte \"direction générale\" : tu vois et gères toutes les écoles ci-dessous." : "est rattaché à une seule école et n'a accès qu'à ses données."} Pour créer une nouvelle école complète, crée-la ici puis crée son premier compte Direction depuis Paramètres, en le rattachant à cette école.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+              <Button icon={P.plus} onClick={() => { setNewEcole({ nom: "", adresse: "", ville: "", telephone: "", annee_scolaire: "", active: false, email: "", registre_commerce: "" }); setEditingEcoleId(null); setEcoleFormError(""); setShowAddEcole((v) => !v); }}>Ajouter une école</Button>
+            </div>
+
+            {showAddEcole && (
+              <FormPanel title={editingEcoleId ? "Modifier l'école" : "Ajouter une école"} onClose={() => setShowAddEcole(false)} onValidate={handleSaveEcole} submitLabel={editingEcoleId ? "Enregistrer" : "Créer l'école"} error={ecoleFormError}>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Nom de l'école"><input style={inputStyle} value={newEcole.nom} onChange={(e) => setNewEcole((v) => ({ ...v, nom: e.target.value }))} placeholder="ex. Groupe Scolaire Les Palmiers" autoFocus /></Field>
+                  <Field label="Année scolaire"><input style={inputStyle} value={newEcole.annee_scolaire} onChange={(e) => setNewEcole((v) => ({ ...v, annee_scolaire: e.target.value }))} placeholder="2025-2026" /></Field>
+                </div>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Adresse"><input style={inputStyle} value={newEcole.adresse} onChange={(e) => setNewEcole((v) => ({ ...v, adresse: e.target.value }))} placeholder="Rue, quartier" /></Field>
+                  <Field label="Ville"><input style={inputStyle} value={newEcole.ville} onChange={(e) => setNewEcole((v) => ({ ...v, ville: e.target.value }))} placeholder="ex. Abidjan" /></Field>
+                </div>
+                <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+                  <Field label="Téléphone"><input style={inputStyle} value={newEcole.telephone} onChange={(e) => setNewEcole((v) => ({ ...v, telephone: e.target.value }))} placeholder="+225 07 00 00 00 00" /></Field>
+                  <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, paddingBottom: 8, cursor: "pointer" }}>
+                    <input type="checkbox" checked={newEcole.active} onChange={(e) => setNewEcole((v) => ({ ...v, active: e.target.checked }))} />
+                    École active (affichée dans l'en-tête)
+                  </label>
+                </div>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Email de l'école"><input style={inputStyle} value={newEcole.email} onChange={(e) => setNewEcole((v) => ({ ...v, email: e.target.value }))} placeholder="contact@ecole.example" /></Field>
+                  <Field label="Registre de commerce"><input style={inputStyle} value={newEcole.registre_commerce} onChange={(e) => setNewEcole((v) => ({ ...v, registre_commerce: e.target.value }))} placeholder="ex. CI-ABJ-2020-B-12345" /></Field>
+                </div>
+              </FormPanel>
+            )}
+
+            {role === "super_admin" && (
+              <Card title="Années scolaires" style={{ marginBottom: 20 }}>
+                <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                  Une fois l'année scolaire d'un établissement terminée (date de fin d'utilisation dépassée), ses comptes ne peuvent plus se connecter tant qu'une nouvelle année scolaire ne leur est pas assignée ci-dessous, dans "Écoles enregistrées".
+                </div>
+                {anneesScolaires.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucune année scolaire créée pour l'instant.</div>}
+                {anneesScolaires.map((a, i) => (
+                  <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 18px", borderBottom: i < anneesScolaires.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                    <span style={{ fontWeight: 600, flex: 1 }}>{a.libelle}</span>
+                    <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>
+                      {a.date_debut ? new Date(a.date_debut).toLocaleDateString("fr-FR") : "?"} → {a.date_fin ? new Date(a.date_fin).toLocaleDateString("fr-FR") : "?"}
+                    </span>
+                    <button onClick={() => supprimerAnneeScolaire(a.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                  </div>
+                ))}
+                <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}` }}>
+                  <Field label="Libellé (ex. 2026-2027)"><input style={inputStyle} value={nouvelleAnnee.libelle} onChange={(e) => setNouvelleAnnee((v) => ({ ...v, libelle: e.target.value }))} placeholder="2026-2027" /></Field>
+                  <Field label="Date de début"><input type="date" style={inputStyle} value={nouvelleAnnee.date_debut} onChange={(e) => setNouvelleAnnee((v) => ({ ...v, date_debut: e.target.value }))} /></Field>
+                  <Field label="Date de fin"><input type="date" style={inputStyle} value={nouvelleAnnee.date_fin} onChange={(e) => setNouvelleAnnee((v) => ({ ...v, date_fin: e.target.value }))} /></Field>
+                  <Button small icon={P.plus} onClick={ajouterAnneeScolaire}>Créer</Button>
+                </div>
+              </Card>
+            )}
+
+            <Card title="Écoles enregistrées">
+              {ecoles.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucune école enregistrée pour l'instant.</div>}
+              {ecoles.map((e, i) => (
+                <div key={e.id} style={{ borderBottom: i < ecoles.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 18px" }}>
+                    {e.logo_url ? (
+                      <img src={`${session.baseUrl.replace(/\/api$/, "")}${e.logo_url}`} style={{ width: 40, height: 40, borderRadius: 8, objectFit: "contain", background: "#fff", border: `1px solid ${COLORS.line}`, flexShrink: 0 }} />
+                    ) : (
+                      <div style={{ width: 40, height: 40, borderRadius: 8, background: COLORS.craieDim, flexShrink: 0 }} />
+                    )}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+                        {e.nom}
+                        {e.active && <span style={{ fontSize: 10, background: COLORS.successBg, color: COLORS.success, borderRadius: 999, padding: "2px 8px", fontWeight: 700 }}>ACTIVE</span>}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginTop: 2 }}>
+                        {[e.ville, e.adresse, e.telephone, e.annee_scolaire].filter(Boolean).join(" · ") || "Aucun détail renseigné"}
+                      </div>
+                    </div>
+                    <button onClick={() => commencerEditionEcole(e)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.settings} size={14} /></button>
+                    <button onClick={() => supprimerEcole(e.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
+                  </div>
+                  <div style={{ padding: "0 18px 12px 18px", display: "flex", alignItems: "center", gap: 16, fontSize: 11.5, flexWrap: "wrap" }}>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", color: COLORS.craie }}>
+                      <Icon path={P.upload} size={13} />
+                      {e.logo_url ? "Changer le logo" : "Ajouter un logo"}
+                      <input type="file" accept="image/*" style={{ display: "none" }} onChange={(ev) => handleUploadImageEcole(e.id, "logo", ev)} />
+                    </label>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", color: COLORS.craie }}>
+                      <Icon path={P.upload} size={13} />
+                      {e.cachet_url ? "Changer le cachet" : "Ajouter un cachet"}
+                      <input type="file" accept="image/*" style={{ display: "none" }} onChange={(ev) => handleUploadImageEcole(e.id, "cachet", ev)} />
+                    </label>
+                    {e.cachet_url && (
+                      <img src={`${session.baseUrl.replace(/\/api$/, "")}${e.cachet_url}`} style={{ width: 32, height: 32, borderRadius: 6, objectFit: "contain", background: "#fff", border: `1px solid ${COLORS.line}` }} />
+                    )}
+                  </div>
+                  <div style={{ padding: "0 18px 12px 18px", display: "flex", alignItems: "center", gap: 8, fontSize: 11.5 }}>
+                    <span style={{ color: COLORS.craieDim, flexShrink: 0 }}>Clé agent local :</span>
+                    {e.cle_agent ? (
+                      <code style={{ background: "rgba(246,242,231,0.06)", padding: "3px 8px", borderRadius: 6, fontSize: 11, color: COLORS.craie, wordBreak: "break-all" }}>{e.cle_agent}</code>
+                    ) : (
+                      <span style={{ color: COLORS.craieDim, fontStyle: "italic" }}>Aucune clé générée</span>
+                    )}
+                    <Button small variant="ghost" onClick={() => genererCleAgent(e.id)}>{e.cle_agent ? "Régénérer" : "Générer une clé agent"}</Button>
+                  </div>
+                  {role === "super_admin" && (
+                    <div style={{ padding: "0 18px 14px 18px", display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap", fontSize: 11.5 }}>
+                      <Field label="Année scolaire assignée">
+                        <select style={inputStyle} value={e.annee_scolaire_id || ""} onChange={(ev) => assignerAnneeScolaire(e.id, { annee_scolaire_id: ev.target.value })}>
+                          <option value="">— Aucune —</option>
+                          {anneesScolaires.map((a) => <option key={a.id} value={a.id}>{a.libelle}</option>)}
+                        </select>
+                      </Field>
+                      <Field label="Date de fin d'utilisation">
+                        <input type="date" style={{ ...inputStyle, borderColor: e.date_fin_utilisation && e.date_fin_utilisation < new Date().toISOString().slice(0,10) ? COLORS.alert : COLORS.line }} defaultValue={e.date_fin_utilisation ? e.date_fin_utilisation.slice(0,10) : ""} onBlur={(ev) => ev.target.value && assignerAnneeScolaire(e.id, { date_fin_utilisation: ev.target.value })} />
+                      </Field>
+                      {e.date_fin_utilisation && e.date_fin_utilisation.slice(0,10) < new Date().toISOString().slice(0,10) && (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.alert, background: COLORS.alertBg, borderRadius: 6, padding: "6px 10px" }}>⚠ Accès expiré — connexion bloquée pour cet établissement</span>
+                      )}
+                      <Button small variant="ghost" onClick={() => setRenouvellementEcole(e)}>💳 Renouveler (paiement)</Button>
+                      <Button small variant={e.suspendue ? "primary" : "ghost"} onClick={() => basculerSuspensionEcole(e)}>
+                        {e.suspendue ? "🔓 Rouvrir l'école" : "🔒 Fermer (en attente de paiement)"}
+                      </Button>
+                      {e.suspendue && <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.alert, background: COLORS.alertBg, borderRadius: 6, padding: "6px 10px" }}>⛔ École fermée manuellement</span>}
+                    </div>
+                  )}
+                  <div style={{ padding: "0 18px 14px 18px", display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap", fontSize: 11.5 }}>
+                    <Field label="Début matin"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_debut_matin ?? (e.heure_debut_matin || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_debut_matin: ev.target.value } }))} /></Field>
+                    <Field label="Fin matin"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_fin_matin ?? (e.heure_fin_matin || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_fin_matin: ev.target.value } }))} /></Field>
+                    <Field label="Début après-midi"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_debut_apresmidi ?? (e.heure_debut_apresmidi || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_debut_apresmidi: ev.target.value } }))} /></Field>
+                    <Field label="Fin après-midi"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_fin_apresmidi ?? (e.heure_fin_apresmidi || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_fin_apresmidi: ev.target.value } }))} /></Field>
+                    <Field label="Récré matin (début)"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_debut_recre ?? (e.heure_debut_recre || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_debut_recre: ev.target.value } }))} /></Field>
+                    <Field label="Récré matin (fin)"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_fin_recre ?? (e.heure_fin_recre || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_fin_recre: ev.target.value } }))} /></Field>
+                    <Field label="Récré après-midi (début)"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_debut_recre_apresmidi ?? (e.heure_debut_recre_apresmidi || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_debut_recre_apresmidi: ev.target.value } }))} /></Field>
+                    <Field label="Récré après-midi (fin)"><input type="time" style={inputStyle} value={horairesEdits[e.id]?.heure_fin_recre_apresmidi ?? (e.heure_fin_recre_apresmidi || "").slice(0,5)} onChange={(ev) => setHorairesEdits((v) => ({ ...v, [e.id]: { ...v[e.id], heure_fin_recre_apresmidi: ev.target.value } }))} /></Field>
+                    <Button small icon={P.check} onClick={() => enregistrerHoraires(e.id)}>Enregistrer les horaires</Button>
+                  </div>
+                  <div style={{ padding: "0 18px 12px 18px", fontSize: 10.5, color: COLORS.craieDim }}>
+                    La récré "matin" s'applique aux classes en journée normale ou en vacation matin ; celle "après-midi" (optionnelle) s'applique aux classes en journée normale ou en vacation après-midi — utile pour une école en double vacation.
+                  </div>
+                </div>
+              ))}
+            </Card>
+          </div>
+        )}
+
+        {view === "parametrage-lecteurs" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Paramétrage des lecteurs biométriques</h1>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+              <Button icon={P.plus} onClick={() => { setNewDevice({ nom: "", marque: "zkteco", adresse_ip: "", emplacement: "", ecole_id: null }); setEditingDeviceId(null); setDeviceFormError(""); setShowAddDevice((v) => !v); }}>Ajouter un lecteur</Button>
+            </div>
+
+            {showAddDevice && (
+              <FormPanel title={editingDeviceId ? "Modifier le lecteur" : "Ajouter un lecteur"} onClose={() => setShowAddDevice(false)} onValidate={handleSaveDevice} submitLabel={editingDeviceId ? "Enregistrer" : "Ajouter"} error={deviceFormError}>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Nom (ex. ZKTeco - Portail Nord)"><input style={inputStyle} value={newDevice.nom} onChange={(e) => setNewDevice((v) => ({ ...v, nom: e.target.value }))} placeholder="ZKTeco - Portail Nord" autoFocus /></Field>
+                  <Field label="Marque">
+                    <select style={inputStyle} value={newDevice.marque} onChange={(e) => setNewDevice((v) => ({ ...v, marque: e.target.value }))}>
+                      <option value="zkteco">ZKTeco</option>
+                      <option value="hikvision">Hikvision</option>
+                    </select>
+                  </Field>
+                </div>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Adresse IP"><input style={inputStyle} value={newDevice.adresse_ip} onChange={(e) => setNewDevice((v) => ({ ...v, adresse_ip: e.target.value }))} placeholder="192.168.1.201" /></Field>
+                  <Field label="Emplacement"><input style={inputStyle} value={newDevice.emplacement} onChange={(e) => setNewDevice((v) => ({ ...v, emplacement: e.target.value }))} placeholder="Portail Nord" /></Field>
+                </div>
+                <div style={{ fontSize: 11, color: COLORS.craieDim }}>
+                  Pour Hikvision, l'utilisateur et le mot de passe du lecteur restent configurés dans le fichier <code>.env</code> du serveur (variables <code>HIKVISION_1_USER</code> / <code>HIKVISION_1_PASSWORD</code>), pas ici.
+                </div>
+                {estDirectionGenerale && !editingDeviceId && (
+                  <Field label="École">
+                    <select style={inputStyle} value={newDevice.ecole_id || ""} onChange={(e) => setNewDevice((v) => ({ ...v, ecole_id: e.target.value || null }))}>
+                      <option value="">— Choisir une école —</option>
+                      {ecoles.map((e) => <option key={e.id} value={e.id}>{e.nom}</option>)}
+                    </select>
+                  </Field>
+                )}
+              </FormPanel>
+            )}
+
+            <Card title="Lecteurs déclarés">
+              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.8fr 1fr 1fr auto auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
+                <span>Nom</span><span>Marque</span><span>Adresse IP</span><span>Emplacement</span><span>État</span><span></span>
+              </div>
+              {devices.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun lecteur déclaré. Ajoute ton premier lecteur ZKTeco ou Hikvision ci-dessus.</div>}
+              {devices.map((d, i) => (
+                <div key={d.id} style={{ display: "grid", gridTemplateColumns: "1.4fr 0.8fr 1fr 1fr auto auto", alignItems: "center", padding: "10px 18px", borderBottom: i < devices.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13, gap: 8 }}>
+                  <span style={{ fontWeight: 500 }}>{d.nom}</span>
+                  <span style={{ color: COLORS.craieDim, fontSize: 12, textTransform: "capitalize" }}>{d.marque}</span>
+                  <span style={{ color: COLORS.craieDim, fontSize: 12 }}>{d.adresse_ip}</span>
+                  <span style={{ color: COLORS.craieDim, fontSize: 12 }}>{d.emplacement || "—"}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: d.en_ligne ? COLORS.success : COLORS.alert }}>
+                    <Icon path={d.en_ligne ? P.wifi : P.wifiOff} size={13} color={d.en_ligne ? COLORS.success : COLORS.alert} />
+                    {d.en_ligne ? "En ligne" : "Hors ligne"}
+                  </span>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button onClick={() => testerDevice(d.id)} title="Tester la connexion" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.wifi} size={14} /></button>
+                    <button onClick={() => commencerEditionDevice(d)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.settings} size={14} /></button>
+                    <button onClick={() => supprimerDevice(d.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
+                  </div>
+                </div>
+              ))}
+            </Card>
+          </div>
+        )}
+
+        {view === "en-ligne" && (() => {
+          const ROLES_LIBELLE = { direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant", super_admin: "Super-administrateur" };
+          // Un compte est considéré "en ligne" si son dernier battement de cœur date
+          // de moins de 90 secondes (marge au-dessus des 30s d'intervalle d'envoi,
+          // pour absorber un léger retard réseau sans faire clignoter le statut).
+          function estEnLigne(u) {
+            if (!u.derniere_activite) return false;
+            return (maintenant.getTime() - new Date(u.derniere_activite).getTime()) < 90000;
+          }
+          function texteVu(u) {
+            if (!u.derniere_activite) return "Jamais connecté";
+            const minutes = Math.floor((maintenant.getTime() - new Date(u.derniere_activite).getTime()) / 60000);
+            if (minutes < 1) return "À l'instant";
+            if (minutes < 60) return `Vu il y a ${minutes} min`;
+            const heures = Math.floor(minutes / 60);
+            if (heures < 24) return `Vu il y a ${heures} h`;
+            return `Vu il y a ${Math.floor(heures / 24)} j`;
+          }
+          const utilisateursTries = [...users].sort((a, b) => {
+            const enLigneA = estEnLigne(a), enLigneB = estEnLigne(b);
+            if (enLigneA !== enLigneB) return enLigneA ? -1 : 1;
+            return new Date(b.derniere_activite || 0) - new Date(a.derniere_activite || 0);
+          });
+          const nombreEnLigne = users.filter(estEnLigne).length;
+
+          return (
+            <div>
+              <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Utilisateurs en ligne</h1>
+              <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>
+                {nombreEnLigne} compte{nombreEnLigne > 1 ? "s" : ""} actuellement en ligne, sur {users.length} au total.
+              </div>
+              <Card>
+                {utilisateursTries.map((u, i) => (
+                  <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: i < utilisateursTries.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                    <span style={{ width: 9, height: 9, borderRadius: "50%", background: estEnLigne(u) ? COLORS.success : COLORS.craieDim, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 500 }}>{u.nom}</div>
+                      <div style={{ fontSize: 11.5, color: COLORS.craieDim }}>{ROLES_LIBELLE[u.role] || u.role}{u.ecole_nom ? ` · ${u.ecole_nom}` : ""}</div>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: estEnLigne(u) ? 700 : 400, color: estEnLigne(u) ? COLORS.success : COLORS.craieDim }}>
+                      {estEnLigne(u) ? "En ligne" : texteVu(u)}
+                    </span>
+                  </div>
+                ))}
+              </Card>
+            </div>
+          );
+        })()}
+
+        {view === "enseignants" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Enseignants</h1>
+
+            <Card
+              title="Matières de l'établissement"
+              style={{ marginBottom: 20 }}
+              right={<Button small variant="ghost" icon={P.folder} onClick={genererMatieresParDefaut}>Générer une liste de base</Button>}
+            >
+              {[
+                { cle: null, label: "Communes (Collège et Lycée)" },
+                { cle: "1er_cycle", label: "1er cycle uniquement (Collège : 6ème → 3ème)" },
+                { cle: "2nd_cycle", label: "2nd cycle uniquement (Lycée : 2nde → Terminale)" },
+              ].map((groupe) => {
+                const items = matieresListe.filter((m) => (m.cycle || null) === groupe.cle);
+                if (items.length === 0) return null;
+                return (
+                  <div key={groupe.label} style={{ padding: "12px 14px 4px" }}>
+                    <div style={{ fontSize: 10.5, color: COLORS.craieDim, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>{groupe.label}</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {items.map((m) => (
+                        <span key={m.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(217,164,65,0.1)", color: COLORS.marker, borderRadius: 999, padding: "5px 10px 5px 12px", fontSize: 12 }}>
+                          {m.nom}
+                          {m.categorie === "scientifique" && <span title="Scientifique" style={{ fontSize: 10 }}>🔬</span>}
+                          {m.categorie === "litteraire" && <span title="Littéraire" style={{ fontSize: 10 }}>📖</span>}
+                          {m.duree_double && <span title="2h d'affilée" style={{ fontSize: 10 }}>⏱️</span>}
+                          <button onClick={() => setEditionMatiere(m)} title="Réglages" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.marker, display: "flex" }}><Icon path={P.settings} size={11} /></button>
+                          <button onClick={() => supprimerMatiere(m.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.marker, display: "flex" }}><Icon path={P.x} size={12} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              {matieresListe.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucune matière ajoutée pour l'instant.</div>}
+              <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}`, marginTop: 10 }}>
+                <Field label="Nouvelle matière"><input style={inputStyle} value={nouvelleMatiere} onChange={(e) => setNouvelleMatiere(e.target.value)} placeholder="ex. Mathématiques" onKeyDown={(e) => e.key === "Enter" && ajouterMatiere()} /></Field>
+                <Field label="Cycle concerné">
+                  <select style={inputStyle} value={nouvelleMatiereCycle} onChange={(e) => setNouvelleMatiereCycle(e.target.value)}>
+                    <option value="">Commune (Collège + Lycée)</option>
+                    <option value="1er_cycle">1er cycle uniquement (Collège)</option>
+                    <option value="2nd_cycle">2nd cycle uniquement (Lycée)</option>
+                  </select>
+                </Field>
+                <Field label="Catégorie">
+                  <select style={inputStyle} value={nouvelleMatiereCategorie} onChange={(e) => setNouvelleMatiereCategorie(e.target.value)}>
+                    <option value="">Aucune contrainte</option>
+                    <option value="scientifique">Scientifique</option>
+                    <option value="litteraire">Littéraire</option>
+                  </select>
+                </Field>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: COLORS.craieDim, cursor: "pointer", paddingBottom: 8 }}>
+                  <input type="checkbox" checked={nouvelleMatiereDureeDouble} onChange={(e) => setNouvelleMatiereDureeDouble(e.target.checked)} />
+                  Toujours 2h d'affilée (ex. EPS)
+                </label>
+                <Button small icon={P.plus} onClick={ajouterMatiere}>Ajouter</Button>
+              </div>
+            </Card>
+
+            <Card title="Volume horaire hebdomadaire par matière" style={{ marginBottom: 20 }}>
+              <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                Utilisé par "Générer automatiquement" pour savoir combien d'heures par semaine programmer pour chaque matière. Du plus précis au plus général : une classe précise (ex. "6ème A") prévaut sur un niveau entier (ex. "6ème"), qui prévaut lui-même sur un cycle entier (valeur par défaut pour tous les niveaux de ce cycle sans réglage plus précis).
+              </div>
+              <div style={{ padding: "10px 18px", display: "flex", justifyContent: "flex-end" }}>
+                <Button small variant="ghost" icon={P.folder} onClick={genererVolumesOfficiels}>Préremplir le 1er cycle (circulaire officielle)</Button>
+              </div>
+              {volumesHoraires.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun volume horaire défini — la génération automatique utilisera alors le nombre de séances par défaut.</div>}
+              {(() => {
+                // Grille façon "circulaire officielle" : une ligne par matière, une colonne
+                // par niveau/cycle — beaucoup plus compact et lisible qu'une liste, surtout
+                // avec beaucoup de matières renseignées. Les classes précises (qui ne
+                // rentrent pas naturellement dans cette grille) sont mises à part, repliées.
+                const COLONNES = [
+                  { cle: "1er_cycle", libelle: "1er cycle" },
+                  { cle: "6ème", libelle: "6ème" },
+                  { cle: "5ème", libelle: "5ème" },
+                  { cle: "4ème", libelle: "4ème" },
+                  { cle: "3ème", libelle: "3ème" },
+                  { cle: "2nd_cycle", libelle: "2nd cycle" },
+                  { cle: "2nde", libelle: "2nde" },
+                  { cle: "1ère", libelle: "1ère" },
+                  { cle: "Terminale", libelle: "Term." },
+                ];
+                function colonneDe(v) {
+                  if (v.niveau) return v.niveau;
+                  if (!v.classe_nom) return v.cycle;
+                  return null; // classe précise -> pas dans la grille
+                }
+
+                const volumesGrille = volumesHoraires.filter((v) => colonneDe(v));
+                const volumesClasses = volumesHoraires.filter((v) => v.classe_nom);
+
+                // Une ligne par matière distincte présente dans la grille, avec une cellule
+                // par colonne (le volume horaire s'il existe pour ce couple matière/colonne).
+                const matieresPresentes = [...new Set(volumesGrille.map((v) => v.matiere_nom))].sort();
+                const cellule = (matiere, colonne) => volumesGrille.find((v) => v.matiere_nom === matiere && colonneDe(v) === colonne);
+                const colonnesUtilisees = COLONNES.filter((c) => volumesGrille.some((v) => colonneDe(v) === c.cle));
+
+                return (
+                  <React.Fragment>
+                    {matieresPresentes.length > 0 && (
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                          <thead>
+                            <tr>
+                              <th style={{ textAlign: "left", padding: "8px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>Matière</th>
+                              {colonnesUtilisees.map((c) => (
+                                <th key={c.cle} style={{ textAlign: "center", padding: "8px 10px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}`, minWidth: 62 }}>{c.libelle}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {matieresPresentes.map((matiere, i) => (
+                              <tr key={matiere} style={{ borderBottom: i < matieresPresentes.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                                <td style={{ padding: "8px 18px", fontWeight: 500 }}>{matiere}</td>
+                                {colonnesUtilisees.map((c) => {
+                                  const v = cellule(matiere, c.cle);
+                                  return (
+                                    <td key={c.cle} style={{ textAlign: "center", padding: "8px 6px" }}>
+                                      {v ? (
+                                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: COLORS.marker, fontWeight: 600 }}>
+                                          {v.heures_semaine}h
+                                          <button onClick={() => supprimerVolumeHoraire(v.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim, display: "flex", padding: 0 }}><Icon path={P.x} size={10} /></button>
+                                        </span>
+                                      ) : <span style={{ color: COLORS.craieDim }}>—</span>}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    {volumesClasses.length > 0 && (
+                      <div>
+                        <button type="button" onClick={() => setAfficherVolumesClasses((v) => !v)} style={{ width: "100%", textAlign: "left", background: "rgba(246,242,231,0.04)", border: "none", borderTop: `1px solid ${COLORS.line}`, borderBottom: `1px solid ${COLORS.line}`, padding: "8px 18px", fontSize: 11, fontWeight: 700, color: COLORS.marker, textTransform: "uppercase", letterSpacing: 0.5, cursor: "pointer" }}>
+                          {afficherVolumesClasses ? "▾" : "▸"} Classes précises ({volumesClasses.length})
+                        </button>
+                        {afficherVolumesClasses && volumesClasses.map((v, i) => (
+                          <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 18px", borderBottom: i < volumesClasses.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                            <span style={{ fontWeight: 500, flex: 1 }}>{v.matiere_nom}</span>
+                            <span style={{ fontSize: 11.5, color: COLORS.craieDim, width: 150 }}>{v.classe_nom}</span>
+                            <span style={{ fontSize: 12.5, color: COLORS.marker, fontWeight: 600, width: 60 }}>{v.heures_semaine} h</span>
+                            <button onClick={() => supprimerVolumeHoraire(v.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })()}
+              <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}` }}>
+                <Field label="Matière">
+                  <select style={inputStyle} value={nouveauVolume.matiere_id} onChange={(e) => setNouveauVolume((v) => ({ ...v, matiere_id: e.target.value }))}>
+                    <option value="">— Choisir —</option>
+                    {matieresListe.map((m) => <option key={m.id} value={m.id}>{m.nom}</option>)}
+                  </select>
+                </Field>
+                <Field label="Classe précise (optionnel)">
+                  <select style={inputStyle} value={nouveauVolume.classe_id} onChange={(e) => setNouveauVolume((v) => ({ ...v, classe_id: e.target.value, niveau: e.target.value ? "" : v.niveau, cycle: e.target.value ? "" : v.cycle }))}>
+                    <option value="">— Aucune (utiliser le niveau/cycle) —</option>
+                    {classes.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                  </select>
+                </Field>
+                <Field label="Ou niveau entier">
+                  <select style={inputStyle} value={nouveauVolume.niveau} onChange={(e) => setNouveauVolume((v) => ({ ...v, niveau: e.target.value, classe_id: e.target.value ? "" : v.classe_id, cycle: e.target.value ? "" : v.cycle }))} disabled={!!nouveauVolume.classe_id}>
+                    <option value="">— Aucun —</option>
+                    {["6ème","5ème","4ème","3ème","2nde","1ère","Terminale"].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </Field>
+                <Field label="Ou cycle entier">
+                  <select style={inputStyle} value={nouveauVolume.cycle} onChange={(e) => setNouveauVolume((v) => ({ ...v, cycle: e.target.value, classe_id: e.target.value ? "" : v.classe_id, niveau: e.target.value ? "" : v.niveau }))} disabled={!!nouveauVolume.classe_id || !!nouveauVolume.niveau}>
+                    <option value="">—</option>
+                    <option value="1er_cycle">1er cycle (Collège)</option>
+                    <option value="2nd_cycle">2nd cycle (Lycée)</option>
+                  </select>
+                </Field>
+                <Field label="Heures / semaine"><input type="number" min="0.5" step="0.5" style={{ ...inputStyle, width: 90 }} value={nouveauVolume.heures_semaine} onChange={(e) => setNouveauVolume((v) => ({ ...v, heures_semaine: e.target.value }))} /></Field>
+                <Button small icon={P.plus} onClick={ajouterVolumeHoraire}>Ajouter</Button>
+              </div>
+            </Card>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+              <Button variant="ghost" icon={P.folder} onClick={exporterEnseignants}>Exporter</Button>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 7, borderRadius: 9, padding: "9px 15px", fontWeight: 600, fontSize: 12.5, cursor: "pointer", background: "rgba(246,242,231,0.06)", border: `1px solid ${COLORS.line}`, color: COLORS.craie }}>
+                <Icon path={P.upload} size={14} />
+                Importer (Excel/CSV)
+                <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={handleImportEnseignants} />
+              </label>
+              <Button icon={P.users} onClick={() => { setNewUser((v) => ({ ...v, role: "enseignant" })); setShowAddUser(true); setUserFormError(""); }}>Créer un enseignant</Button>
+            </div>
+
+            {resultatImportEnseignants && (
+              <div style={{ background: resultatImportEnseignants.erreurs.length > 0 ? COLORS.alertBg : COLORS.successBg, border: `1px solid ${resultatImportEnseignants.erreurs.length > 0 ? COLORS.alert : COLORS.success}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 12.5 }}>
+                <div style={{ color: COLORS.craie, fontWeight: 600, marginBottom: 4 }}>{resultatImportEnseignants.crees} enseignant(s) importé(s) sur {resultatImportEnseignants.total_lignes} ligne(s).</div>
+                {resultatImportEnseignants.details_crees.some((d) => d.mot_de_passe_genere) && (
+                  <div style={{ marginTop: 6 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>Mots de passe générés automatiquement (à transmettre) :</div>
+                    <ul style={{ margin: 0, padding: "0 0 0 18px" }}>
+                      {resultatImportEnseignants.details_crees.filter((d) => d.mot_de_passe_genere).map((d, i) => (
+                        <li key={i}>{d.nom} ({d.email}) → {d.mot_de_passe_genere}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {resultatImportEnseignants.erreurs.length > 0 && (
+                  <ul style={{ margin: "6px 0 0 18px", padding: 0, color: COLORS.alert }}>
+                    {resultatImportEnseignants.erreurs.map((e, i) => <li key={i}>Ligne {e.ligne} : {e.raison}</li>)}
+                  </ul>
+                )}
+                <button onClick={() => setResultatImportEnseignants(null)} style={{ marginTop: 8, background: "transparent", border: "none", color: COLORS.craie, cursor: "pointer", fontSize: 11.5, textDecoration: "underline" }}>Fermer</button>
+              </div>
+            )}
+
+            {showAddUser && (
+              <FormPanel title="Créer un enseignant" onClose={() => setShowAddUser(false)} onValidate={handleAddUser} submitLabel="Créer le compte" error={userFormError}>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Nom complet"><input style={inputStyle} value={newUser.nom} onChange={(e) => setNewUser((v) => ({ ...v, nom: e.target.value }))} placeholder="ex. Mme Kader" autoFocus /></Field>
+                  <Field label="Email"><input style={inputStyle} value={newUser.email} onChange={(e) => setNewUser((v) => ({ ...v, email: e.target.value }))} placeholder="ex. m.kader@ecole.example" /></Field>
+                </div>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Mot de passe (6 caractères min.)"><input type="password" style={inputStyle} value={newUser.mot_de_passe} onChange={(e) => setNewUser((v) => ({ ...v, mot_de_passe: e.target.value }))} /></Field>
+                </div>
+                <Field label="Matières enseignées">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, background: COLORS.ardoise, border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "10px 12px" }}>
+                    {matieresListe.length === 0 && <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>Aucune matière définie — ajoute-en depuis la carte "Matières de l'établissement" ci-dessus.</span>}
+                    {matieresListe.map((m) => {
+                      const coche = newUserMatieres.split(",").map((x) => x.trim()).includes(m.nom);
+                      return (
+                        <label key={m.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer" }}>
+                          <input type="checkbox" checked={coche} onChange={() => setNewUserMatieres((val) => toggleMatiereEnseignant(val, m.nom))} />
+                          {m.nom}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </Field>
+                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  <span style={{ fontSize: 12, color: COLORS.craieDim }}>Statut :</span>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer" }}>
+                    <input type="radio" checked={newUser.statut_emploi === "permanent"} onChange={() => setNewUser((v) => ({ ...v, statut_emploi: "permanent" }))} />
+                    Permanent
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer" }}>
+                    <input type="radio" checked={newUser.statut_emploi === "vacataire"} onChange={() => setNewUser((v) => ({ ...v, statut_emploi: "vacataire" }))} />
+                    Vacataire
+                  </label>
+                </div>
+                {estDirectionGenerale && (
+                  <Field label="École de rattachement">
+                    <select style={inputStyle} value={newUser.ecole_id || ""} onChange={(e) => setNewUser((v) => ({ ...v, ecole_id: e.target.value || null }))}>
+                      <option value="">— Choisir une école —</option>
+                      {ecoles.map((e) => <option key={e.id} value={e.id}>{e.nom}</option>)}
+                    </select>
+                  </Field>
+                )}
+                <button type="button" onClick={() => setAfficherInfosRhCreation((v) => !v)} style={{ background: "transparent", border: "none", color: COLORS.marker, cursor: "pointer", fontSize: 12, padding: "6px 0", textAlign: "left" }}>
+                  {afficherInfosRhCreation ? "▾" : "▸"} Informations RH pour la paie (optionnel — à renseigner maintenant ou plus tard)
+                </button>
+                {afficherInfosRhCreation && (
+                  <div style={{ display: "flex", gap: 12 }}>
+                    <Field label="Situation matrimoniale">
+                      <select style={inputStyle} value={newUser.statut_matrimonial || ""} onChange={(e) => setNewUser((v) => ({ ...v, statut_matrimonial: e.target.value }))}>
+                        <option value="">— Non renseigné —</option>
+                        <option value="celibataire">Célibataire</option>
+                        <option value="marie">Marié(e)</option>
+                        <option value="veuf">Veuf / Veuve</option>
+                        <option value="divorce">Divorcé(e)</option>
+                      </select>
+                    </Field>
+                    <Field label="Nombre d'enfants à charge">
+                      <input type="number" min="0" max="10" style={inputStyle} value={newUser.nombre_enfants || ""} onChange={(e) => setNewUser((v) => ({ ...v, nombre_enfants: e.target.value }))} />
+                    </Field>
+                  </div>
+                )}
+              </FormPanel>
+            )}
+
+            <Card title="Liste des enseignants">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 0.7fr 1fr 0.9fr 0.8fr auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
+                <span>Nom</span><span>Classes</span><span>Statut</span><span>Matières</span><span>Disponibilités</span><span>Taux/h</span><span></span>
+              </div>
+              {users.filter((u) => u.role === "enseignant").length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun enseignant pour l'instant.</div>}
+              {users.filter((u) => u.role === "enseignant").map((u, i, arr) => (
+                <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 0.7fr 1fr 0.9fr 0.8fr auto", alignItems: "center", padding: "10px 18px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                  <NomEditable valeur={u.nom} onValider={(v) => changeUserNom(u.id, v)} style={{ fontWeight: 500 }} />
+                  <button onClick={() => setGestionClassesUser(u)} style={{ background: "transparent", border: "none", cursor: "pointer", color: (u.classes_rattachees || []).length ? COLORS.craie : COLORS.craieDim, fontSize: 12, textAlign: "left", padding: 0 }}>
+                    {(u.classes_rattachees || []).length === 0 ? "Aucune — cliquer" : (u.classes_rattachees || []).map((c) => c.nom).join(", ")}
+                  </button>
+                  {u.statut_emploi ? (
+                    <span style={{ fontSize: 11.5, fontWeight: 600, color: u.statut_emploi === "permanent" ? COLORS.success : COLORS.marker, background: u.statut_emploi === "permanent" ? COLORS.successBg : "#3E3220", borderRadius: 999, padding: "3px 10px", width: "fit-content" }}>
+                      {u.statut_emploi === "permanent" ? "Permanent" : "Vacataire"}
+                    </span>
+                  ) : <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>Non renseigné</span>}
+                  <button onClick={() => setGestionMatieresUser(u)} style={{ background: "transparent", border: "none", cursor: "pointer", color: u.matieres ? COLORS.craie : COLORS.craieDim, fontSize: 12, textAlign: "left", padding: 0 }}>
+                    {u.matieres || "— cliquer pour choisir"}
+                  </button>
+                  <button
+                    onClick={() => ouvrirDisponibilitesUser(u)}
+                    style={{
+                      background: u.statut_emploi === "vacataire" ? "rgba(217,164,65,0.15)" : "transparent",
+                      border: u.statut_emploi === "vacataire" ? `1px solid ${COLORS.marker}` : "none",
+                      borderRadius: 6, padding: u.statut_emploi === "vacataire" ? "5px 8px" : 0,
+                      cursor: "pointer", color: u.statut_emploi === "vacataire" ? COLORS.marker : COLORS.craieDim, fontSize: 12, textAlign: "left", fontWeight: u.statut_emploi === "vacataire" ? 600 : 400,
+                    }}
+                  >
+                    {u.statut_emploi === "vacataire" ? "⚠ Renseigner" : "Toujours disponible"}
+                  </button>
+                  {u.statut_emploi === "permanent" ? (
+                    <button onClick={() => setGestionSalaireUser(u)} style={{ background: "transparent", border: "none", cursor: "pointer", color: u.salaire_base != null ? COLORS.craie : COLORS.craieDim, fontSize: 12, textAlign: "left", padding: 0 }}>
+                      {u.salaire_base != null ? `${Number(u.salaire_base).toLocaleString("fr-FR")} F/mois` : "— définir le salaire"}
+                    </button>
+                  ) : (
+                    <NomEditable valeur={u.taux_horaire != null ? `${u.taux_horaire} F` : "— définir"} onValider={(v) => changeTauxHoraire(u.id, v)} style={{ fontSize: 12, color: u.taux_horaire != null ? COLORS.craie : COLORS.craieDim }} />
+                  )}
+                  <button onClick={() => imprimerBulletinSalaire(u.id, u.nom)} title="Imprimer le bulletin de salaire" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.scan} size={14} /></button>
+                  <button onClick={() => setDossierEnseignantId(u.id)} title="Voir le dossier complet" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.users} size={14} /></button>
+                  <button onClick={() => removeUser(u.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
+                </div>
+              ))}
+            </Card>
+          </div>
+        )}
+
+        {gestionClassesUser && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setGestionClassesUser(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 420, maxHeight: "80vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Classes de {gestionClassesUser.nom}</span>
+                <button onClick={() => setGestionClassesUser(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+              </div>
+              <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginBottom: 14 }}>Un enseignant peut être rattaché à plusieurs classes, y compris sur des niveaux différents.</div>
+              {classes.map((c) => {
+                const rattachee = (gestionClassesUser.classes_rattachees || []).some((x) => x.id === c.id);
+                return (
+                  <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", cursor: "pointer", borderBottom: `1px solid ${COLORS.line}` }}>
+                    <input type="checkbox" checked={rattachee} onChange={() => toggleClasseEnseignant(gestionClassesUser.id, c.id, rattachee)} />
+                    <span style={{ fontSize: 13 }}>{c.nom}</span>
+                    <span style={{ fontSize: 11, color: COLORS.craieDim, marginLeft: "auto" }}>{c.niveau}</span>
+                  </label>
+                );
+              })}
+              {classes.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucune classe créée pour l'instant.</div>}
+            </div>
+          </div>
+        )}
+
+        {editionMatiere && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setEditionMatiere(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 340 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Réglages — {editionMatiere.nom}</span>
+                <button onClick={() => setEditionMatiere(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+              </div>
+              <Field label="Catégorie (empêche deux matières de la même catégorie de se suivre)">
+                <select style={inputStyle} value={editionMatiere.categorie || ""} onChange={(e) => enregistrerReglagesMatiere(editionMatiere.id, { categorie: e.target.value })}>
+                  <option value="">Aucune contrainte</option>
+                  <option value="scientifique">Scientifique</option>
+                  <option value="litteraire">Littéraire</option>
+                </select>
+              </Field>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", marginTop: 14 }}>
+                <input type="checkbox" checked={!!editionMatiere.duree_double} onChange={(e) => enregistrerReglagesMatiere(editionMatiere.id, { duree_double: e.target.checked })} />
+                Toujours programmer sur 2h d'affilée (ex. EPS)
+              </label>
+            </div>
+          </div>
+        )}
+
+        {dossierEnseignantId && (() => {
+          // Dérivé directement de "users" à chaque rendu — reste automatiquement à jour
+          // dès qu'un des boutons ci-dessous modifie l'enseignant, sans synchronisation
+          // manuelle à ajouter à chaque fonction (source classique d'oublis/bugs).
+          const u = users.find((x) => x.id === dossierEnseignantId);
+          if (!u) return null;
+          return (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setDossierEnseignantId(null)}>
+              <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 24, width: 460, maxHeight: "85vh", overflowY: "auto" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+                  <div>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 19, fontWeight: 600 }}>
+                      <NomEditable valeur={u.nom} onValider={(v) => changeUserNom(u.id, v)} />
+                    </div>
+                    <div style={{ fontSize: 12.5, color: COLORS.craieDim, marginTop: 2 }}>
+                      <NomEditable valeur={u.email} onValider={(v) => changeUserEmail(u.id, v)} />
+                    </div>
+                  </div>
+                  <button onClick={() => setDossierEnseignantId(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={18} /></button>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+                  <select style={{ ...inputStyle, fontSize: 12.5 }} value={u.statut_emploi || ""} onChange={(e) => changeStatutEmploi(u.id, e.target.value || null)}>
+                    <option value="">Statut non renseigné</option>
+                    <option value="permanent">Permanent</option>
+                    <option value="vacataire">Vacataire</option>
+                  </select>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                  <button onClick={() => setGestionClassesUser(u)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(246,242,231,0.04)", border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "10px 12px", color: COLORS.craie, cursor: "pointer", textAlign: "left" }}>
+                    <span>📚 Classes rattachées</span>
+                    <span style={{ color: COLORS.craieDim, fontSize: 12 }}>{(u.classes_rattachees || []).length === 0 ? "Aucune" : (u.classes_rattachees || []).map((c) => c.nom).join(", ")}</span>
+                  </button>
+                  <button onClick={() => setGestionMatieresUser(u)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(246,242,231,0.04)", border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "10px 12px", color: COLORS.craie, cursor: "pointer", textAlign: "left" }}>
+                    <span>📖 Matières enseignées</span>
+                    <span style={{ color: COLORS.craieDim, fontSize: 12 }}>{u.matieres || "Aucune"}</span>
+                  </button>
+                  <button onClick={() => ouvrirDisponibilitesUser(u)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(246,242,231,0.04)", border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "10px 12px", color: COLORS.craie, cursor: "pointer", textAlign: "left" }}>
+                    <span>🕒 Disponibilités</span>
+                    <span style={{ color: COLORS.craieDim, fontSize: 12 }}>{u.statut_emploi === "vacataire" ? "À renseigner" : "Toujours disponible"}</span>
+                  </button>
+                  <button onClick={() => setGestionSalaireUser(u)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(246,242,231,0.04)", border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "10px 12px", color: COLORS.craie, cursor: "pointer", textAlign: "left" }}>
+                    <span>💰 Salaire et parts fiscales</span>
+                    <span style={{ color: COLORS.craieDim, fontSize: 12 }}>
+                      {u.statut_emploi === "permanent"
+                        ? (u.salaire_base != null ? `${Number(u.salaire_base).toLocaleString("fr-FR")} F/mois` : "Non renseigné")
+                        : (u.taux_horaire != null ? `${u.taux_horaire} F/h` : "Non renseigné")}
+                    </span>
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, marginTop: 18, paddingTop: 14, borderTop: `1px solid ${COLORS.line}` }}>
+                  <Button small variant="ghost" icon={P.scan} onClick={() => imprimerBulletinSalaire(u.id, u.nom)}>Bulletin de salaire</Button>
+                  <div style={{ flex: 1 }} />
+                  <button onClick={() => { setDossierEnseignantId(null); removeUser(u.id); }} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.alert, fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Icon path={P.trash} size={14} /> Supprimer le compte
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {renouvellementEcole && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setRenouvellementEcole(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 360 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Renouveler — {renouvellementEcole.nom}</span>
+                <button onClick={() => setRenouvellementEcole(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+              </div>
+              <div style={{ fontSize: 11, color: COLORS.craieDim, marginBottom: 14 }}>
+                Génère un lien de paiement Orange Money. Une fois le paiement confirmé, la date de fin d'utilisation de cet établissement sera prolongée automatiquement — rien à faire manuellement après.
+              </div>
+              <Field label="Montant (F CFA)">
+                <input type="number" style={inputStyle} value={renouvellementMontant} onChange={(e) => setRenouvellementMontant(e.target.value)} />
+              </Field>
+              <Field label="Nombre de mois à ajouter">
+                <input type="number" min="1" style={inputStyle} value={renouvellementMois} onChange={(e) => setRenouvellementMois(e.target.value)} />
+              </Field>
+              <Button icon={P.check} onClick={lancerPaiementRenouvellement} style={{ width: "100%", marginTop: 8 }}>Générer le lien de paiement</Button>
+            </div>
+          </div>
+        )}
+
+        {renouvellementEcole && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setRenouvellementEcole(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 380 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Renouveler — {renouvellementEcole.nom}</span>
+                <button onClick={() => setRenouvellementEcole(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+              </div>
+              <div style={{ fontSize: 11, color: COLORS.craieDim, marginBottom: 14 }}>
+                Génère un lien de paiement (Wave, Orange Money, MTN, Moov, ou carte) à transmettre à l'établissement. La date de fin d'utilisation se prolongera automatiquement dès que le paiement sera confirmé.
+              </div>
+              <Field label="Montant (F CFA)">
+                <input type="number" style={inputStyle} value={renouvellementMontant} onChange={(e) => setRenouvellementMontant(e.target.value)} />
+              </Field>
+              <Field label="Durée ajoutée">
+                <select style={inputStyle} value={renouvellementMois} onChange={(e) => setRenouvellementMois(e.target.value)}>
+                  <option value="1">1 mois</option>
+                  <option value="3">3 mois</option>
+                  <option value="6">6 mois</option>
+                  <option value="12">12 mois (1 an)</option>
+                </select>
+              </Field>
+              <Button icon={P.check} onClick={lancerPaiementRenouvellement} style={{ marginTop: 8, width: "100%" }}>Générer le lien de paiement</Button>
+            </div>
+          </div>
+        )}
+
+        {gestionSalaireUser && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setGestionSalaireUser(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 380 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Salaire — {gestionSalaireUser.nom}</span>
+                <button onClick={() => setGestionSalaireUser(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+              </div>
+              <div style={{ fontSize: 11, color: COLORS.craieDim, marginBottom: 14 }}>
+                {gestionSalaireUser.role === "enseignant"
+                  ? "Sert à calculer sa paie complète (CNPS + ITS) sur \"Absentéisme\" — les heures manquées seront déduites de ce salaire avant le calcul des retenues."
+                  : "Sert à générer son bulletin de salaire (CNPS + ITS) — pas de notion d'heures manquées pour un poste administratif."}
+              </div>
+              <Field label="Salaire de base (F CFA / mois)">
+                <input type="number" style={inputStyle} defaultValue={gestionSalaireUser.salaire_base || ""} onBlur={(e) => e.target.value && enregistrerSalaire(gestionSalaireUser.id, { salaire_base: e.target.value })} placeholder="ex. 350000" />
+              </Field>
+              {gestionSalaireUser.role === "enseignant" && (
+                <React.Fragment>
+                  <Field label="Heures mensuelles de référence (pour valoriser une heure manquée)">
+                    <input type="number" style={inputStyle} defaultValue={gestionSalaireUser.heures_mensuelles_reference || ""} onBlur={(e) => e.target.value && enregistrerSalaire(gestionSalaireUser.id, { heures_mensuelles_reference: e.target.value })} placeholder="ex. 80" />
+                  </Field>
+                  <Field label="Diplôme / qualification (détermine le plafond hebdomadaire et les classes autorisées)">
+                    <select style={inputStyle} value={gestionSalaireUser.cycle_enseignement || ""} onChange={(e) => enregistrerSalaire(gestionSalaireUser.id, { cycle_enseignement: e.target.value })}>
+                      <option value="">— Non renseigné (pas de calcul d'heures sup.) —</option>
+                      <option value="1er_cycle">DEUG2 — 1er cycle uniquement (Collège, max. 21h/semaine)</option>
+                      <option value="2nd_cycle">Licence — 2nd cycle (Lycée, max. 18h/semaine, complétable au 1er cycle si besoin)</option>
+                    </select>
+                  </Field>
+                  <Field label="Taux horaire des heures supplémentaires (F CFA)">
+                    <input type="number" style={inputStyle} defaultValue={gestionSalaireUser.taux_horaire || ""} onBlur={(e) => e.target.value && changeTauxHoraire(gestionSalaireUser.id, e.target.value)} placeholder="ex. 2500" />
+                  </Field>
+                </React.Fragment>
+              )}
+              <Field label="Situation matrimoniale">
+                <select style={inputStyle} value={gestionSalaireUser.statut_matrimonial || ""} onChange={(e) => enregistrerSalaire(gestionSalaireUser.id, { statut_matrimonial: e.target.value, nombre_enfants: gestionSalaireUser.nombre_enfants || 0 })}>
+                  <option value="">— Non renseigné —</option>
+                  <option value="celibataire">Célibataire</option>
+                  <option value="marie">Marié(e)</option>
+                  <option value="veuf">Veuf / Veuve</option>
+                  <option value="divorce">Divorcé(e)</option>
+                </select>
+              </Field>
+              <Field label="Nombre d'enfants à charge">
+                <input type="number" min="0" max="10" style={inputStyle} defaultValue={gestionSalaireUser.nombre_enfants || 0} onBlur={(e) => enregistrerSalaire(gestionSalaireUser.id, { nombre_enfants: e.target.value, statut_matrimonial: gestionSalaireUser.statut_matrimonial || "celibataire" })} />
+              </Field>
+              <div style={{ fontSize: 11, color: COLORS.craieDim, marginTop: -6, marginBottom: 14 }}>
+                Parts fiscales calculées automatiquement : <strong style={{ color: COLORS.craie }}>{gestionSalaireUser.parts_fiscales || 1} part{(gestionSalaireUser.parts_fiscales || 1) > 1 ? "s" : ""}</strong>
+                {" — "}
+                <button onClick={() => { const v = window.prompt("Forcer une valeur de parts fiscales précise (entre 1 et 5, par pas de 0,5) :", gestionSalaireUser.parts_fiscales || 1); if (v) enregistrerSalaire(gestionSalaireUser.id, { parts_fiscales: v }); }} style={{ background: "transparent", border: "none", color: COLORS.marker, cursor: "pointer", textDecoration: "underline", fontSize: 11, padding: 0 }}>
+                  modifier manuellement
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {gestionMatieresUser && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setGestionMatieresUser(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 380, maxHeight: "80vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Matières de {gestionMatieresUser.nom}</span>
+                <button onClick={() => setGestionMatieresUser(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+              </div>
+              <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginBottom: 14 }}>Coche les matières que cet enseignant donne — la liste vient des matières ajoutées pour l'établissement.</div>
+              {matieresListe.map((m) => {
+                const coche = (gestionMatieresUser.matieres || "").split(",").map((x) => x.trim()).includes(m.nom);
+                return (
+                  <label key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", cursor: "pointer", borderBottom: `1px solid ${COLORS.line}` }}>
+                    <input
+                      type="checkbox"
+                      checked={coche}
+                      onChange={async () => {
+                        const nouvelles = toggleMatiereEnseignant(gestionMatieresUser.matieres, m.nom);
+                        await changeUserMatieres(gestionMatieresUser.id, nouvelles);
+                        setGestionMatieresUser((u) => u ? { ...u, matieres: nouvelles } : u);
+                      }}
+                    />
+                    <span style={{ fontSize: 13 }}>{m.nom}</span>
+                  </label>
+                );
+              })}
+              {matieresListe.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucune matière créée pour l'instant — ajoute-en depuis la page "Enseignants".</div>}
+            </div>
+          </div>
+        )}
+
+        {gestionDisponibilitesUser && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setGestionDisponibilitesUser(null)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 420, maxHeight: "85vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Disponibilités de {gestionDisponibilitesUser.nom}</span>
+                <button onClick={() => setGestionDisponibilitesUser(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+              </div>
+              <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginBottom: 14 }}>
+                Indique les créneaux où cet enseignant PEUT enseigner (utile surtout pour un vacataire qui n'est pas libre toute la semaine). <strong>Si aucune disponibilité n'est ajoutée, il est considéré disponible en permanence.</strong> Dès qu'au moins une ligne est ajoutée, "Générer automatiquement" ne le programmera plus que dans ces créneaux-là.
+              </div>
+
+              {disponibilitesUser.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim, marginBottom: 14, fontStyle: "italic" }}>Aucune restriction — disponible en permanence.</div>}
+              {disponibilitesUser.map((d, i, arr) => (
+                <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                  <span style={{ fontWeight: 500, width: 90 }}>{JOURS[d.jour_semaine - 1]}</span>
+                  <span style={{ color: COLORS.craieDim, flex: 1 }}>{d.heure_debut?.slice(0,5)} – {d.heure_fin?.slice(0,5)}</span>
+                  <button onClick={() => supprimerDisponibilite(d.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
+                </div>
+              ))}
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 14, paddingTop: 14, borderTop: `1px solid ${COLORS.line}` }}>
+                <Field label="Jour">
+                  <select style={inputStyle} value={nouvelleDispo.jour_semaine} onChange={(e) => setNouvelleDispo((v) => ({ ...v, jour_semaine: e.target.value }))}>
+                    {JOURS.map((j, i) => <option key={j} value={i + 1}>{j}</option>)}
+                  </select>
+                </Field>
+                <Field label="De"><input type="time" style={inputStyle} value={nouvelleDispo.heure_debut} onChange={(e) => setNouvelleDispo((v) => ({ ...v, heure_debut: e.target.value }))} /></Field>
+                <Field label="À"><input type="time" style={inputStyle} value={nouvelleDispo.heure_fin} onChange={(e) => setNouvelleDispo((v) => ({ ...v, heure_fin: e.target.value }))} /></Field>
+                <Button small icon={P.plus} onClick={ajouterDisponibilite}>Ajouter</Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {dossierEleve && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={fermerDossierEleve}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 24, width: 480, maxHeight: "85vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  <div style={{ position: "relative", width: 56, height: 56, flexShrink: 0 }}>
+                    {dossierEleve.photo_url ? (
+                      <img src={`${session.baseUrl.replace(/\/api$/, "")}${dossierEleve.photo_url}`} style={{ width: 56, height: 56, borderRadius: 10, objectFit: "cover", border: `1px solid ${COLORS.line}` }} />
+                    ) : (
+                      <div style={{ width: 56, height: 56, borderRadius: 10, background: COLORS.craieDim, color: COLORS.ardoiseDeep, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 18 }}>{initials(dossierEleve.nom)}</div>
+                    )}
+                    {role !== "enseignant" && (
+                      <label style={{ position: "absolute", bottom: -4, right: -4, width: 22, height: 22, borderRadius: 999, background: COLORS.marker, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: `2px solid ${COLORS.ardoiseDeep}` }} title="Changer la photo">
+                        <Icon path={P.camera} size={11} color={COLORS.ardoiseDeep} />
+                        <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => handleUploadPhotoEleve(dossierEleve.id, e)} />
+                      </label>
+                    )}
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 19, fontWeight: 600 }}>
+                      {role === "enseignant" ? dossierEleve.nom : <NomEditable valeur={dossierEleve.nom} onValider={(v) => changeEleveNom(dossierEleve.id, v)} tailleIcone={14} />}
+                    </div>
+                    <div style={{ fontSize: 12, color: COLORS.craieDim, marginTop: 2 }}>{dossierEleve.classe_nom || "Sans classe"} {dossierEleve.classe_niveau ? `· ${dossierEleve.classe_niveau}` : ""}</div>
+                  </div>
+                </div>
+                <button onClick={fermerDossierEleve} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={18} /></button>
+              </div>
+
+              <div style={{ display: "flex", gap: 18, margin: "16px 0", fontSize: 12.5, alignItems: "center" }}>
+                <div><span style={{ color: COLORS.craieDim }}>Matricule</span><div style={{ fontWeight: 600 }}>{dossierEleve.matricule}</div></div>
+                <div><span style={{ color: COLORS.craieDim }}>Méthode</span><div style={{ fontWeight: 600, textTransform: "capitalize" }}>{dossierEleve.methode_biometrique}</div></div>
+                <Button small variant="ghost" icon={P.scan} onClick={() => imprimerBadge(dossierEleve)}>Imprimer le badge</Button>
+              </div>
+
+              <div style={{ display: "flex", gap: 18, margin: "0 0 16px", fontSize: 12.5, alignItems: "center" }}>
+                <div>
+                  <span style={{ color: COLORS.craieDim }}>Date de naissance</span>
+                  {role === "enseignant" ? (
+                    <div style={{ fontWeight: 600 }}>{dossierEleve.date_naissance ? dossierEleve.date_naissance.slice(0, 10) : "Non renseignée"}</div>
+                  ) : (
+                    <div>
+                      <input type="date" style={{ ...inputStyle, fontSize: 12.5, padding: "4px 8px" }} defaultValue={dossierEleve.date_naissance ? dossierEleve.date_naissance.slice(0, 10) : ""} onBlur={(e) => changeDateNaissanceEleve(dossierEleve.id, e.target.value)} />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <span style={{ color: COLORS.craieDim }}>Lieu de naissance</span>
+                  {role === "enseignant" ? (
+                    <div style={{ fontWeight: 600 }}>{dossierEleve.lieu_naissance || "Non renseigné"}</div>
+                  ) : (
+                    <NomEditable valeur={dossierEleve.lieu_naissance || "Non renseigné"} onValider={(v) => changeLieuNaissanceEleve(dossierEleve.id, v === "Non renseigné" ? "" : v)} style={{ fontWeight: 600 }} />
+                  )}
+                </div>
+              </div>
+
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: COLORS.marker, marginBottom: 8 }}>Parent(s) rattaché(s)</div>
+              {dossierParents.length === 0 && <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 16 }}>Aucun parent rattaché pour l'instant.</div>}
+              {dossierParents.map((p) => (
+                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${COLORS.line}`, fontSize: 13 }}>
+                  <span>{p.nom}</span>
+                  <span style={{ color: COLORS.craieDim }}>{p.telephone}</span>
+                </div>
+              ))}
+
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: COLORS.marker, margin: "16px 0 8px" }}>Historique de présence récent</div>
+              {dossierAttendance.length === 0 && <div style={{ fontSize: 12, color: COLORS.craieDim }}>Aucun pointage enregistré pour l'instant.</div>}
+              {dossierAttendance.map((e) => (
+                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid ${COLORS.line}`, fontSize: 12.5 }}>
+                  <span style={{ color: COLORS.craieDim, width: 90 }}>{fmtTime(e.horodatage)}</span>
+                  <span style={{ flex: 1 }}>{e.matiere || "Entrée établissement"}</span>
+                  <StatusLabel status={e.statut} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function Root() {
+  // La session est sauvegardée dans localStorage pour survivre à une actualisation
+  // du navigateur — sans ça, chaque F5 renvoyait à l'écran de connexion, même
+  // en pleine utilisation. Elle reste valable tant que le jeton n'a pas expiré
+  // côté serveur (12h) ; si une requête échoue pour cause d'authentification
+  // invalide, la session est effacée et l'écran de connexion réapparaît.
+  const [session, setSession] = useState(() => {
+    try {
+      const sauvegardee = localStorage.getItem("cahierAppelSession");
+      return sauvegardee ? JSON.parse(sauvegardee) : null;
+    } catch {
+      return null; // session corrompue ou illisible -> redémarre proprement sur l'écran de connexion
+    }
+  });
+
+  function connecterEtSauvegarder(nouvelleSession) {
+    localStorage.setItem("cahierAppelSession", JSON.stringify(nouvelleSession));
+    setSession(nouvelleSession);
+  }
+
+  function deconnecter() {
+    localStorage.removeItem("cahierAppelSession");
+    setSession(null);
+  }
+
+  if (!session) return <LoginScreen onConnected={connecterEtSauvegarder} />;
+  return <App session={session} onLogout={deconnecter} />;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
