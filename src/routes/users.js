@@ -10,8 +10,16 @@ router.use(authRequired);
 
 // POST /api/users/heartbeat — accessible à TOUS les rôles connectés (placée avant
 // la restriction direction/super_admin ci-dessous, qui ne doit pas s'appliquer ici).
-// Signale que ce compte est actuellement actif dans l'application.
+// Signale que ce compte est actuellement actif dans l'application. Sert aussi à
+// détecter en quasi temps réel (toutes les 30s) qu'un établissement vient d'être
+// suspendu manuellement, sans attendre l'expiration naturelle du jeton (12h).
 router.post("/heartbeat", async (req, res) => {
+  if (req.user.role !== "super_admin" && req.user.ecole_id) {
+    const { rows } = await pool.query("SELECT suspendue FROM ecoles WHERE id = $1", [req.user.ecole_id]);
+    if (rows[0]?.suspendue) {
+      return res.status(403).json({ error: "Accès suspendu : cet établissement a été fermé en attendant le règlement de son abonnement." });
+    }
+  }
   await pool.query("UPDATE users SET derniere_activite = now() WHERE id = $1", [req.user.sub]);
   res.status(204).send();
 });

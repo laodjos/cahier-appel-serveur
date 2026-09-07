@@ -24,8 +24,13 @@ router.post("/login", async (req, res) => {
   // — le Super-administrateur doit d'abord lui (re)assigner une nouvelle année scolaire.
   if (user.role !== "super_admin" && user.ecole_id) {
     const { rows: ecoleRows } = await pool.query(
-      "SELECT date_fin_utilisation FROM ecoles WHERE id = $1", [user.ecole_id]
+      "SELECT date_fin_utilisation, suspendue FROM ecoles WHERE id = $1", [user.ecole_id]
     );
+    if (ecoleRows[0]?.suspendue) {
+      return res.status(403).json({
+        error: "Accès suspendu : cet établissement a été temporairement fermé en attendant le règlement de son abonnement. Contactez l'administrateur du système.",
+      });
+    }
     const dateFin = ecoleRows[0]?.date_fin_utilisation;
     const aujourdHui = new Date().toISOString().slice(0, 10);
     const dateFinStr = dateFin ? new Date(dateFin).toISOString().slice(0, 10) : null;

@@ -409,7 +409,15 @@ function App({ session, onLogout }) {
   // "Utilisateurs en ligne". Envoyé immédiatement puis toutes les 30 secondes
   // tant que l'application reste ouverte.
   useEffect(() => {
-    function battement() { api("/users/heartbeat", { method: "POST" }).catch(() => {}); }
+    function battement() {
+      api("/users/heartbeat", { method: "POST" }).catch((e) => {
+        // Cas précis et volontaire : l'établissement vient d'être suspendu par le
+        // Super-administrateur — déconnexion immédiate, contrairement aux autres
+        // erreurs 403 de l'application (ex. "ce n'est pas ton cours") qui, elles,
+        // ne doivent surtout pas déconnecter l'utilisateur.
+        if (e.message?.includes("établissement a été fermé")) onLogout();
+      });
+    }
     battement();
     const id = setInterval(battement, 30000);
     return () => clearInterval(id);
@@ -1578,6 +1586,18 @@ function App({ session, onLogout }) {
     try {
       const updated = await api(`/ecoles/${ecoleId}/annee-scolaire`, { method: "PATCH", body: patch });
       setEcoles((liste) => liste.map((x) => x.id === ecoleId ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function basculerSuspensionEcole(ecole) {
+    const nouvelEtat = !ecole.suspendue;
+    const message = nouvelEtat
+      ? `Fermer "${ecole.nom}" ? Plus aucun compte de cet établissement ne pourra se connecter tant que tu ne l'auras pas rouvert.`
+      : `Rouvrir "${ecole.nom}" ? Les comptes de cet établissement pourront de nouveau se connecter.`;
+    if (!window.confirm(message)) return;
+    try {
+      const updated = await api(`/ecoles/${ecole.id}/suspension`, { method: "PATCH", body: { suspendue: nouvelEtat } });
+      setEcoles((liste) => liste.map((x) => x.id === ecole.id ? { ...x, ...updated } : x));
     } catch (e) { catchErr(e); }
   }
 
@@ -2917,6 +2937,10 @@ function App({ session, onLogout }) {
                         <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.alert, background: COLORS.alertBg, borderRadius: 6, padding: "6px 10px" }}>⚠ Accès expiré — connexion bloquée pour cet établissement</span>
                       )}
                       <Button small variant="ghost" onClick={() => setRenouvellementEcole(e)}>💳 Renouveler (paiement)</Button>
+                      <Button small variant={e.suspendue ? "primary" : "ghost"} onClick={() => basculerSuspensionEcole(e)}>
+                        {e.suspendue ? "🔓 Rouvrir l'école" : "🔒 Fermer (en attente de paiement)"}
+                      </Button>
+                      {e.suspendue && <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.alert, background: COLORS.alertBg, borderRadius: 6, padding: "6px 10px" }}>⛔ École fermée manuellement</span>}
                     </div>
                   )}
                   <div style={{ padding: "0 18px 14px 18px", display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap", fontSize: 11.5 }}>

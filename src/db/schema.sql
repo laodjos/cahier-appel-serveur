@@ -373,6 +373,11 @@ ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS date_fin_utilisation DATE;
 -- bulletins, registres, emploi du temps, paie...).
 ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS logo_url TEXT;
 ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS cachet_url TEXT;
+-- Suspension manuelle, indépendante de la date de fin d'utilisation automatique —
+-- permet de bloquer immédiatement un établissement en attente de règlement, sans
+-- avoir à toucher à sa date de fin d'utilisation (utile si le paiement est en
+-- retard mais que la date n'a pas encore expiré).
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS suspendue BOOLEAN NOT NULL DEFAULT false;
 -- Références légales de l'école, affichées en bas de page des documents imprimés.
 ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS registre_commerce TEXT;
 
