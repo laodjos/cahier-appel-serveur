@@ -278,9 +278,9 @@ function LoginScreen({ onConnected }) {
    ============================================================ */
 const ROLE_LABELS = { super_admin: "Super-administrateur", direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant général" };
 const NAV_BY_ROLE = {
-  super_admin: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
-  direction: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
-  enseignant: ["appel", "students", "emploi"],
+  super_admin: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "erp", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
+  direction: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "erp", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
+  enseignant: ["appel", "students", "emploi", "erp"],
   surveillant: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "incidents"],
 };
 
@@ -463,6 +463,7 @@ function App({ session, onLogout }) {
   const [afficherInfosRhCreation, setAfficherInfosRhCreation] = useState(false);
   const [afficherVolumesClasses, setAfficherVolumesClasses] = useState(false);
   const [renouvellementEcole, setRenouvellementEcole] = useState(null);
+  const [sousOngletErp, setSousOngletErp] = useState("notes");
   const [renouvellementMontant, setRenouvellementMontant] = useState("25000");
   const [renouvellementMois, setRenouvellementMois] = useState("1");
 
@@ -1554,6 +1555,18 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function basculerErpEcole(ecole) {
+    const nouvelEtat = !ecole.erp_actif;
+    const message = nouvelEtat
+      ? `Activer le module ERP (notes/bulletins + frais de scolarité) pour "${ecole.nom}" ? Assure-toi que la tarification correspondante a bien été convenue avec l'établissement.`
+      : `Désactiver le module ERP pour "${ecole.nom}" ? Les comptes de cet établissement perdront l'accès aux notes, bulletins et frais de scolarité.`;
+    if (!window.confirm(message)) return;
+    try {
+      const updated = await api(`/ecoles/${ecole.id}/erp`, { method: "PATCH", body: { erp_actif: nouvelEtat } });
+      setEcoles((liste) => liste.map((x) => x.id === ecole.id ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
   async function lancerPaiementRenouvellement() {
     try {
       const res = await api("/paiements/initier", {
@@ -1770,6 +1783,7 @@ function App({ session, onLogout }) {
           {availableViews.includes("parents") && <NavItem label="Rattachement parents" active={view === "parents"} onClick={() => { setSidebarOuverte(false); setView("parents"); }} />}
           {availableViews.includes("absenteisme") && <NavItem label="Absentéisme" active={view === "absenteisme"} onClick={() => { setSidebarOuverte(false); setView("absenteisme"); }} count={absenteisme.length} badge={absenteisme.length > 0} />}
           {availableViews.includes("paie") && <NavItem label="Paie" active={view === "paie"} onClick={() => { setSidebarOuverte(false); setView("paie"); }} />}
+          {availableViews.includes("erp") && (estDirectionGenerale || session.user.erp_actif) && <NavItem label="ERP (notes, frais)" active={view === "erp"} onClick={() => { setSidebarOuverte(false); setView("erp"); }} />}
           {availableViews.includes("emploi") && <NavItem label="Emploi du temps" active={view === "emploi"} onClick={() => { setSidebarOuverte(false); setView("emploi"); }} />}
           {availableViews.includes("rapports") && <NavItem label="Rapports" active={view === "rapports"} onClick={() => { setSidebarOuverte(false); setView("rapports"); }} />}
           {availableViews.includes("notif") && <NavItem label="Notifications parents" active={view === "notif"} onClick={() => { setSidebarOuverte(false); setView("notif"); }} />}
@@ -2305,6 +2319,22 @@ function App({ session, onLogout }) {
                   Total à payer : {payeEnseignants.reduce((s, e) => s + (e.montant_a_payer || 0), 0).toLocaleString("fr-FR")} F
                 </div>
               )}
+            </Card>
+          </div>
+        )}
+
+        {view === "erp" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Module ERP</h1>
+            <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Notes, bulletins et frais de scolarité — module optionnel séparé de l'abonnement de base.</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+              <button onClick={() => setSousOngletErp("notes")} style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 9, border: `1px solid ${sousOngletErp === "notes" ? COLORS.marker : COLORS.line}`, background: sousOngletErp === "notes" ? "rgba(217,164,65,0.14)" : "transparent", color: sousOngletErp === "notes" ? COLORS.marker : COLORS.craieDim, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>📝 Notes et bulletins</button>
+              <button onClick={() => setSousOngletErp("frais")} style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 9, border: `1px solid ${sousOngletErp === "frais" ? COLORS.marker : COLORS.line}`, background: sousOngletErp === "frais" ? "rgba(217,164,65,0.14)" : "transparent", color: sousOngletErp === "frais" ? COLORS.marker : COLORS.craieDim, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>💰 Frais de scolarité</button>
+            </div>
+            <Card>
+              <div style={{ padding: 30, textAlign: "center", color: COLORS.craieDim, fontSize: 13 }}>
+                {"notes" === sousOngletErp ? "Le module \"Notes et bulletins\" arrive dans une prochaine mise à jour." : "Le module \"Frais de scolarité\" arrive dans une prochaine mise à jour."}
+              </div>
             </Card>
           </div>
         )}
@@ -2894,6 +2924,9 @@ function App({ session, onLogout }) {
                         {e.suspendue ? "🔓 Rouvrir l'école" : "🔒 Fermer (en attente de paiement)"}
                       </Button>
                       {e.suspendue && <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.alert, background: COLORS.alertBg, borderRadius: 6, padding: "6px 10px" }}>⛔ École fermée manuellement</span>}
+                      <Button small variant={e.erp_actif ? "primary" : "ghost"} onClick={() => basculerErpEcole(e)}>
+                        {e.erp_actif ? "🧩 Module ERP activé" : "🧩 Activer le module ERP"}
+                      </Button>
                     </div>
                   )}
                   <div style={{ padding: "0 18px 14px 18px", display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap", fontSize: 11.5 }}>

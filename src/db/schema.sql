@@ -381,6 +381,12 @@ ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS suspendue BOOLEAN NOT NULL DEFAULT f
 -- Références légales de l'école, affichées en bas de page des documents imprimés.
 ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS registre_commerce TEXT;
 
+-- Module ERP (notes/bulletins + frais de scolarité) — option payante séparée,
+-- activée établissement par établissement par le Super-administrateur. Tant
+-- que ce drapeau est à false, les rubriques et routes de ce module restent
+-- invisibles/inaccessibles pour l'établissement concerné.
+ALTER TABLE ecoles ADD COLUMN IF NOT EXISTS erp_actif BOOLEAN NOT NULL DEFAULT false;
+
 -- --------------------------------------------------------------------------
 -- Paiements de renouvellement d'abonnement (Orange Money) — chaque tentative
 -- de paiement est enregistrée ici, avec son statut. La date de fin

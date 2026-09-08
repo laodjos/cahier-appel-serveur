@@ -22,9 +22,10 @@ router.post("/login", async (req, res) => {
   // Un compte rattaché à une école (donc pas le Super-administrateur) ne peut plus
   // se connecter une fois la date de fin d'utilisation de son établissement dépassée
   // — le Super-administrateur doit d'abord lui (re)assigner une nouvelle année scolaire.
+  let ecoleErpActif = false;
   if (user.role !== "super_admin" && user.ecole_id) {
     const { rows: ecoleRows } = await pool.query(
-      "SELECT date_fin_utilisation, suspendue FROM ecoles WHERE id = $1", [user.ecole_id]
+      "SELECT date_fin_utilisation, suspendue, erp_actif FROM ecoles WHERE id = $1", [user.ecole_id]
     );
     if (ecoleRows[0]?.suspendue) {
       return res.status(403).json({
@@ -39,6 +40,7 @@ router.post("/login", async (req, res) => {
         error: `Accès suspendu : l'année scolaire de votre établissement s'est terminée le ${new Date(dateFin).toLocaleDateString("fr-FR")}. Contactez l'administrateur du système pour renouveler l'accès.`,
       });
     }
+    ecoleErpActif = !!ecoleRows[0]?.erp_actif;
   }
 
   const token = jwt.sign(
@@ -47,7 +49,7 @@ router.post("/login", async (req, res) => {
     { expiresIn: process.env.JWT_EXPIRES_IN || "12h" }
   );
 
-  res.json({ token, user: { id: user.id, nom: user.nom, role: user.role, ecole_id: user.ecole_id } });
+  res.json({ token, user: { id: user.id, nom: user.nom, role: user.role, ecole_id: user.ecole_id, erp_actif: ecoleErpActif } });
 });
 
 module.exports = router;
