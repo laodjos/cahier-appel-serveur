@@ -29,7 +29,11 @@ router.get("/", async (req, res) => {
     const { rows } = await pool.query("SELECT * FROM ecoles WHERE id = $1", [req.user.ecole_id]);
     return res.json(rows);
   }
-  const { rows } = await pool.query("SELECT * FROM ecoles ORDER BY created_at DESC");
+  const { rows } = await pool.query(
+    `SELECT e.*, COUNT(u.id)::int AS nombre_comptes
+     FROM ecoles e LEFT JOIN users u ON u.ecole_id = e.id
+     GROUP BY e.id ORDER BY e.created_at DESC`
+  );
   res.json(rows);
 });
 

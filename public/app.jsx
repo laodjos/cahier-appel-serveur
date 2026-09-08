@@ -507,6 +507,7 @@ function App({ session, onLogout }) {
   const [editingEcoleId, setEditingEcoleId] = useState(null);
   const [newEcole, setNewEcole] = useState({ nom: "", adresse: "", ville: "", telephone: "", annee_scolaire: "", active: false, email: "", registre_commerce: "" });
   const [horairesEdits, setHorairesEdits] = useState({});
+  const [ecolesDepliees, setEcolesDepliees] = useState({});
   const [matieresListe, setMatieresListe] = useState([]);
   const [nouvelleMatiere, setNouvelleMatiere] = useState("");
   const [nouvelleMatiereCycle, setNouvelleMatiereCycle] = useState("");
@@ -3488,7 +3489,8 @@ function App({ session, onLogout }) {
               {ecoles.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucune école enregistrée pour l'instant.</div>}
               {ecoles.map((e, i) => (
                 <div key={e.id} style={{ borderBottom: i < ecoles.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 18px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 18px", cursor: "pointer" }} onClick={() => setEcolesDepliees((v) => ({ ...v, [e.id]: !v[e.id] }))}>
+                    <Icon path={P.chevronRight} size={13} color={COLORS.craieDim} style={{ transform: ecolesDepliees[e.id] ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }} />
                     {e.logo_url ? (
                       <img src={`${session.baseUrl.replace(/\/api$/, "")}${e.logo_url}`} style={{ width: 40, height: 40, borderRadius: 8, objectFit: "contain", background: "#fff", border: `1px solid ${COLORS.line}`, flexShrink: 0 }} />
                     ) : (
@@ -3500,12 +3502,17 @@ function App({ session, onLogout }) {
                         {e.active && <span style={{ fontSize: 10, background: COLORS.successBg, color: COLORS.success, borderRadius: 999, padding: "2px 8px", fontWeight: 700 }}>ACTIVE</span>}
                       </div>
                       <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginTop: 2 }}>
-                        {[e.ville, e.adresse, e.telephone, e.annee_scolaire].filter(Boolean).join(" · ") || "Aucun détail renseigné"}
+                        {[e.ville, e.telephone].filter(Boolean).join(" · ") || "Aucun détail renseigné"}
                       </div>
                     </div>
-                    <button onClick={() => commencerEditionEcole(e)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.settings} size={14} /></button>
-                    <button onClick={() => supprimerEcole(e.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
+                    <span style={{ fontSize: 11, color: COLORS.craieDim, background: "rgba(246,242,231,0.06)", borderRadius: 999, padding: "4px 10px", flexShrink: 0 }}>
+                      {e.nombre_comptes} compte{e.nombre_comptes > 1 ? "s" : ""}
+                    </span>
+                    <button onClick={(ev) => { ev.stopPropagation(); commencerEditionEcole(e); }} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.settings} size={14} /></button>
+                    <button onClick={(ev) => { ev.stopPropagation(); supprimerEcole(e.id); }} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
                   </div>
+                  {ecolesDepliees[e.id] && (
+                  <React.Fragment>
                   <div style={{ padding: "0 18px 12px 18px", display: "flex", alignItems: "center", gap: 16, fontSize: 11.5, flexWrap: "wrap" }}>
                     <label style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", color: COLORS.craie }}>
                       <Icon path={P.upload} size={13} />
@@ -3568,6 +3575,8 @@ function App({ session, onLogout }) {
                   <div style={{ padding: "0 18px 12px 18px", fontSize: 10.5, color: COLORS.craieDim }}>
                     La récré "matin" s'applique aux classes en journée normale ou en vacation matin ; celle "après-midi" (optionnelle) s'applique aux classes en journée normale ou en vacation après-midi — utile pour une école en double vacation.
                   </div>
+                  </React.Fragment>
+                  )}
                 </div>
               ))}
             </Card>
