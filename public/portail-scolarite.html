@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>Scolarité — Cahier d'Appel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #243B32; color: #F6F2E7; font-family: -apple-system, "IBM Plex Sans", sans-serif;
+    padding: 20px;
+  }
+  .carte {
+    width: 100%; max-width: 400px; background: #182B24; border: 1px solid rgba(246,242,231,0.12);
+    border-radius: 16px; padding: 26px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sous { font-size: 13px; color: rgba(246,242,231,0.6); margin-bottom: 20px; }
+  .ligne { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(246,242,231,0.1); font-size: 14px; }
+  .solde { font-size: 26px; font-weight: 700; text-align: center; margin: 18px 0 6px; }
+  .statut { text-align: center; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 999px; display: inline-block; margin: 0 auto 18px; }
+  .statut.ok { background: #263E33; color: #5E9C79; }
+  .statut.du { background: #3E2A24; color: #C4633F; }
+  .centre { text-align: center; }
+  input {
+    width: 100%; padding: 12px; border-radius: 9px; border: 1px solid rgba(246,242,231,0.15);
+    background: #243B32; color: #F6F2E7; font-size: 16px; margin-bottom: 12px;
+  }
+  button {
+    width: 100%; padding: 13px; border-radius: 9px; border: none; background: #D9A441;
+    color: #182B24; font-weight: 700; font-size: 15px; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .erreur { color: #C4633F; font-size: 13px; margin-top: 10px; text-align: center; }
+  .chargement { text-align: center; padding: 30px 0; color: rgba(246,242,231,0.6); }
+</style>
+</head>
+<body>
+<div class="carte" id="carte">
+  <div class="chargement">Chargement…</div>
+</div>
+
+<script>
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const eleveId = params.get("eleve");
+  const carte = document.getElementById("carte");
+
+  if (!eleveId) {
+    carte.innerHTML = '<div class="erreur">Lien invalide — identifiant d\'élève manquant.</div>';
+    return;
+  }
+
+  fetch(`/api/public/scolarite/${eleveId}`)
+    .then((r) => { if (!r.ok) throw new Error("Introuvable"); return r.json(); })
+    .then((data) => {
+      const formatMontant = (n) => Number(n).toLocaleString("fr-FR") + " F";
+
+      if (data.montant_total == null) {
+        carte.innerHTML = `
+          <h1>${data.eleve.nom}</h1>
+          <div class="sous">${data.eleve.classe_nom}</div>
+          <div class="centre" style="padding:20px 0; color:rgba(246,242,231,0.6);">Aucun montant de scolarité n'a encore été défini pour cette classe.</div>
+        `;
+        return;
+      }
+
+      const aJour = data.a_jour;
+      carte.innerHTML = `
+        <h1>${data.eleve.nom}</h1>
+        <div class="sous">${data.eleve.classe_nom}</div>
+        <div class="ligne"><span>Total scolarité</span><strong>${formatMontant(data.montant_total)}</strong></div>
+        <div class="ligne"><span>Déjà payé</span><strong>${formatMontant(data.montant_paye)}</strong></div>
+        <div class="solde">${formatMontant(Math.max(0, data.solde))}</div>
+        <div class="centre"><span class="statut ${aJour ? "ok" : "du"}">${aJour ? "✔ À jour" : "Reste à payer"}</span></div>
+        ${!aJour ? `
+          <div style="margin-top:14px;">
+            <input type="number" id="montant" value="${data.solde}" min="1" max="${data.solde}" placeholder="Montant à payer (F CFA)" />
+            <button id="payer">Payer maintenant</button>
+            <div class="erreur" id="erreur" style="display:none;"></div>
+          </div>
+        ` : ""}
+      `;
+
+      const boutonPayer = document.getElementById("payer");
+      if (boutonPayer) {
+        boutonPayer.addEventListener("click", function () {
+          const montant = document.getElementById("montant").value;
+          const erreurEl = document.getElementById("erreur");
+          erreurEl.style.display = "none";
+          boutonPayer.disabled = true;
+          boutonPayer.textContent = "Un instant…";
+          fetch(`/api/public/scolarite/${eleveId}/payer`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ montant }),
+          })
+            .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+            .then(({ ok, d }) => {
+              if (!ok) throw new Error(d.error || "Erreur inconnue");
+              window.location.href = d.payment_url;
+            })
+            .catch((err) => {
+              erreurEl.textContent = err.message;
+              erreurEl.style.display = "block";
+              boutonPayer.disabled = false;
+              boutonPayer.textContent = "Payer maintenant";
+            });
+        });
+      }
+    })
+    .catch(() => {
+      carte.innerHTML = '<div class="erreur">Élève introuvable, ou lien expiré.</div>';
+    });
+})();
+</script>
+</body>
+</html>

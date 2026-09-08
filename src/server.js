@@ -29,6 +29,7 @@ const notesRoutes = require("./routes/notes");
 const bulletinsRoutes = require("./routes/bulletins");
 const fraisScolariteRoutes = require("./routes/fraisScolarite");
 const paiementsScolariteRoutes = require("./routes/paiementsScolarite");
+const publicRoutes = require("./routes/public");
 
 const { demarrerPollingLecteurs, demarrerEnvoiNotifications, demarrerRappelsCoursEnseignants } = require("./jobs/scheduler");
 
@@ -91,6 +92,7 @@ app.use("/api/notes", notesRoutes);
 app.use("/api/bulletins", bulletinsRoutes);
 app.use("/api/frais-scolarite", fraisScolariteRoutes);
 app.use("/api/paiements-scolarite", paiementsScolariteRoutes);
+app.use("/api/public", publicRoutes);
 
 // Gestion d'erreurs centralisée
 app.use((err, req, res, next) => {

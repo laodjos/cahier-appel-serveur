@@ -278,8 +278,8 @@ function LoginScreen({ onConnected }) {
    ============================================================ */
 const ROLE_LABELS = { super_admin: "Super-administrateur", direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant général" };
 const NAV_BY_ROLE = {
-  super_admin: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "erp", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
-  direction: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "erp", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
+  super_admin: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "erp", "caisse", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
+  direction: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "erp", "caisse", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
   enseignant: ["appel", "students", "emploi", "erp"],
   surveillant: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "incidents"],
 };
@@ -582,11 +582,11 @@ function App({ session, onLogout }) {
       if (availableViews.includes("enseignants")) api("/matieres").then(siEcoleInchangee(setMatieresListe)).catch(catchErr);
       if (availableViews.includes("erp") && matieresListe.length === 0) api("/matieres").then(siEcoleInchangee(setMatieresListe)).catch(catchErr);
       if (availableViews.includes("enseignants")) api("/volumes-horaires").then(siEcoleInchangee(setVolumesHoraires)).catch(catchErr);
-      if (view === "erp" && sousOngletErp === "notes") {
+      if (view === "erp") {
         api("/periodes-evaluation").then(siEcoleInchangee(setPeriodesEvaluation)).catch(catchErr);
         api("/coefficients-matieres").then(siEcoleInchangee(setCoefficientsMatieres)).catch(catchErr);
       }
-      if (view === "erp" && sousOngletErp === "frais") {
+      if (view === "caisse") {
         api("/frais-scolarite").then(siEcoleInchangee(setFraisScolarite)).catch(catchErr);
       }
       if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
@@ -1700,6 +1700,74 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function imprimerRecuScolarite(eleveId, data) {
+    try {
+      const eleve = students.find((s) => s.id === eleveId);
+      const [{ image: imageQr }, { image: imageBarcode }] = await Promise.all([
+        api(`/frais-scolarite/${eleveId}/qr-portail`),
+        api(`/students/${eleveId}/barcode`),
+      ]);
+      const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+      const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+      const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
+
+      const w = window.open("", "_blank", "width=600,height=750");
+      w.document.write(`
+        <html><head><title>Reçu — ${eleve?.nom || ""}</title>
+        <style>
+          @page { size: A5 portrait; margin: 12mm; }
+          body { font-family: Arial, sans-serif; color: #222; font-size: 13px; }
+          h1 { font-size: 17px; margin-bottom: 2px; }
+          .sous-titre { font-size: 11.5px; color: #666; margin-bottom: 14px; }
+          .entete { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 14px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+          td { padding: 6px 4px; border-bottom: 1px solid #ddd; }
+          .solde-restant { font-size: 16px; font-weight: bold; }
+          .codes { display: flex; justify-content: space-around; align-items: center; margin: 16px 0; text-align: center; }
+          .codes div { font-size: 9.5px; color: #888; margin-top: 4px; }
+          .codes img.qr { width: 90px; height: 90px; }
+          .codes img.barcode { height: 45px; }
+        </style></head>
+        <body onload="window.print()">
+          ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:42px;margin-bottom:6px;" />` : ""}
+          <div class="entete">
+            <div>
+              <h1>Reçu de scolarité</h1>
+              <div class="sous-titre">${ecoleNom}</div>
+            </div>
+            <div style="text-align:right">
+              <strong>${eleve?.nom || ""}</strong>
+              <div class="sous-titre">${eleve?.classe_nom || ""} · Mat. ${eleve?.matricule || ""}</div>
+              <div class="sous-titre">${new Date().toLocaleDateString("fr-FR")}</div>
+            </div>
+          </div>
+          <table>
+            <tr><td>Total scolarité</td><td style="text-align:right">${data.montant_total != null ? data.montant_total.toLocaleString("fr-FR") + " F" : "—"}</td></tr>
+            <tr><td>Déjà payé</td><td style="text-align:right">${data.montant_paye.toLocaleString("fr-FR")} F</td></tr>
+            <tr><td class="solde-restant">Reste à payer</td><td style="text-align:right" class="solde-restant">${data.solde != null ? data.solde.toLocaleString("fr-FR") + " F" : "—"}</td></tr>
+          </table>
+          <div class="codes">
+            <div>
+              <img class="qr" src="${imageQr}" />
+              <div>Scanner pour consulter<br/>le solde et payer en ligne</div>
+            </div>
+            <div>
+              <img class="barcode" src="${imageBarcode}" />
+              <div>Code élève (caisse)</div>
+            </div>
+          </div>
+          <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:8px;">
+            <div style="font-size:9.5px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:20mm;" />` : ""}
+          </div>
+        </body></html>
+      `);
+      w.document.close();
+    } catch (e) { catchErr(e); }
+  }
+
   useEffect(() => {
     if (!soldeClasseId) { setSoldeClasseData(null); return; }
     api(`/frais-scolarite/solde-classe/${soldeClasseId}`).then(setSoldeClasseData).catch(catchErr);
@@ -1980,7 +2048,8 @@ function App({ session, onLogout }) {
           {availableViews.includes("parents") && <NavItem label="Rattachement parents" active={view === "parents"} onClick={() => { setSidebarOuverte(false); setView("parents"); }} />}
           {availableViews.includes("absenteisme") && <NavItem label="Absentéisme" active={view === "absenteisme"} onClick={() => { setSidebarOuverte(false); setView("absenteisme"); }} count={absenteisme.length} badge={absenteisme.length > 0} />}
           {availableViews.includes("paie") && <NavItem label="Paie" active={view === "paie"} onClick={() => { setSidebarOuverte(false); setView("paie"); }} />}
-          {availableViews.includes("erp") && (estDirectionGenerale || session.user.erp_actif) && <NavItem label="ERP (notes, frais)" active={view === "erp"} onClick={() => { setSidebarOuverte(false); setView("erp"); }} />}
+          {availableViews.includes("erp") && (estDirectionGenerale || session.user.erp_actif) && <NavItem label="ERP (notes)" active={view === "erp"} onClick={() => { setSidebarOuverte(false); setView("erp"); }} />}
+          {availableViews.includes("caisse") && (estDirectionGenerale || session.user.erp_actif) && <NavItem label="Caisse" active={view === "caisse"} onClick={() => { setSidebarOuverte(false); setView("caisse"); }} />}
           {availableViews.includes("emploi") && <NavItem label="Emploi du temps" active={view === "emploi"} onClick={() => { setSidebarOuverte(false); setView("emploi"); }} />}
           {availableViews.includes("rapports") && <NavItem label="Rapports" active={view === "rapports"} onClick={() => { setSidebarOuverte(false); setView("rapports"); }} />}
           {availableViews.includes("notif") && <NavItem label="Notifications parents" active={view === "notif"} onClick={() => { setSidebarOuverte(false); setView("notif"); }} />}
@@ -2522,101 +2591,9 @@ function App({ session, onLogout }) {
 
         {view === "erp" && (
           <div>
-            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Module ERP</h1>
-            <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Notes, bulletins et frais de scolarité — module optionnel séparé de l'abonnement de base.</div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-              <button onClick={() => setSousOngletErp("notes")} style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 9, border: `1px solid ${sousOngletErp === "notes" ? COLORS.marker : COLORS.line}`, background: sousOngletErp === "notes" ? "rgba(217,164,65,0.14)" : "transparent", color: sousOngletErp === "notes" ? COLORS.marker : COLORS.craieDim, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>📝 Notes et bulletins</button>
-              <button onClick={() => setSousOngletErp("frais")} style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 9, border: `1px solid ${sousOngletErp === "frais" ? COLORS.marker : COLORS.line}`, background: sousOngletErp === "frais" ? "rgba(217,164,65,0.14)" : "transparent", color: sousOngletErp === "frais" ? COLORS.marker : COLORS.craieDim, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>💰 Frais de scolarité</button>
-            </div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Notes et bulletins</h1>
+            <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Module optionnel séparé de l'abonnement de base.</div>
 
-            {sousOngletErp === "frais" && (
-              <React.Fragment>
-                {(role === "direction" || role === "super_admin") && (
-                  <Card title="Frais de scolarité par niveau" style={{ marginBottom: 20 }}>
-                    {fraisScolarite.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun montant défini pour l'instant.</div>}
-                    {fraisScolarite.map((f, i) => (
-                      <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < fraisScolarite.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
-                        <span style={{ fontWeight: 500, flex: 1 }}>{f.classe_nom || f.niveau}</span>
-                        <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>{f.libelle}</span>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.marker, width: 110, textAlign: "right" }}>{Number(f.montant_total).toLocaleString("fr-FR")} F</span>
-                        <button onClick={() => supprimerFraisScolarite(f.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
-                      </div>
-                    ))}
-                    <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}` }}>
-                      <Field label="Niveau">
-                        <select style={inputStyle} value={nouveauFrais.niveau} onChange={(e) => setNouveauFrais((v) => ({ ...v, niveau: e.target.value }))}>
-                          <option value="">— Choisir —</option>
-                          {["6ème", "5ème", "4ème", "3ème", "2nde", "1ère", "Terminale"].map((n) => <option key={n} value={n}>{n}</option>)}
-                        </select>
-                      </Field>
-                      <Field label="Libellé"><input style={inputStyle} value={nouveauFrais.libelle} onChange={(e) => setNouveauFrais((v) => ({ ...v, libelle: e.target.value }))} /></Field>
-                      <Field label="Montant annuel (F CFA)"><input type="number" style={inputStyle} value={nouveauFrais.montant_total} onChange={(e) => setNouveauFrais((v) => ({ ...v, montant_total: e.target.value }))} /></Field>
-                      <Button small icon={P.plus} onClick={creerFraisScolarite}>Ajouter</Button>
-                    </div>
-                  </Card>
-                )}
-
-                <Card title="Solde d'un élève" style={{ marginBottom: 20 }}>
-                  <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
-                    <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={soldeEleveId} onChange={(e) => { setSoldeEleveId(e.target.value); setSoldeData(null); }}>
-                      <option value="">— Choisir un élève —</option>
-                      {students.map((s) => <option key={s.id} value={s.id}>{s.nom} ({s.classe_nom})</option>)}
-                    </select>
-                    <Button small onClick={chargerSoldeEleve}>Afficher</Button>
-                  </div>
-                  {soldeData && (
-                    <div style={{ padding: 18 }}>
-                      {soldeData.montant_total == null ? (
-                        <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucun montant de scolarité défini pour le niveau de cet élève.</div>
-                      ) : (
-                        <React.Fragment>
-                          <div style={{ display: "flex", gap: 20, marginBottom: 16, flexWrap: "wrap" }}>
-                            <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Total dû</div><div style={{ fontSize: 16, fontWeight: 600 }}>{soldeData.montant_total.toLocaleString("fr-FR")} F</div></div>
-                            <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Payé</div><div style={{ fontSize: 16, fontWeight: 600, color: COLORS.success }}>{soldeData.montant_paye.toLocaleString("fr-FR")} F</div></div>
-                            <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Reste à payer</div><div style={{ fontSize: 16, fontWeight: 700, color: soldeData.a_jour ? COLORS.success : COLORS.alert }}>{soldeData.solde.toLocaleString("fr-FR")} F</div></div>
-                            <span style={{ alignSelf: "center", fontSize: 11, fontWeight: 700, color: soldeData.a_jour ? COLORS.success : COLORS.alert, background: soldeData.a_jour ? COLORS.successBg : COLORS.alertBg, borderRadius: 6, padding: "6px 10px" }}>
-                              {soldeData.a_jour ? "✔ À jour" : "⚠ Solde restant"}
-                            </span>
-                          </div>
-                          {(role === "direction" || role === "super_admin") && (
-                            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", paddingTop: 14, borderTop: `1px solid ${COLORS.line}` }}>
-                              <Field label="Montant (F CFA)"><input type="number" style={{ ...inputStyle, width: 130 }} value={montantPaiement} onChange={(e) => setMontantPaiement(e.target.value)} /></Field>
-                              <Button small variant="ghost" onClick={enregistrerPaiementManuel}>Encaisser en espèces</Button>
-                              <Button small icon={P.check} onClick={genererLienPaiementScolarite}>Générer un lien de paiement</Button>
-                            </div>
-                          )}
-                        </React.Fragment>
-                      )}
-                    </div>
-                  )}
-                </Card>
-
-                <Card title="Suivi d'une classe">
-                  <div style={{ padding: 14, borderBottom: `1px solid ${COLORS.line}` }}>
-                    <SelectClasseParNiveau classes={classes} value={soldeClasseId} onChange={(e) => setSoldeClasseId(e.target.value)} style={inputStyle} />
-                  </div>
-                  {!soldeClasseData && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Choisis une classe pour voir le solde de chaque élève.</div>}
-                  {soldeClasseData && soldeClasseData.eleves.map((r, i) => (
-                    <div key={r.eleve.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < soldeClasseData.eleves.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
-                      <span style={{ flex: 1 }}>{r.eleve.nom}</span>
-                      {r.montant_total == null ? (
-                        <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>Aucun montant défini</span>
-                      ) : (
-                        <React.Fragment>
-                          <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>{r.montant_paye.toLocaleString("fr-FR")} / {r.montant_total.toLocaleString("fr-FR")} F</span>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: r.a_jour ? COLORS.success : COLORS.alert, background: r.a_jour ? COLORS.successBg : COLORS.alertBg, borderRadius: 6, padding: "4px 9px" }}>
-                            {r.a_jour ? "À jour" : `${r.solde.toLocaleString("fr-FR")} F restant`}
-                          </span>
-                        </React.Fragment>
-                      )}
-                    </div>
-                  ))}
-                </Card>
-              </React.Fragment>
-            )}
-
-            {sousOngletErp === "notes" && (
-              <React.Fragment>
                 {(role === "direction" || role === "super_admin") && (
                   <Card title="Périodes d'évaluation (semestres ou trimestres)" style={{ marginBottom: 20 }}>
                     <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
@@ -2760,10 +2737,98 @@ function App({ session, onLogout }) {
                   </div>
                   <div style={{ padding: "0 18px 14px 18px", fontSize: 11, color: COLORS.craieDim }}>Ouvre un onglet d'impression par élève — autorise les pop-ups si le navigateur les bloque.</div>
                 </Card>
-              </React.Fragment>
-            )}
           </div>
         )}
+
+        {view === "caisse" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Caisse</h1>
+            <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Frais de scolarité et paiements — visible uniquement par la Direction.</div>
+                {(role === "direction" || role === "super_admin") && (
+                  <Card title="Frais de scolarité par niveau" style={{ marginBottom: 20 }}>
+                    {fraisScolarite.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun montant défini pour l'instant.</div>}
+                    {fraisScolarite.map((f, i) => (
+                      <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < fraisScolarite.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                        <span style={{ fontWeight: 500, flex: 1 }}>{f.classe_nom || f.niveau}</span>
+                        <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>{f.libelle}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.marker, width: 110, textAlign: "right" }}>{Number(f.montant_total).toLocaleString("fr-FR")} F</span>
+                        <button onClick={() => supprimerFraisScolarite(f.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                      </div>
+                    ))}
+                    <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}` }}>
+                      <Field label="Niveau">
+                        <select style={inputStyle} value={nouveauFrais.niveau} onChange={(e) => setNouveauFrais((v) => ({ ...v, niveau: e.target.value }))}>
+                          <option value="">— Choisir —</option>
+                          {["6ème", "5ème", "4ème", "3ème", "2nde", "1ère", "Terminale"].map((n) => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </Field>
+                      <Field label="Libellé"><input style={inputStyle} value={nouveauFrais.libelle} onChange={(e) => setNouveauFrais((v) => ({ ...v, libelle: e.target.value }))} /></Field>
+                      <Field label="Montant annuel (F CFA)"><input type="number" style={inputStyle} value={nouveauFrais.montant_total} onChange={(e) => setNouveauFrais((v) => ({ ...v, montant_total: e.target.value }))} /></Field>
+                      <Button small icon={P.plus} onClick={creerFraisScolarite}>Ajouter</Button>
+                    </div>
+                  </Card>
+                )}
+
+                <Card title="Solde d'un élève" style={{ marginBottom: 20 }}>
+                  <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
+                    <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={soldeEleveId} onChange={(e) => { setSoldeEleveId(e.target.value); setSoldeData(null); }}>
+                      <option value="">— Choisir un élève —</option>
+                      {students.map((s) => <option key={s.id} value={s.id}>{s.nom} ({s.classe_nom})</option>)}
+                    </select>
+                    <Button small onClick={chargerSoldeEleve}>Afficher</Button>
+                  </div>
+                  {soldeData && (
+                    <div style={{ padding: 18 }}>
+                      {soldeData.montant_total == null ? (
+                        <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucun montant de scolarité défini pour le niveau de cet élève.</div>
+                      ) : (
+                        <React.Fragment>
+                          <div style={{ display: "flex", gap: 20, marginBottom: 16, flexWrap: "wrap" }}>
+                            <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Total dû</div><div style={{ fontSize: 16, fontWeight: 600 }}>{soldeData.montant_total.toLocaleString("fr-FR")} F</div></div>
+                            <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Payé</div><div style={{ fontSize: 16, fontWeight: 600, color: COLORS.success }}>{soldeData.montant_paye.toLocaleString("fr-FR")} F</div></div>
+                            <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Reste à payer</div><div style={{ fontSize: 16, fontWeight: 700, color: soldeData.a_jour ? COLORS.success : COLORS.alert }}>{soldeData.solde.toLocaleString("fr-FR")} F</div></div>
+                            <span style={{ alignSelf: "center", fontSize: 11, fontWeight: 700, color: soldeData.a_jour ? COLORS.success : COLORS.alert, background: soldeData.a_jour ? COLORS.successBg : COLORS.alertBg, borderRadius: 6, padding: "6px 10px" }}>
+                              {soldeData.a_jour ? "✔ À jour" : "⚠ Solde restant"}
+                            </span>
+                          </div>
+                          {(role === "direction" || role === "super_admin") && (
+                            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", paddingTop: 14, borderTop: `1px solid ${COLORS.line}` }}>
+                              <Field label="Montant (F CFA)"><input type="number" style={{ ...inputStyle, width: 130 }} value={montantPaiement} onChange={(e) => setMontantPaiement(e.target.value)} /></Field>
+                              <Button small variant="ghost" onClick={enregistrerPaiementManuel}>Encaisser en espèces</Button>
+                              <Button small icon={P.check} onClick={genererLienPaiementScolarite}>Générer un lien de paiement</Button>
+                              <Button small variant="ghost" icon={P.scan} onClick={() => imprimerRecuScolarite(soldeEleveId, soldeData)}>Imprimer le reçu</Button>
+                            </div>
+                          )}
+                        </React.Fragment>
+                      )}
+                    </div>
+                  )}
+                </Card>
+
+                <Card title="Suivi d'une classe">
+                  <div style={{ padding: 14, borderBottom: `1px solid ${COLORS.line}` }}>
+                    <SelectClasseParNiveau classes={classes} value={soldeClasseId} onChange={(e) => setSoldeClasseId(e.target.value)} style={inputStyle} />
+                  </div>
+                  {!soldeClasseData && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Choisis une classe pour voir le solde de chaque élève.</div>}
+                  {soldeClasseData && soldeClasseData.eleves.map((r, i) => (
+                    <div key={r.eleve.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < soldeClasseData.eleves.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                      <span style={{ flex: 1 }}>{r.eleve.nom}</span>
+                      {r.montant_total == null ? (
+                        <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>Aucun montant défini</span>
+                      ) : (
+                        <React.Fragment>
+                          <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>{r.montant_paye.toLocaleString("fr-FR")} / {r.montant_total.toLocaleString("fr-FR")} F</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: r.a_jour ? COLORS.success : COLORS.alert, background: r.a_jour ? COLORS.successBg : COLORS.alertBg, borderRadius: 6, padding: "4px 9px" }}>
+                            {r.a_jour ? "À jour" : `${r.solde.toLocaleString("fr-FR")} F restant`}
+                          </span>
+                        </React.Fragment>
+                      )}
+                    </div>
+                  ))}
+                </Card>
+          </div>
+        )}
+
 
         {view === "emploi" && (
           <div>

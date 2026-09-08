@@ -6,6 +6,7 @@ const path = require("path");
 const { pool } = require("../config/db");
 const { authRequired, requireRole } = require("../middleware/auth");
 const { genererJetonEleve, genererImageQr } = require("../services/qrService");
+const { genererImageCodeBarres } = require("../services/barcodeService");
 const { UPLOAD_DIR } = require("../config/uploadDir");
 
 const router = express.Router();
@@ -151,6 +152,16 @@ router.get("/:id/badge", async (req, res) => {
   const { rows } = await pool.query("SELECT qr_token FROM students WHERE id = $1", [req.params.id]);
   if (!rows[0]?.qr_token) return res.status(404).json({ error: "Élève ou badge introuvable." });
   const image = await genererImageQr(rows[0].qr_token);
+  res.json({ image });
+});
+
+// GET /api/students/:id/barcode -> image PNG (data URL) du code-barres du
+// matricule, pour lecture rapide à la caisse avec une douchette standard.
+router.get("/:id/barcode", async (req, res) => {
+  const { genererImageCodeBarres } = require("../services/barcodeService");
+  const { rows } = await pool.query("SELECT matricule FROM students WHERE id = $1", [req.params.id]);
+  if (!rows[0]?.matricule) return res.status(404).json({ error: "Élève introuvable." });
+  const image = await genererImageCodeBarres(rows[0].matricule);
   res.json({ image });
 });
 

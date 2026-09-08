@@ -1,6 +1,7 @@
 const express = require("express");
 const { pool } = require("../config/db");
 const { authRequired, requireRole, requireErpActif } = require("../middleware/auth");
+const { genererImageQr } = require("../services/qrService");
 
 const router = express.Router();
 router.use(authRequired);
@@ -88,6 +89,15 @@ router.get("/solde-classe/:classeId", async (req, res) => {
     resultats.push({ eleve: { id: e.id, nom: e.nom }, ...solde });
   }
   res.json({ classe: { id: classe.id, nom: classe.nom }, eleves: resultats });
+});
+
+// GET /api/frais-scolarite/:eleveId/qr-portail — QR code encodant le lien vers
+// le portail public de consultation/paiement du solde, à imprimer sur le reçu.
+router.get("/:eleveId/qr-portail", async (req, res) => {
+  const baseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get("host")}`;
+  const lienPortail = `${baseUrl}/portail-scolarite.html?eleve=${req.params.eleveId}`;
+  const image = await genererImageQr(lienPortail);
+  res.json({ image, lien: lienPortail });
 });
 
 module.exports = router;
