@@ -1647,6 +1647,65 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  function imprimerBulletinScolaire(data) {
+    if (!data) return;
+    const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+    const ecoleNom = ecoleActive.nom || "";
+    const ecoleLogoUrl = ecoleActive.logo_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.logo_url}` : null;
+    const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
+    const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
+    const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
+    const periodeNom = periodesEvaluation.find((p) => p.id === bulletinPeriodeId)?.nom || "";
+
+    const lignesMatieres = data.details.map((d) => `
+      <tr><td>${d.matiere_nom}</td><td style="text-align:center">${d.coefficient}</td><td style="text-align:right; font-weight:bold;">${d.moyenne} / 20</td></tr>
+    `).join("");
+
+    const w = window.open("", "_blank", "width=700,height=850");
+    w.document.write(`
+      <html><head><title>Bulletin — ${data.eleve.nom}</title>
+      <style>
+        @page { size: A4 portrait; margin: 16mm; }
+        body { font-family: Arial, sans-serif; color: #222; font-size: 13px; }
+        h1 { font-size: 18px; margin-bottom: 2px; }
+        .sous-titre { font-size: 12px; color: #666; margin-bottom: 4px; }
+        .entete { display: flex; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #333; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 7px 8px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: #f0ece0; text-transform: uppercase; font-size: 10.5px; }
+        .synthese { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding: 12px; background: #f0ece0; border-radius: 6px; }
+        .moyenne-generale { font-size: 22px; font-weight: bold; }
+      </style></head>
+      <body onload="window.print()">
+        ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:50px;margin-bottom:8px;" />` : ""}
+        <div class="entete">
+          <div>
+            <h1>Bulletin de notes</h1>
+            <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""}</div>
+          </div>
+          <div style="text-align:right">
+            <div><strong>${data.eleve.nom}</strong></div>
+            <div class="sous-titre">${data.eleve.classe_nom}</div>
+            <div class="sous-titre">${periodeNom}</div>
+          </div>
+        </div>
+        <table>
+          <thead><tr><th>Matière</th><th style="text-align:center">Coefficient</th><th style="text-align:right">Moyenne</th></tr></thead>
+          <tbody>${lignesMatieres || '<tr><td colspan="3">Aucune note enregistrée pour cette période.</td></tr>'}</tbody>
+        </table>
+        <div class="synthese">
+          <div>Rang : ${data.rang ? `${data.rang}${data.rang === 1 ? "er" : "ème"} / ${data.effectif_classe}` : "Non classé"}</div>
+          <div class="moyenne-generale">Moyenne générale : ${data.moyenne_generale != null ? data.moyenne_generale : "—"} / 20</div>
+        </div>
+      <div style="margin-top:30px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:10px;">
+            <div style="font-size:10px; color:#888;">${ecoleReferencesBas}</div>
+            ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:25mm;" />` : ""}
+          </div>
+      </body></html>
+    `);
+    w.document.close();
+  }
+
   async function lancerPaiementRenouvellement() {
     try {
       const res = await api("/paiements/initier", {
@@ -2519,6 +2578,7 @@ function App({ session, onLogout }) {
                       {periodesEvaluation.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
                     </select>
                     <Button small onClick={chargerBulletin}>Afficher</Button>
+                    {bulletinData && <Button small variant="ghost" icon={P.scan} onClick={() => imprimerBulletinScolaire(bulletinData)}>Imprimer</Button>}
                   </div>
                   {bulletinData && (
                     <div style={{ padding: 18 }}>
@@ -2541,6 +2601,26 @@ function App({ session, onLogout }) {
                       ))}
                     </div>
                   )}
+                </Card>
+
+                <Card title="Bulletins de toute une classe (impression groupée)" style={{ marginTop: 20 }}>
+                  <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    <SelectClasseParNiveau classes={classes} value={saisieClasseId} onChange={(e) => setSaisieClasseId(e.target.value)} style={inputStyle} />
+                    <select style={inputStyle} value={bulletinPeriodeId} onChange={(e) => setBulletinPeriodeId(e.target.value)}>
+                      <option value="">— Période —</option>
+                      {periodesEvaluation.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+                    </select>
+                    <Button small variant="ghost" icon={P.scan} onClick={async function () {
+                      if (!saisieClasseId || !bulletinPeriodeId) { setGlobalError("Choisis une classe et une période."); setTimeout(() => setGlobalError(""), 4000); return; }
+                      try {
+                        const donneesClasse = await api(`/bulletins/classe/${saisieClasseId}?periode_id=${bulletinPeriodeId}`);
+                        for (const resultat of donneesClasse.eleves) {
+                          imprimerBulletinScolaire({ eleve: { nom: resultat.eleve.nom, classe_nom: donneesClasse.classe.nom }, ...resultat });
+                        }
+                      } catch (e) { catchErr(e); }
+                    }}>Imprimer les bulletins de la classe</Button>
+                  </div>
+                  <div style={{ padding: "0 18px 14px 18px", fontSize: 11, color: COLORS.craieDim }}>Ouvre un onglet d'impression par élève — autorise les pop-ups si le navigateur les bloque.</div>
                 </Card>
               </React.Fragment>
             )}
