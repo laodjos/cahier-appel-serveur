@@ -276,12 +276,13 @@ function LoginScreen({ onConnected }) {
 /* ============================================================
    Application principale — connectée à l'API
    ============================================================ */
-const ROLE_LABELS = { super_admin: "Super-administrateur", direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant général" };
+const ROLE_LABELS = { super_admin: "Super-administrateur", direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant général", caissier: "Caissier(ère)" };
 const NAV_BY_ROLE = {
   super_admin: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "erp", "caisse", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
   direction: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "erp", "caisse", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
   enseignant: ["appel", "students", "emploi", "erp"],
   surveillant: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "incidents"],
+  caissier: ["caisse"],
 };
 
 function App({ session, onLogout }) {
@@ -482,6 +483,10 @@ function App({ session, onLogout }) {
   const [montantPaiement, setMontantPaiement] = useState("");
   const [soldeClasseId, setSoldeClasseId] = useState(null);
   const [soldeClasseData, setSoldeClasseData] = useState(null);
+  const [nouveauMouvement, setNouveauMouvement] = useState({ type: "entree", categorie: "", libelle: "", montant: "" });
+  const [etatCaisseDebut, setEtatCaisseDebut] = useState(() => new Date().toISOString().slice(0, 10));
+  const [etatCaisseFin, setEtatCaisseFin] = useState(() => new Date().toISOString().slice(0, 10));
+  const [etatCaisseData, setEtatCaisseData] = useState(null);
   const [renouvellementMontant, setRenouvellementMontant] = useState("25000");
   const [renouvellementMois, setRenouvellementMois] = useState("1");
 
@@ -1773,6 +1778,71 @@ function App({ session, onLogout }) {
     api(`/frais-scolarite/solde-classe/${soldeClasseId}`).then(setSoldeClasseData).catch(catchErr);
   }, [soldeClasseId, api]);
 
+  const [mouvementsCaisse, setMouvementsCaisse] = useState([]);
+  useEffect(() => {
+    if (view !== "caisse") return;
+    api(`/caisse/mouvements?debut=${etatCaisseDebut}&fin=${etatCaisseFin}`).then(setMouvementsCaisse).catch(catchErr);
+  }, [view, etatCaisseDebut, etatCaisseFin, api]);
+
+  async function enregistrerMouvementCaisse() {
+    if (!nouveauMouvement.libelle.trim() || !nouveauMouvement.montant) return;
+    try {
+      const cree = await api("/caisse/mouvements", { method: "POST", body: nouveauMouvement });
+      setMouvementsCaisse((liste) => [cree, ...liste]);
+      setNouveauMouvement({ type: "entree", categorie: "", libelle: "", montant: "" });
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerMouvementCaisse(id) {
+    if (!window.confirm("Supprimer ce mouvement ?")) return;
+    try {
+      await api(`/caisse/mouvements/${id}`, { method: "DELETE" });
+      setMouvementsCaisse((liste) => liste.filter((m) => m.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function chargerEtatCaisse() {
+    try {
+      const data = await api(`/caisse/etat?debut=${etatCaisseDebut}&fin=${etatCaisseFin}`);
+      setEtatCaisseData(data);
+    } catch (e) { catchErr(e); }
+  }
+
+  function imprimerEtatCaisse(data) {
+    if (!data) return;
+    const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+    const lignesPaiements = data.paiements_scolarite.map((p) => `<tr><td>${new Date(p.confirme_at).toLocaleString("fr-FR")}</td><td>Scolarité — ${p.eleve_nom}</td><td style="text-align:right; color:#2a2;">+${Number(p.montant).toLocaleString("fr-FR")} F</td></tr>`).join("");
+    const lignesMouvements = data.mouvements.map((m) => `<tr><td>${new Date(m.created_at).toLocaleString("fr-FR")}</td><td>${m.libelle}${m.categorie ? ` (${m.categorie})` : ""}</td><td style="text-align:right; color:${m.type === "entree" ? "#2a2" : "#b33"};">${m.type === "entree" ? "+" : "−"}${Number(m.montant).toLocaleString("fr-FR")} F</td></tr>`).join("");
+    const w = window.open("", "_blank", "width=700,height=850");
+    w.document.write(`
+      <html><head><title>État de caisse — ${data.debut} au ${data.fin}</title>
+      <style>
+        @page { size: A4 portrait; margin: 16mm; }
+        body { font-family: Arial, sans-serif; color: #222; font-size: 13px; }
+        h1 { font-size: 18px; margin-bottom: 2px; }
+        .sous-titre { font-size: 12px; color: #666; margin-bottom: 18px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+        th, td { padding: 6px 8px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: #f0ece0; text-transform: uppercase; font-size: 10.5px; }
+        .totaux { display: flex; gap: 20px; margin: 16px 0; padding: 12px; background: #f0ece0; border-radius: 6px; font-size: 13px; }
+        .totaux strong { display: block; font-size: 16px; }
+      </style></head>
+      <body onload="window.print()">
+        <h1>État de caisse</h1>
+        <div class="sous-titre">${ecoleActive.nom || ""} · Du ${data.debut} au ${data.fin}</div>
+        <div class="totaux">
+          <div>Total entrées<strong style="color:#2a2;">${data.total_entrees.toLocaleString("fr-FR")} F</strong></div>
+          <div>Total sorties<strong style="color:#b33;">${data.total_sorties.toLocaleString("fr-FR")} F</strong></div>
+          <div>Solde net<strong>${data.solde_net.toLocaleString("fr-FR")} F</strong></div>
+        </div>
+        <table><thead><tr><th>Date/heure</th><th>Libellé</th><th style="text-align:right">Montant</th></tr></thead>
+          <tbody>${lignesPaiements}${lignesMouvements || (lignesPaiements ? "" : '<tr><td colspan="3">Aucun mouvement sur cette période.</td></tr>')}</tbody>
+        </table>
+      </body></html>
+    `);
+    w.document.close();
+  }
+
   function imprimerBulletinScolaire(data) {
     if (!data) return;
     const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
@@ -2826,8 +2896,57 @@ function App({ session, onLogout }) {
                     </div>
                   ))}
                 </Card>
+
+                <Card title="Mouvements de caisse (entrées / sorties manuelles)" style={{ marginTop: 20 }}>
+                  <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                    Pour tout ce qui n'est pas un paiement de scolarité — dépenses, petites recettes... Une fois enregistré, un mouvement ne peut plus être ni modifié ni supprimé, sauf par la Direction.
+                  </div>
+                  {mouvementsCaisse.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun mouvement sur cette période.</div>}
+                  {mouvementsCaisse.map((m, i) => (
+                    <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < mouvementsCaisse.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                      <span style={{ fontSize: 11, color: COLORS.craieDim, width: 130 }}>{new Date(m.created_at).toLocaleString("fr-FR")}</span>
+                      <span style={{ flex: 1 }}>{m.libelle}{m.categorie ? ` (${m.categorie})` : ""}</span>
+                      <span style={{ fontWeight: 700, color: m.type === "entree" ? COLORS.success : COLORS.alert, width: 110, textAlign: "right" }}>{m.type === "entree" ? "+" : "−"}{Number(m.montant).toLocaleString("fr-FR")} F</span>
+                      {(role === "direction" || role === "super_admin") && (
+                        <button onClick={() => supprimerMouvementCaisse(m.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                      )}
+                    </div>
+                  ))}
+                  <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}` }}>
+                    <Field label="Type">
+                      <select style={inputStyle} value={nouveauMouvement.type} onChange={(e) => setNouveauMouvement((v) => ({ ...v, type: e.target.value }))}>
+                        <option value="entree">Entrée</option>
+                        <option value="sortie">Sortie</option>
+                      </select>
+                    </Field>
+                    <Field label="Catégorie (optionnel)"><input style={{ ...inputStyle, width: 120 }} value={nouveauMouvement.categorie} onChange={(e) => setNouveauMouvement((v) => ({ ...v, categorie: e.target.value }))} placeholder="ex. Fournitures" /></Field>
+                    <Field label="Libellé"><input style={{ ...inputStyle, minWidth: 160 }} value={nouveauMouvement.libelle} onChange={(e) => setNouveauMouvement((v) => ({ ...v, libelle: e.target.value }))} placeholder="ex. Achat de craies" /></Field>
+                    <Field label="Montant (F CFA)"><input type="number" style={{ ...inputStyle, width: 120 }} value={nouveauMouvement.montant} onChange={(e) => setNouveauMouvement((v) => ({ ...v, montant: e.target.value }))} /></Field>
+                    <Button small icon={P.plus} onClick={enregistrerMouvementCaisse}>Enregistrer</Button>
+                  </div>
+                </Card>
+
+                <Card title="État de caisse (par jour ou par période)" style={{ marginTop: 20 }}>
+                  <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", borderBottom: `1px solid ${COLORS.line}` }}>
+                    <Field label="Du"><input type="date" style={inputStyle} value={etatCaisseDebut} onChange={(e) => setEtatCaisseDebut(e.target.value)} /></Field>
+                    <Field label="Au"><input type="date" style={inputStyle} value={etatCaisseFin} onChange={(e) => setEtatCaisseFin(e.target.value)} /></Field>
+                    <Button small onClick={chargerEtatCaisse}>Afficher</Button>
+                    {etatCaisseData && <Button small variant="ghost" icon={P.scan} onClick={() => imprimerEtatCaisse(etatCaisseData)}>Imprimer</Button>}
+                  </div>
+                  {etatCaisseData && (
+                    <div style={{ padding: 18 }}>
+                      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 16 }}>
+                        <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Total entrées</div><div style={{ fontSize: 18, fontWeight: 700, color: COLORS.success }}>{etatCaisseData.total_entrees.toLocaleString("fr-FR")} F</div></div>
+                        <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Total sorties</div><div style={{ fontSize: 18, fontWeight: 700, color: COLORS.alert }}>{etatCaisseData.total_sorties.toLocaleString("fr-FR")} F</div></div>
+                        <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Solde net</div><div style={{ fontSize: 18, fontWeight: 700 }}>{etatCaisseData.solde_net.toLocaleString("fr-FR")} F</div></div>
+                      </div>
+                      <div style={{ fontSize: 11, color: COLORS.craieDim }}>{etatCaisseData.paiements_scolarite.length} paiement(s) de scolarité, {etatCaisseData.mouvements.length} mouvement(s) manuel(s) sur cette période.</div>
+                    </div>
+                  )}
+                </Card>
           </div>
         )}
+
 
 
         {view === "emploi" && (
@@ -3172,6 +3291,7 @@ function App({ session, onLogout }) {
                       <option value="enseignant">Enseignant</option>
                       <option value="surveillant">Surveillant général</option>
                       <option value="direction">Direction</option>
+                      <option value="caissier">Caissier(ère)</option>
                     </select>
                   </Field>
                 </div>
@@ -3230,6 +3350,7 @@ function App({ session, onLogout }) {
                       <option value="enseignant">Enseignant</option>
                       <option value="surveillant">Surveillant général</option>
                       <option value="direction">Direction</option>
+                      <option value="caissier">Caissier(ère)</option>
                     </select>
                     {u.role === "enseignant" ? (
                       <button onClick={() => setGestionClassesUser(u)} style={{ background: "rgba(246,242,231,0.06)", border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "6px 10px", color: COLORS.craie, fontSize: 11.5, textAlign: "left", cursor: "pointer" }}>
@@ -3503,7 +3624,7 @@ function App({ session, onLogout }) {
         )}
 
         {view === "en-ligne" && (() => {
-          const ROLES_LIBELLE = { direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant", super_admin: "Super-administrateur" };
+          const ROLES_LIBELLE = { direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant", super_admin: "Super-administrateur", caissier: "Caissier(ère)" };
           // Un compte est considéré "en ligne" si son dernier battement de cœur date
           // de moins de 90 secondes (marge au-dessus des 30s d'intervalle d'envoi,
           // pour absorber un léger retard réseau sans faire clignoter le statut).

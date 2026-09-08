@@ -519,3 +519,28 @@ CREATE TABLE IF NOT EXISTS paiements_scolarite (
   confirme_at TIMESTAMPTZ
 );
 
+-- --------------------------------------------------------------------------
+-- Rôle "caissier" — accès à la Caisse uniquement (encaissement, reçus, état de
+-- caisse), sans pouvoir modifier les montants de scolarité ni aucun autre
+-- réglage. Un compte caissier ne peut jamais rien "paramétrer", seulement
+-- constater et enregistrer des mouvements.
+-- --------------------------------------------------------------------------
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check
+  CHECK (role IN ('super_admin', 'direction', 'enseignant', 'surveillant', 'caissier'));
+
+-- Mouvements de caisse manuels — tout ce qui n'est pas déjà un paiement de
+-- scolarité (paiements_scolarite) : dépenses (fournitures, réparations...) ou
+-- recettes diverses (vente de tenues, etc.). Combiné avec paiements_scolarite,
+-- ceci permet de tirer un état de caisse complet sur une journée ou période.
+CREATE TABLE IF NOT EXISTS mouvements_caisse (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ecole_id UUID REFERENCES ecoles(id),
+  type TEXT NOT NULL CHECK (type IN ('entree', 'sortie')),
+  categorie TEXT,
+  libelle TEXT NOT NULL,
+  montant NUMERIC NOT NULL,
+  saisi_par UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+

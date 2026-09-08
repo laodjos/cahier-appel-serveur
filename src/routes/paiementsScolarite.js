@@ -19,7 +19,7 @@ router.get("/", authRequired, requireErpActif, async (req, res) => {
 // POST /api/paiements-scolarite/manuel  { eleve_id, montant }
 // Enregistre un paiement reçu en espèces (ou tout autre moyen géré hors ligne),
 // saisi directement par l'administration.
-router.post("/manuel", authRequired, requireErpActif, requireRole("direction", "super_admin"), async (req, res) => {
+router.post("/manuel", authRequired, requireErpActif, requireRole("direction", "super_admin", "caissier"), async (req, res) => {
   const { eleve_id, montant } = req.body;
   if (!eleve_id || !montant || Number(montant) <= 0) return res.status(400).json({ error: "eleve_id et montant (positif) sont requis." });
   const { rows } = await pool.query(
@@ -33,7 +33,7 @@ router.post("/manuel", authRequired, requireErpActif, requireRole("direction", "
 // POST /api/paiements-scolarite/initier  { eleve_id, montant }
 // Génère un lien de paiement CinetPay pour la scolarité d'un élève (à
 // transmettre au parent — SMS, WhatsApp...).
-router.post("/initier", authRequired, requireErpActif, requireRole("direction", "super_admin"), async (req, res) => {
+router.post("/initier", authRequired, requireErpActif, requireRole("direction", "super_admin", "caissier"), async (req, res) => {
   const { eleve_id, montant } = req.body;
   if (!eleve_id || !montant || Number(montant) <= 0) return res.status(400).json({ error: "eleve_id et montant (positif) sont requis." });
 

@@ -68,7 +68,7 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   const { nom, email, mot_de_passe, role, matieres, statut_emploi, statut_matrimonial, nombre_enfants } = req.body;
   const { calculerPartsFiscales } = require("../services/payrollService");
-  const rolesValides = ["super_admin", "direction", "enseignant", "surveillant"];
+  const rolesValides = ["super_admin", "direction", "enseignant", "surveillant", "caissier"];
 
   if (!nom || !email || !mot_de_passe || !role) {
     return res.status(400).json({ error: "Nom, email, mot de passe et rôle sont requis." });
@@ -260,7 +260,7 @@ router.delete("/:id", async (req, res) => {
 // PATCH /api/users/:id/role  { role }
 router.patch("/:id/role", async (req, res) => {
   const { role } = req.body;
-  const rolesValides = ["direction", "enseignant", "surveillant"]; // super_admin ne se change pas ici, par sécurité
+  const rolesValides = ["direction", "enseignant", "surveillant", "caissier"]; // super_admin ne se change pas ici, par sécurité
   if (!rolesValides.includes(role)) {
     return res.status(400).json({ error: "Rôle invalide." });
   }
