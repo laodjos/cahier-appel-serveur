@@ -70,7 +70,7 @@ router.get("/etat", async (req, res) => {
     filtrePaiements += ` AND eleve_id IN (SELECT s.id FROM students s JOIN classes c ON c.id = s.classe_id WHERE c.ecole_id = $${paramsPaiements.length})`;
   }
   const { rows: paiements } = await pool.query(
-    `SELECT ps.*, s.nom AS eleve_nom FROM paiements_scolarite ps JOIN students s ON s.id = ps.eleve_id WHERE ${filtrePaiements} ORDER BY ps.confirme_at`,
+    `SELECT ps.*, s.nom AS eleve_nom, s.prenoms AS eleve_prenoms FROM paiements_scolarite ps JOIN students s ON s.id = ps.eleve_id WHERE ${filtrePaiements} ORDER BY ps.confirme_at`,
     paramsPaiements
   );
 

@@ -24,7 +24,7 @@ router.get("/scolarite/:eleveId", async (req, res) => {
   const eleve = rows[0];
   if (!eleve) return res.status(404).json({ error: "Élève introuvable." });
   const solde = await calculerSoldeEleve(eleve);
-  res.json({ eleve: { nom: eleve.nom, classe_nom: eleve.classe_nom }, ...solde });
+  res.json({ eleve: { nom: eleve.nom, prenoms: eleve.prenoms, classe_nom: eleve.classe_nom }, ...solde });
 });
 
 // POST /api/public/scolarite/:eleveId/payer  { montant }
@@ -35,7 +35,7 @@ router.post("/scolarite/:eleveId/payer", async (req, res) => {
   const { montant } = req.body;
   if (!montant || Number(montant) <= 0) return res.status(400).json({ error: "Montant invalide." });
 
-  const { rows } = await pool.query("SELECT nom FROM students WHERE id = $1", [req.params.eleveId]);
+  const { rows } = await pool.query("SELECT nom, prenoms FROM students WHERE id = $1", [req.params.eleveId]);
   if (!rows[0]) return res.status(404).json({ error: "Élève introuvable." });
 
   const referenceExterne = crypto.randomUUID();
@@ -50,8 +50,8 @@ router.post("/scolarite/:eleveId/payer", async (req, res) => {
     const session = await creerLienPaiement({
       montant,
       transactionId: referenceExterne,
-      description: `Scolarité — ${rows[0].nom}`,
-      clientNom: rows[0].nom,
+      description: `Scolarité — ${[rows[0].nom, rows[0].prenoms].filter(Boolean).join(" ")}`,
+      clientNom: [rows[0].nom, rows[0].prenoms].filter(Boolean).join(" "),
       returnUrl: `${baseUrl}/api/paiements-scolarite/retour`,
       notifyUrl: `${baseUrl}/api/paiements-scolarite/webhook-cinetpay`,
     });

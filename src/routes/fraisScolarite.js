@@ -74,7 +74,7 @@ router.get("/solde/:eleveId", async (req, res) => {
   const eleve = rows[0];
   if (!eleve) return res.status(404).json({ error: "Élève introuvable." });
   const solde = await calculerSoldeEleve(eleve);
-  res.json({ eleve: { id: eleve.id, nom: eleve.nom }, ...solde });
+  res.json({ eleve: { id: eleve.id, nom: eleve.nom, prenoms: eleve.prenoms }, ...solde });
 });
 
 // GET /api/frais-scolarite/solde-classe/:classeId — vue d'ensemble d'une classe
@@ -82,11 +82,11 @@ router.get("/solde-classe/:classeId", async (req, res) => {
   const { rows: classeRows } = await pool.query("SELECT * FROM classes WHERE id = $1", [req.params.classeId]);
   const classe = classeRows[0];
   if (!classe) return res.status(404).json({ error: "Classe introuvable." });
-  const { rows: eleves } = await pool.query("SELECT id, nom FROM students WHERE classe_id = $1 ORDER BY nom", [classe.id]);
+  const { rows: eleves } = await pool.query("SELECT id, nom, prenoms FROM students WHERE classe_id = $1 ORDER BY nom", [classe.id]);
   const resultats = [];
   for (const e of eleves) {
     const solde = await calculerSoldeEleve({ ...e, classe_id: classe.id, niveau: classe.niveau });
-    resultats.push({ eleve: { id: e.id, nom: e.nom }, ...solde });
+    resultats.push({ eleve: { id: e.id, nom: e.nom, prenoms: e.prenoms }, ...solde });
   }
   res.json({ classe: { id: classe.id, nom: classe.nom }, eleves: resultats });
 });

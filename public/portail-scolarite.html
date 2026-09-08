@@ -59,7 +59,7 @@
 
       if (data.montant_total == null) {
         carte.innerHTML = `
-          <h1>${data.eleve.nom}</h1>
+          <h1>${[data.eleve.nom, data.eleve.prenoms].filter(Boolean).join(" ")}</h1>
           <div class="sous">${data.eleve.classe_nom}</div>
           <div class="centre" style="padding:20px 0; color:rgba(246,242,231,0.6);">Aucun montant de scolarité n'a encore été défini pour cette classe.</div>
         `;
@@ -68,7 +68,7 @@
 
       const aJour = data.a_jour;
       carte.innerHTML = `
-        <h1>${data.eleve.nom}</h1>
+        <h1>${[data.eleve.nom, data.eleve.prenoms].filter(Boolean).join(" ")}</h1>
         <div class="sous">${data.eleve.classe_nom}</div>
         <div class="ligne"><span>Total scolarité</span><strong>${formatMontant(data.montant_total)}</strong></div>
         <div class="ligne"><span>Déjà payé</span><strong>${formatMontant(data.montant_paye)}</strong></div>

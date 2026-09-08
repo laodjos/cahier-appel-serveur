@@ -96,7 +96,7 @@ router.get("/eleve/:eleveId", async (req, res) => {
   const rang = resultatsClasse.find((r) => r.eleve_id === eleve.id)?.rang ?? null;
 
   res.json({
-    eleve: { id: eleve.id, nom: eleve.nom, classe_nom: eleve.classe_nom },
+    eleve: { id: eleve.id, nom: eleve.nom, prenoms: eleve.prenoms, classe_nom: eleve.classe_nom },
     ...bulletin,
     rang,
     effectif_classe: elevesClasse.length,
@@ -113,11 +113,11 @@ router.get("/classe/:classeId", async (req, res) => {
   const classe = classeRows[0];
   if (!classe) return res.status(404).json({ error: "Classe introuvable." });
 
-  const { rows: eleves } = await pool.query("SELECT id, nom FROM students WHERE classe_id = $1 ORDER BY nom", [classe.id]);
+  const { rows: eleves } = await pool.query("SELECT id, nom, prenoms FROM students WHERE classe_id = $1 ORDER BY nom", [classe.id]);
   const resultats = [];
   for (const e of eleves) {
     const b = await calculerBulletinEleve(e.id, periode_id, classe.id, classe.niveau, classe.serie);
-    resultats.push({ eleve: { id: e.id, nom: e.nom }, ...b });
+    resultats.push({ eleve: { id: e.id, nom: e.nom, prenoms: e.prenoms }, ...b });
   }
   calculerRangs(resultats);
 

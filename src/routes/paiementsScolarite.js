@@ -37,7 +37,7 @@ router.post("/initier", authRequired, requireErpActif, requireRole("direction", 
   const { eleve_id, montant } = req.body;
   if (!eleve_id || !montant || Number(montant) <= 0) return res.status(400).json({ error: "eleve_id et montant (positif) sont requis." });
 
-  const { rows: eleveRows } = await pool.query("SELECT nom FROM students WHERE id = $1", [eleve_id]);
+  const { rows: eleveRows } = await pool.query("SELECT nom, prenoms FROM students WHERE id = $1", [eleve_id]);
   if (!eleveRows[0]) return res.status(404).json({ error: "Élève introuvable." });
 
   const referenceExterne = crypto.randomUUID();
@@ -52,8 +52,8 @@ router.post("/initier", authRequired, requireErpActif, requireRole("direction", 
     const session = await creerLienPaiement({
       montant,
       transactionId: referenceExterne,
-      description: `Scolarité — ${eleveRows[0].nom}`,
-      clientNom: eleveRows[0].nom,
+      description: `Scolarité — ${[eleveRows[0].nom, eleveRows[0].prenoms].filter(Boolean).join(" ")}`,
+      clientNom: [eleveRows[0].nom, eleveRows[0].prenoms].filter(Boolean).join(" "),
       returnUrl: `${baseUrl}/api/paiements-scolarite/retour`,
       notifyUrl: `${baseUrl}/api/paiements-scolarite/webhook-cinetpay`,
     });

@@ -28,6 +28,13 @@ function SelectClasseParNiveau({ classes, value, onChange, style }) {
   );
 }
 function initials(nom) { return (nom || "?").split(" ").map((p) => p[0]).slice(0, 2).join(""); }
+// Nom complet d'un élève pour l'affichage — combine nom (de famille) et
+// prénoms si les deux sont renseignés ; reste compatible avec les élèves créés
+// avant la séparation des deux champs (nom contenait alors le nom complet).
+function nomCompletEleve(eleve) {
+  if (!eleve) return "";
+  return [eleve.nom, eleve.prenoms].filter(Boolean).join(" ");
+}
 function genMatricule() { return "EL" + Math.floor(100000 + Math.random() * 900000); }
 
 /* ============================================================
@@ -630,7 +637,7 @@ function App({ session, onLogout }) {
     return () => clearInterval(t);
   }, [api, view, sousOngletErp]);
 
-  const filteredStudents = students.filter((s) => s.nom.toLowerCase().includes(search.toLowerCase()));
+  const filteredStudents = students.filter((s) => nomCompletEleve(s).toLowerCase().includes(search.toLowerCase()));
   const classeEleves = students.filter((s) => s.classe_id === selectedClasseId);
   const registreMap = Object.fromEntries(registre.map((r) => [r.student_id, r.statut]));
   const classeSelectionnee = classes.find((c) => c.id === selectedClasseId);
@@ -854,7 +861,7 @@ function App({ session, onLogout }) {
       const ecoleCachetUrl = ecoleActive.cachet_url ? `${session.baseUrl.replace(/\/api$/, "")}${ecoleActive.cachet_url}` : null;
       const ecoleAnneeLibelle = anneesScolaires.find((a) => a.id === ecoleActive.annee_scolaire_id)?.libelle || ecoleActive.annee_scolaire || "";
       const ecoleReferencesBas = [ecoleActive.telephone, ecoleActive.email, ecoleActive.registre_commerce ? `RC ${ecoleActive.registre_commerce}` : null].filter(Boolean).join(" · ");
-    const lignes = absenteisme.map((s) => `<tr><td>${s.nom}</td><td>${s.classe_nom}</td><td style="text-align:right; color:#b33;">${s.absences_mois}</td></tr>`).join("");
+    const lignes = absenteisme.map((s) => `<tr><td>${nomCompletEleve(s)}</td><td>${s.classe_nom}</td><td style="text-align:right; color:#b33;">${s.absences_mois}</td></tr>`).join("");
     const fenetre = window.open("", "_blank", "width=700,height=850");
     fenetre.document.write(`
       <html><head><title>Rapport d'absentéisme</title>
@@ -1217,7 +1224,7 @@ function App({ session, onLogout }) {
 
     try {
       const res = await api("/attendance/qr-scan", { method: "POST", body: { token, creneau_id: selectedCreneauId } });
-      setScanFeedback({ nom: res.eleve.nom, time: new Date(), ok: true });
+      setScanFeedback({ nom: nomCompletEleve(res.eleve), time: new Date(), ok: true });
       refreshRegistre();
     } catch (e) {
       setScanFeedback({ nom: null, time: new Date(), ok: false, message: e.message });
@@ -1461,7 +1468,7 @@ function App({ session, onLogout }) {
       const photoAbsolue = eleve.photo_url ? `${session.baseUrl.replace(/\/api$/, "")}${eleve.photo_url}` : null;
       const fenetre = window.open("", "_blank", "width=500,height=350");
       fenetre.document.write(`
-        <html><head><title>Badge — ${eleve.nom}</title>
+        <html><head><title>Badge — ${nomCompletEleve(eleve)}</title>
         <style>
           @page { size: 85.6mm 54mm; margin: 0; }
           body { margin: 0; font-family: Arial, sans-serif; }
@@ -1484,7 +1491,7 @@ function App({ session, onLogout }) {
                 ${ecoleLogoUrl ? `<img src="${ecoleLogoUrl}" style="height:5mm; width:5mm; object-fit:contain;" />` : ""}
                 ${ecoleNom}
               </div>
-              <div class="nom">${eleve.nom}</div>
+              <div class="nom">${nomCompletEleve(eleve)}</div>
               <div class="classe">${eleve.classe_nom || ""}</div>
               <div class="matricule">${eleve.matricule}</div>
             </div>
@@ -1827,7 +1834,7 @@ function App({ session, onLogout }) {
 
       const w = window.open("", "_blank", "width=600,height=750");
       w.document.write(`
-        <html><head><title>Reçu — ${eleve?.nom || ""}</title>
+        <html><head><title>Reçu — ${nomCompletEleve(eleve) || ""}</title>
         <style>
           @page { size: A5 portrait; margin: 12mm; }
           body { font-family: Arial, sans-serif; color: #222; font-size: 13px; }
@@ -1850,7 +1857,7 @@ function App({ session, onLogout }) {
               <div class="sous-titre">${ecoleNom}</div>
             </div>
             <div style="text-align:right">
-              <strong>${eleve?.nom || ""}</strong>
+              <strong>${nomCompletEleve(eleve) || ""}</strong>
               <div class="sous-titre">${eleve?.classe_nom || ""} · Mat. ${eleve?.matricule || ""}</div>
               <div class="sous-titre">${new Date().toLocaleDateString("fr-FR")}</div>
             </div>
@@ -1918,7 +1925,7 @@ function App({ session, onLogout }) {
   function imprimerEtatCaisse(data) {
     if (!data) return;
     const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
-    const lignesPaiements = data.paiements_scolarite.map((p) => `<tr><td>${new Date(p.confirme_at).toLocaleString("fr-FR")}</td><td>Scolarité — ${p.eleve_nom}</td><td style="text-align:right; color:#2a2;">+${Number(p.montant).toLocaleString("fr-FR")} F</td></tr>`).join("");
+    const lignesPaiements = data.paiements_scolarite.map((p) => `<tr><td>${new Date(p.confirme_at).toLocaleString("fr-FR")}</td><td>Scolarité — ${[p.eleve_nom, p.eleve_prenoms].filter(Boolean).join(" ")}</td><td style="text-align:right; color:#2a2;">+${Number(p.montant).toLocaleString("fr-FR")} F</td></tr>`).join("");
     const lignesMouvements = data.mouvements.map((m) => `<tr><td>${new Date(m.created_at).toLocaleString("fr-FR")}</td><td>${m.libelle}${m.categorie ? ` (${m.categorie})` : ""}</td><td style="text-align:right; color:${m.type === "entree" ? "#2a2" : "#b33"};">${m.type === "entree" ? "+" : "−"}${Number(m.montant).toLocaleString("fr-FR")} F</td></tr>`).join("");
     const w = window.open("", "_blank", "width=700,height=850");
     w.document.write(`
@@ -1966,7 +1973,7 @@ function App({ session, onLogout }) {
 
     const w = window.open("", "_blank", "width=700,height=850");
     w.document.write(`
-      <html><head><title>Bulletin — ${data.eleve.nom}</title>
+      <html><head><title>Bulletin — ${nomCompletEleve(data.eleve)}</title>
       <style>
         @page { size: A4 portrait; margin: 16mm; }
         body { font-family: Arial, sans-serif; color: #222; font-size: 13px; }
@@ -1987,7 +1994,7 @@ function App({ session, onLogout }) {
             <div class="sous-titre">${ecoleNom}${ecoleAnneeLibelle ? ` · Année scolaire ${ecoleAnneeLibelle}` : ""}</div>
           </div>
           <div style="text-align:right">
-            <div><strong>${data.eleve.nom}</strong></div>
+            <div><strong>${nomCompletEleve(data.eleve)}</strong></div>
             <div class="sous-titre">${data.eleve.classe_nom}</div>
             <div class="sous-titre">${periodeNom}</div>
           </div>
@@ -2414,8 +2421,8 @@ function App({ session, onLogout }) {
                 return (
                   <div key={s.id} className="grille-responsive" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", alignItems: "center", padding: "11px 18px", borderBottom: i < classeEleves.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 26, height: 26, borderRadius: 999, background: COLORS.craieDim, color: COLORS.ardoiseDeep, fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>{initials(s.nom)}</div>
-                      <span style={{ fontSize: 13 }}>{s.nom}</span>
+                      <div style={{ width: 26, height: 26, borderRadius: 999, background: COLORS.craieDim, color: COLORS.ardoiseDeep, fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>{initials(nomCompletEleve(s))}</div>
+                      <span style={{ fontSize: 13 }}>{nomCompletEleve(s)}</span>
                     </div>
                     <StatusLabel status={statutAffiche} />
                     <div style={{ display: "flex", gap: 6 }}>
@@ -2509,7 +2516,10 @@ function App({ session, onLogout }) {
                     </div>
                   </Field>
                 </div>
-                <Field label="Nom complet"><input style={inputStyle} value={newEleve.nom} onChange={(e) => setNewEleve((v) => ({ ...v, nom: e.target.value }))} placeholder="ex. Aïcha Kouassi" /></Field>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <Field label="Nom (de famille)"><input style={inputStyle} value={newEleve.nom} onChange={(e) => setNewEleve((v) => ({ ...v, nom: e.target.value }))} placeholder="ex. Kouassi" /></Field>
+                  <Field label="Prénoms"><input style={inputStyle} value={newEleve.prenoms} onChange={(e) => setNewEleve((v) => ({ ...v, prenoms: e.target.value }))} placeholder="ex. Aïcha Fatou" /></Field>
+                </div>
                 <div style={{ display: "flex", gap: 12 }}>
                   <Field label="Date de naissance"><input type="date" style={inputStyle} value={newEleve.date_naissance} onChange={(e) => setNewEleve((v) => ({ ...v, date_naissance: e.target.value }))} /></Field>
                   <Field label="Lieu de naissance"><input style={inputStyle} value={newEleve.lieu_naissance} onChange={(e) => setNewEleve((v) => ({ ...v, lieu_naissance: e.target.value }))} placeholder="ex. Abidjan" /></Field>
@@ -2528,16 +2538,13 @@ function App({ session, onLogout }) {
                 </button>
                 {afficherInfosDespsCreation && (
                   <React.Fragment>
-                    <div style={{ display: "flex", gap: 12 }}>
-                      <Field label="Prénoms (séparés du nom, pour l'export DESPS)"><input style={inputStyle} value={newEleve.prenoms} onChange={(e) => setNewEleve((v) => ({ ...v, prenoms: e.target.value }))} placeholder="ex. Aïcha Fatou" /></Field>
-                      <Field label="Genre">
-                        <select style={inputStyle} value={newEleve.genre} onChange={(e) => setNewEleve((v) => ({ ...v, genre: e.target.value }))}>
-                          <option value="">— Non renseigné —</option>
-                          <option value="F">Féminin</option>
-                          <option value="M">Masculin</option>
-                        </select>
-                      </Field>
-                    </div>
+                    <Field label="Genre">
+                      <select style={inputStyle} value={newEleve.genre} onChange={(e) => setNewEleve((v) => ({ ...v, genre: e.target.value }))}>
+                        <option value="">— Non renseigné —</option>
+                        <option value="F">Féminin</option>
+                        <option value="M">Masculin</option>
+                      </select>
+                    </Field>
                     <Field label="Nationalité"><input style={inputStyle} value={newEleve.nationalite} onChange={(e) => setNewEleve((v) => ({ ...v, nationalite: e.target.value }))} placeholder="ex. Ivoirienne" /></Field>
                     <div style={{ display: "flex", gap: 12 }}>
                       <Field label="Nom et prénoms du Père"><input style={inputStyle} value={newEleve.nom_pere} onChange={(e) => setNewEleve((v) => ({ ...v, nom_pere: e.target.value }))} /></Field>
@@ -2604,7 +2611,7 @@ function App({ session, onLogout }) {
                       {etendue && listeEleves.length === 0 && <div style={{ padding: "8px 18px 8px 30px", fontSize: 11.5, color: COLORS.craieDim, fontStyle: "italic" }}>Aucun élève dans cette classe pour l'instant.</div>}
                       {etendue && listeEleves.map((s) => (
                         <div key={s.id} onClick={() => ouvrirDossierEleve(s.id)} style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", alignItems: "center", padding: "9px 18px 9px 30px", borderBottom: `1px solid ${COLORS.line}`, fontSize: 13, cursor: "pointer" }}>
-                          <span style={{ fontWeight: 500 }}>{s.nom}</span>
+                          <span style={{ fontWeight: 500 }}>{nomCompletEleve(s)}</span>
                           <span style={{ color: COLORS.craieDim, fontSize: 11.5 }}>{s.matricule}</span>
                           <Icon path={P.chevronRight} size={14} color={COLORS.craieDim} />
                         </div>
@@ -2632,7 +2639,7 @@ function App({ session, onLogout }) {
                 const parentTelAffiche = edit.parentTel ?? s.parent_telephone ?? "";
                 return (
                   <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1.6fr 1.4fr 1.4fr auto", alignItems: "center", padding: "10px 18px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none", gap: 8 }}>
-                    <div><div style={{ fontSize: 13, fontWeight: 500 }}>{s.nom}</div><div style={{ fontSize: 11, color: COLORS.craieDim }}>{s.classe_nom}</div></div>
+                    <div><div style={{ fontSize: 13, fontWeight: 500 }}>{nomCompletEleve(s)}</div><div style={{ fontSize: 11, color: COLORS.craieDim }}>{s.classe_nom}</div></div>
                     <input style={{ ...inputStyle, width: "100%" }} value={parentNomAffiche} onChange={(e) => updateParentEdit(s.id, "parentNom", e.target.value)} placeholder="Nom du parent/tuteur" />
                     <input style={{ ...inputStyle, width: "100%" }} value={parentTelAffiche} onChange={(e) => updateParentEdit(s.id, "parentTel", e.target.value)} placeholder="+225 07 00 00 00 00" />
                     <Button small variant="ghost" icon={P.save} onClick={() => saveParentInfo(s.id)}>Enregistrer</Button>
@@ -2667,7 +2674,7 @@ function App({ session, onLogout }) {
               {absenteisme.map((s, i) => (
                 <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: i < absenteisme.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
                   <Icon path={P.alertTriangle} size={15} color={COLORS.alert} />
-                  <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 500 }}>{s.nom} · {s.classe_nom}</div><div style={{ fontSize: 11.5, color: COLORS.craieDim }}>{s.absences_mois} absences ce mois</div></div>
+                  <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 500 }}>{nomCompletEleve(s)} · {s.classe_nom}</div><div style={{ fontSize: 11.5, color: COLORS.craieDim }}>{s.absences_mois} absences ce mois</div></div>
                 </div>
               ))}
             </Card>
@@ -2894,7 +2901,7 @@ function App({ session, onLogout }) {
                     const derniereNote = notesEleve[notesEleve.length - 1];
                     return (
                       <div key={eleve.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < liste.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
-                        <span style={{ fontSize: 13, flex: 1 }}>{eleve.nom}</span>
+                        <span style={{ fontSize: 13, flex: 1 }}>{nomCompletEleve(eleve)}</span>
                         <input
                           type="number" min="0" max="20" step="0.5"
                           style={{ ...inputStyle, width: 70 }}
@@ -2911,7 +2918,7 @@ function App({ session, onLogout }) {
                   <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
                     <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={bulletinEleveId} onChange={(e) => setBulletinEleveId(e.target.value)}>
                       <option value="">— Choisir un élève —</option>
-                      {students.map((s) => <option key={s.id} value={s.id}>{s.nom} ({s.classe_nom})</option>)}
+                      {students.map((s) => <option key={s.id} value={s.id}>{nomCompletEleve(s)} ({s.classe_nom})</option>)}
                     </select>
                     <select style={inputStyle} value={bulletinPeriodeId} onChange={(e) => setBulletinPeriodeId(e.target.value)}>
                       <option value="">— Période —</option>
@@ -2924,7 +2931,7 @@ function App({ session, onLogout }) {
                     <div style={{ padding: 18 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
                         <div>
-                          <div style={{ fontSize: 15, fontWeight: 600 }}>{bulletinData.eleve.nom}</div>
+                          <div style={{ fontSize: 15, fontWeight: 600 }}>{nomCompletEleve(bulletinData.eleve)}</div>
                           <div style={{ fontSize: 11.5, color: COLORS.craieDim }}>{bulletinData.eleve.classe_nom}</div>
                         </div>
                         <div style={{ textAlign: "right" }}>
@@ -2955,7 +2962,7 @@ function App({ session, onLogout }) {
                       try {
                         const donneesClasse = await api(`/bulletins/classe/${saisieClasseId}?periode_id=${bulletinPeriodeId}`);
                         for (const resultat of donneesClasse.eleves) {
-                          imprimerBulletinScolaire({ eleve: { nom: resultat.eleve.nom, classe_nom: donneesClasse.classe.nom }, ...resultat });
+                          imprimerBulletinScolaire({ eleve: { nom: resultat.eleve.nom, prenoms: resultat.eleve.prenoms, classe_nom: donneesClasse.classe.nom }, ...resultat });
                         }
                       } catch (e) { catchErr(e); }
                     }}>Imprimer les bulletins de la classe</Button>
@@ -2998,7 +3005,7 @@ function App({ session, onLogout }) {
                   <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
                     <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={soldeEleveId} onChange={(e) => { setSoldeEleveId(e.target.value); setSoldeData(null); }}>
                       <option value="">— Choisir un élève —</option>
-                      {students.map((s) => <option key={s.id} value={s.id}>{s.nom} ({s.classe_nom})</option>)}
+                      {students.map((s) => <option key={s.id} value={s.id}>{nomCompletEleve(s)} ({s.classe_nom})</option>)}
                     </select>
                     <Button small onClick={chargerSoldeEleve}>Afficher</Button>
                   </div>
@@ -3037,7 +3044,7 @@ function App({ session, onLogout }) {
                   {!soldeClasseData && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Choisis une classe pour voir le solde de chaque élève.</div>}
                   {soldeClasseData && soldeClasseData.eleves.map((r, i) => (
                     <div key={r.eleve.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < soldeClasseData.eleves.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
-                      <span style={{ flex: 1 }}>{r.eleve.nom}</span>
+                      <span style={{ flex: 1 }}>{nomCompletEleve(r.eleve)}</span>
                       {r.montant_total == null ? (
                         <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>Aucun montant défini</span>
                       ) : (
@@ -3315,7 +3322,7 @@ function App({ session, onLogout }) {
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                     <select style={{ ...inputStyle, fontSize: 12, padding: "6px 8px", flex: 1, minWidth: 140 }} value={rapportEleveId} onChange={(e) => setRapportEleveId(e.target.value)}>
                       <option value="">— Choisir un élève —</option>
-                      {students.map((s) => <option key={s.id} value={s.id}>{s.nom} ({s.classe_nom})</option>)}
+                      {students.map((s) => <option key={s.id} value={s.id}>{nomCompletEleve(s)} ({s.classe_nom})</option>)}
                     </select>
                     <input type="date" style={{ ...inputStyle, fontSize: 12, padding: "6px 8px" }} value={suiviEnseignantsDebut} onChange={(e) => setSuiviEnseignantsDebut(e.target.value)} />
                     <input type="date" style={{ ...inputStyle, fontSize: 12, padding: "6px 8px" }} value={suiviEnseignantsFin} onChange={(e) => setSuiviEnseignantsFin(e.target.value)} />
@@ -3399,7 +3406,7 @@ function App({ session, onLogout }) {
               {notifJournal.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucune notification pour l'instant.</div>}
               {notifJournal.map((n) => (
                 <div key={n.id} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 12, padding: "14px 16px" }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{n.eleve_nom} → {n.parent_nom}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{[n.eleve_nom, n.eleve_prenoms].filter(Boolean).join(" ")} → {n.parent_nom}</div>
                   <div style={{ fontSize: 12, color: COLORS.craieDim, marginTop: 2 }}>{n.contenu}</div>
                   <div style={{ fontSize: 10.5, color: COLORS.craieDim, marginTop: 4 }}>{n.statut === "envoyee" ? "Envoyée" : n.statut === "echouee" ? "Échec" : "Programmée"} · {fmtTime(n.envoyer_a)}</div>
                 </div>

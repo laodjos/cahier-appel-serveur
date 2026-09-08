@@ -68,7 +68,7 @@ router.post("/qr-scan", async (req, res) => {
   );
 
   await programmerNotificationPresence(student.id, statut);
-  res.status(201).json({ event: rows[0], eleve: { id: student.id, nom: student.nom } });
+  res.status(201).json({ event: rows[0], eleve: { id: student.id, nom: student.nom, prenoms: student.prenoms } });
 });
 
 // --------------------------------------------------------------------------
@@ -114,7 +114,7 @@ router.get("/registre", async (req, res) => {
   const jour = date || new Date().toISOString().slice(0, 10);
 
   const { rows } = await pool.query(
-    `SELECT s.id AS student_id, s.nom, s.classe_id,
+    `SELECT s.id AS student_id, s.nom, s.prenoms, s.classe_id,
             (SELECT statut FROM attendance_events ae
              WHERE ae.student_id = s.id AND ae.horodatage::date = $2
              ORDER BY ae.horodatage DESC LIMIT 1) AS statut
@@ -139,7 +139,7 @@ router.get("/registre-jour", async (req, res) => {
   if (ecoleId) { params.push(ecoleId); filtreEcole = `c.ecole_id = $${params.length}`; }
 
   const { rows } = await pool.query(
-    `SELECT s.nom, c.nom AS classe_nom, c.niveau,
+    `SELECT s.nom, s.prenoms, c.nom AS classe_nom, c.niveau,
             (SELECT statut FROM attendance_events ae
              WHERE ae.student_id = s.id AND ae.horodatage::date = $1
              ORDER BY ae.horodatage DESC LIMIT 1) AS statut
@@ -189,12 +189,12 @@ router.get("/absenteisme", async (req, res) => {
   const ecoleId = ecoleEffective(req); if (ecoleId) { params.push(ecoleId); filtreEcole = `c.ecole_id = $${params.length}`; }
 
   const { rows } = await pool.query(
-    `SELECT s.id, s.nom, c.nom AS classe_nom, COUNT(*) AS absences_mois
+    `SELECT s.id, s.nom, s.prenoms, c.nom AS classe_nom, COUNT(*) AS absences_mois
      FROM attendance_events ae
      JOIN students s ON s.id = ae.student_id
      LEFT JOIN classes c ON c.id = s.classe_id
      WHERE ae.statut = 'absent' AND date_trunc('month', ae.horodatage) = date_trunc('month', CURRENT_DATE) AND ${filtreEcole}
-     GROUP BY s.id, s.nom, c.nom
+     GROUP BY s.id, s.nom, s.prenoms, c.nom
      HAVING COUNT(*) >= $1
      ORDER BY absences_mois DESC`,
     params

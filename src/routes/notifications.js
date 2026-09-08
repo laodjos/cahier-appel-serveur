@@ -37,7 +37,7 @@ router.post("/rapport", requireRole("direction", "surveillant"), async (req, res
 // GET /api/notifications/journal — historique des envois (dashboard "Notifications parents")
 router.get("/journal", async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT n.*, s.nom AS eleve_nom, p.nom AS parent_nom
+    `SELECT n.*, s.nom AS eleve_nom, s.prenoms AS eleve_prenoms, p.nom AS parent_nom
      FROM notifications n
      JOIN students s ON s.id = n.student_id
      JOIN parents p ON p.id = n.parent_id
