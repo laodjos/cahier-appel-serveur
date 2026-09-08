@@ -217,18 +217,21 @@ function statutCreneau(creneau, maintenant) {
 // Reflète côté interface exactement la même règle que le serveur (voir
 // creneauOuvertPourSaisie dans attendance.js) — évite de faire cliquer un
 // enseignant sur "Valider l'appel" pour ne recevoir qu'une erreur après coup.
-const MINUTES_GRACE_APRES_COURS = 120;
+// Fenêtre stricte : de l'heure de début à l'heure de fin, sans marge — une
+// fois l'heure passée, c'est irrévocablement fermé pour un enseignant.
 function creneauOuvertPourSaisie(creneau, maintenant) {
   const jourSemaineAuj = maintenant.getDay() || 7;
   const aujourdHui = maintenant.toISOString().slice(0, 10);
   const dateExceptionnelleStr = creneau.date_exceptionnelle ? new Date(creneau.date_exceptionnelle).toISOString().slice(0, 10) : null;
   const estAujourdHui = dateExceptionnelleStr ? dateExceptionnelleStr === aujourdHui : creneau.jour_semaine === jourSemaineAuj;
   if (!estAujourdHui) return false;
-  if (!creneau.heure_fin) return true;
+  if (!creneau.heure_debut || !creneau.heure_fin) return true;
+  const [hD, mD] = creneau.heure_debut.split(":").map(Number);
   const [hF, mF] = creneau.heure_fin.split(":").map(Number);
-  const finMinutes = hF * 60 + mF + MINUTES_GRACE_APRES_COURS;
+  const debutMinutes = hD * 60 + mD;
+  const finMinutes = hF * 60 + mF;
   const maintenantMinutes = maintenant.getHours() * 60 + maintenant.getMinutes();
-  return maintenantMinutes <= finMinutes;
+  return maintenantMinutes >= debutMinutes && maintenantMinutes <= finMinutes;
 }
 
 /* ============================================================
@@ -2384,7 +2387,7 @@ function App({ session, onLogout }) {
             >
               {appelVerrouille && (
                 <div style={{ padding: "10px 18px", fontSize: 12, color: COLORS.alert, background: COLORS.alertBg, borderBottom: `1px solid ${COLORS.line}` }}>
-                  🔒 Ce créneau n'est plus ouvert à la saisie — l'appel ne peut se faire que le jour du cours, jusqu'à 2h après sa fin. Contacte la Direction pour une correction a posteriori.
+                  🔒 Ce créneau n'est plus ouvert à la saisie — l'appel ne peut se faire que pendant le cours lui-même. Une fois l'heure passée, c'est irrévocablement fermé pour un enseignant. Contacte la Direction pour une correction a posteriori.
                 </div>
               )}
               <div className="grille-responsive" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>

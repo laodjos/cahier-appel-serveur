@@ -14,14 +14,12 @@ function ecoleEffective(req) {
   return req.query?.ecole_id || req.body?.ecole_id || null;
 }
 
-// Un enseignant ne peut pointer/valider l'appel d'un créneau que le jour où ce
-// créneau a réellement lieu, et jusqu'à 2h après sa fin — pas n'importe quand,
-// n'importe quel jour. Sans ce contrôle, un enseignant pouvait revenir marquer
-// un cours "fait" bien après coup (ou pour un mauvais jour de la semaine),
-// ce qui fausse aussi bien la fiabilité de l'appel que le calcul de la paie.
-// Direction/Surveillant/Super-administrateur gardent un accès complet
-// (rôle de supervision, peuvent corriger un oubli a posteriori).
-const MINUTES_GRACE_APRES_COURS = 120;
+// Un enseignant ne peut pointer/valider l'appel d'un créneau QUE pendant le
+// cours lui-même — de son heure de début à son heure de fin, ni avant ni
+// après. Une fois l'heure passée, c'est irrévocablement fermé pour un
+// enseignant (aucune marge de tolérance). Direction/Surveillant/
+// Super-administrateur gardent un accès complet (rôle de supervision, pour
+// corriger un oubli après coup).
 function creneauOuvertPourSaisie(creneau, maintenant) {
   const jourSemaineAuj = maintenant.getDay() || 7;
   const aujourdHui = maintenant.toISOString().slice(0, 10);
@@ -30,12 +28,14 @@ function creneauOuvertPourSaisie(creneau, maintenant) {
     : null;
   const estAujourdHui = dateExceptionnelleStr ? dateExceptionnelleStr === aujourdHui : creneau.jour_semaine === jourSemaineAuj;
   if (!estAujourdHui) return false;
-  if (!creneau.heure_fin) return true; // pas d'heure de fin définie -> pas de blocage possible
+  if (!creneau.heure_debut || !creneau.heure_fin) return true; // pas d'horaire défini -> pas de blocage possible
 
+  const [hD, mD] = creneau.heure_debut.split(":").map(Number);
   const [hF, mF] = creneau.heure_fin.split(":").map(Number);
-  const finMinutes = hF * 60 + mF + MINUTES_GRACE_APRES_COURS;
+  const debutMinutes = hD * 60 + mD;
+  const finMinutes = hF * 60 + mF;
   const maintenantMinutes = maintenant.getHours() * 60 + maintenant.getMinutes();
-  return maintenantMinutes <= finMinutes;
+  return maintenantMinutes >= debutMinutes && maintenantMinutes <= finMinutes;
 }
 
 // --------------------------------------------------------------------------
@@ -92,7 +92,7 @@ router.post("/manual", async (req, res) => {
       return res.status(403).json({ error: "Tu n'es pas l'enseignant affecté à ce créneau — impossible de pointer pour cette classe." });
     }
     if (!creneauOuvertPourSaisie(creneauRows[0], new Date())) {
-      return res.status(403).json({ error: "Ce créneau n'est pas ouvert à la saisie maintenant — l'appel ne peut se faire que le jour du cours, jusqu'à 2h après sa fin. Contacte la Direction pour une correction a posteriori." });
+      return res.status(403).json({ error: "Ce créneau n'est pas ouvert à la saisie maintenant — l'appel ne peut se faire que pendant le cours lui-même — une fois l'heure passée, c'est irrévocablement fermé. Contacte la Direction pour une correction a posteriori." });
     }
   }
 
@@ -226,7 +226,7 @@ router.post("/valider-appel", async (req, res) => {
       return res.status(403).json({ error: "Tu n'es pas l'enseignant affecté à ce créneau — impossible de valider cet appel." });
     }
     if (!creneauOuvertPourSaisie(creneauRows[0], new Date())) {
-      return res.status(403).json({ error: "Ce créneau n'est pas ouvert à la saisie maintenant — l'appel ne peut se faire que le jour du cours, jusqu'à 2h après sa fin. Contacte la Direction pour une correction a posteriori." });
+      return res.status(403).json({ error: "Ce créneau n'est pas ouvert à la saisie maintenant — l'appel ne peut se faire que pendant le cours lui-même — une fois l'heure passée, c'est irrévocablement fermé. Contacte la Direction pour une correction a posteriori." });
     }
   }
 
