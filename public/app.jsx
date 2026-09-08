@@ -214,6 +214,23 @@ function statutCreneau(creneau, maintenant) {
   return null;
 }
 
+// Reflète côté interface exactement la même règle que le serveur (voir
+// creneauOuvertPourSaisie dans attendance.js) — évite de faire cliquer un
+// enseignant sur "Valider l'appel" pour ne recevoir qu'une erreur après coup.
+const MINUTES_GRACE_APRES_COURS = 120;
+function creneauOuvertPourSaisie(creneau, maintenant) {
+  const jourSemaineAuj = maintenant.getDay() || 7;
+  const aujourdHui = maintenant.toISOString().slice(0, 10);
+  const dateExceptionnelleStr = creneau.date_exceptionnelle ? new Date(creneau.date_exceptionnelle).toISOString().slice(0, 10) : null;
+  const estAujourdHui = dateExceptionnelleStr ? dateExceptionnelleStr === aujourdHui : creneau.jour_semaine === jourSemaineAuj;
+  if (!estAujourdHui) return false;
+  if (!creneau.heure_fin) return true;
+  const [hF, mF] = creneau.heure_fin.split(":").map(Number);
+  const finMinutes = hF * 60 + mF + MINUTES_GRACE_APRES_COURS;
+  const maintenantMinutes = maintenant.getHours() * 60 + maintenant.getMinutes();
+  return maintenantMinutes <= finMinutes;
+}
+
 /* ============================================================
    Écran de connexion / configuration
    ============================================================ */
@@ -614,6 +631,7 @@ function App({ session, onLogout }) {
   const registreMap = Object.fromEntries(registre.map((r) => [r.student_id, r.statut]));
   const classeSelectionnee = classes.find((c) => c.id === selectedClasseId);
   const creneauSelectionne = creneaux.find((c) => c.id === selectedCreneauId);
+  const appelVerrouille = role === "enseignant" && creneauSelectionne && !creneauOuvertPourSaisie(creneauSelectionne, maintenant);
 
   async function refreshStudents() { api("/students").then(setStudents).catch(catchErr); }
   async function refreshRegistre() { if (selectedClasseId) api(`/attendance/registre?classe_id=${selectedClasseId}`).then(setRegistre).catch(catchErr); }
@@ -2362,8 +2380,13 @@ function App({ session, onLogout }) {
 
             <Card
               title="Registre de la classe — tout le monde est présent par défaut, coche uniquement les absents"
-              right={<Button small icon={P.check} onClick={validerAppel}>Valider l'appel</Button>}
+              right={<Button small icon={P.check} onClick={validerAppel} disabled={appelVerrouille}>Valider l'appel</Button>}
             >
+              {appelVerrouille && (
+                <div style={{ padding: "10px 18px", fontSize: 12, color: COLORS.alert, background: COLORS.alertBg, borderBottom: `1px solid ${COLORS.line}` }}>
+                  🔒 Ce créneau n'est plus ouvert à la saisie — l'appel ne peut se faire que le jour du cours, jusqu'à 2h après sa fin. Contacte la Direction pour une correction a posteriori.
+                </div>
+              )}
               <div className="grille-responsive" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
                 <span>Élève</span><span>Statut</span><span>Correction</span>
               </div>
@@ -2382,9 +2405,9 @@ function App({ session, onLogout }) {
                     <StatusLabel status={statutAffiche} />
                     <div style={{ display: "flex", gap: 6 }}>
                       {statutAffiche === "absent" ? (
-                        <Button small variant="ghost" onClick={() => manualToggle(s.id, "present")}>Marquer présent</Button>
+                        <Button small variant="ghost" disabled={appelVerrouille} onClick={() => manualToggle(s.id, "present")}>Marquer présent</Button>
                       ) : (
-                        <Button small variant="ghost" onClick={() => manualToggle(s.id, "absent")}>Marquer absent</Button>
+                        <Button small variant="ghost" disabled={appelVerrouille} onClick={() => manualToggle(s.id, "absent")}>Marquer absent</Button>
                       )}
                     </div>
                   </div>

@@ -14,6 +14,30 @@ function ecoleEffective(req) {
   return req.query?.ecole_id || req.body?.ecole_id || null;
 }
 
+// Un enseignant ne peut pointer/valider l'appel d'un créneau que le jour où ce
+// créneau a réellement lieu, et jusqu'à 2h après sa fin — pas n'importe quand,
+// n'importe quel jour. Sans ce contrôle, un enseignant pouvait revenir marquer
+// un cours "fait" bien après coup (ou pour un mauvais jour de la semaine),
+// ce qui fausse aussi bien la fiabilité de l'appel que le calcul de la paie.
+// Direction/Surveillant/Super-administrateur gardent un accès complet
+// (rôle de supervision, peuvent corriger un oubli a posteriori).
+const MINUTES_GRACE_APRES_COURS = 120;
+function creneauOuvertPourSaisie(creneau, maintenant) {
+  const jourSemaineAuj = maintenant.getDay() || 7;
+  const aujourdHui = maintenant.toISOString().slice(0, 10);
+  const dateExceptionnelleStr = creneau.date_exceptionnelle
+    ? new Date(creneau.date_exceptionnelle).toISOString().slice(0, 10)
+    : null;
+  const estAujourdHui = dateExceptionnelleStr ? dateExceptionnelleStr === aujourdHui : creneau.jour_semaine === jourSemaineAuj;
+  if (!estAujourdHui) return false;
+  if (!creneau.heure_fin) return true; // pas d'heure de fin définie -> pas de blocage possible
+
+  const [hF, mF] = creneau.heure_fin.split(":").map(Number);
+  const finMinutes = hF * 60 + mF + MINUTES_GRACE_APRES_COURS;
+  const maintenantMinutes = maintenant.getHours() * 60 + maintenant.getMinutes();
+  return maintenantMinutes <= finMinutes;
+}
+
 // --------------------------------------------------------------------------
 // POST /api/attendance/qr-scan  { token, creneau_id }
 // Appelé par l'appli tablette/smartphone de l'enseignant quand un badge est scanné.
@@ -58,13 +82,17 @@ router.post("/manual", async (req, res) => {
   }
 
   // Même contrôle que pour la validation d'appel : un enseignant ne peut marquer
-  // la présence que pour un créneau qui lui est réellement affecté.
+  // la présence que pour un créneau qui lui est réellement affecté, et
+  // uniquement le jour et dans la fenêtre horaire où ce cours a réellement lieu.
   if (req.user.role === "enseignant") {
     if (!creneau_id) return res.status(400).json({ error: "creneau_id requis pour pointer en tant qu'enseignant." });
-    const { rows: creneauRows } = await pool.query("SELECT enseignant FROM creneaux WHERE id = $1", [creneau_id]);
+    const { rows: creneauRows } = await pool.query("SELECT enseignant, jour_semaine, heure_fin, date_exceptionnelle FROM creneaux WHERE id = $1", [creneau_id]);
     if (!creneauRows[0]) return res.status(404).json({ error: "Créneau introuvable." });
     if (creneauRows[0].enseignant !== req.user.nom) {
       return res.status(403).json({ error: "Tu n'es pas l'enseignant affecté à ce créneau — impossible de pointer pour cette classe." });
+    }
+    if (!creneauOuvertPourSaisie(creneauRows[0], new Date())) {
+      return res.status(403).json({ error: "Ce créneau n'est pas ouvert à la saisie maintenant — l'appel ne peut se faire que le jour du cours, jusqu'à 2h après sa fin. Contacte la Direction pour une correction a posteriori." });
     }
   }
 
@@ -192,10 +220,13 @@ router.post("/valider-appel", async (req, res) => {
   // Super-administrateur gardent un accès complet (rôle de supervision).
   if (req.user.role === "enseignant") {
     if (!creneau_id) return res.status(400).json({ error: "creneau_id requis pour valider un appel en tant qu'enseignant." });
-    const { rows: creneauRows } = await pool.query("SELECT enseignant FROM creneaux WHERE id = $1 AND classe_id = $2", [creneau_id, classe_id]);
+    const { rows: creneauRows } = await pool.query("SELECT enseignant, jour_semaine, heure_fin, date_exceptionnelle FROM creneaux WHERE id = $1 AND classe_id = $2", [creneau_id, classe_id]);
     if (!creneauRows[0]) return res.status(404).json({ error: "Créneau introuvable pour cette classe." });
     if (creneauRows[0].enseignant !== req.user.nom) {
       return res.status(403).json({ error: "Tu n'es pas l'enseignant affecté à ce créneau — impossible de valider cet appel." });
+    }
+    if (!creneauOuvertPourSaisie(creneauRows[0], new Date())) {
+      return res.status(403).json({ error: "Ce créneau n'est pas ouvert à la saisie maintenant — l'appel ne peut se faire que le jour du cours, jusqu'à 2h après sa fin. Contacte la Direction pour une correction a posteriori." });
     }
   }
 
