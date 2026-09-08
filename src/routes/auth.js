@@ -49,7 +49,7 @@ router.post("/login", async (req, res) => {
     { expiresIn: process.env.JWT_EXPIRES_IN || "12h" }
   );
 
-  res.json({ token, user: { id: user.id, nom: user.nom, role: user.role, ecole_id: user.ecole_id, erp_actif: ecoleErpActif } });
+  res.json({ token, user: { id: user.id, nom: user.nom, role: user.role, ecole_id: user.ecole_id, matieres: user.matieres, erp_actif: ecoleErpActif } });
 });
 
 module.exports = router;

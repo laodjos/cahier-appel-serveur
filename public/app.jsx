@@ -464,6 +464,17 @@ function App({ session, onLogout }) {
   const [afficherVolumesClasses, setAfficherVolumesClasses] = useState(false);
   const [renouvellementEcole, setRenouvellementEcole] = useState(null);
   const [sousOngletErp, setSousOngletErp] = useState("notes");
+  const [periodesEvaluation, setPeriodesEvaluation] = useState([]);
+  const [coefficientsMatieres, setCoefficientsMatieres] = useState([]);
+  const [nouvellePeriode, setNouvellePeriode] = useState({ nom: "", date_debut: "", date_fin: "" });
+  const [nouveauCoefficient, setNouveauCoefficient] = useState({ matiere_id: "", niveau: "", coefficient: "1" });
+  const [saisieClasseId, setSaisieClasseId] = useState(null);
+  const [saisieMatiereId, setSaisieMatiereId] = useState("");
+  const [saisiePeriodeId, setSaisiePeriodeId] = useState("");
+  const [notesSaisie, setNotesSaisie] = useState([]);
+  const [bulletinEleveId, setBulletinEleveId] = useState("");
+  const [bulletinPeriodeId, setBulletinPeriodeId] = useState("");
+  const [bulletinData, setBulletinData] = useState(null);
   const [renouvellementMontant, setRenouvellementMontant] = useState("25000");
   const [renouvellementMois, setRenouvellementMois] = useState("1");
 
@@ -562,7 +573,12 @@ function App({ session, onLogout }) {
       if (availableViews.includes("parametrage-lecteurs")) api("/devices").then(siEcoleInchangee(setDevices)).catch(catchErr);
       if (availableViews.includes("parametres") || availableViews.includes("enseignants")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
       if (availableViews.includes("enseignants")) api("/matieres").then(siEcoleInchangee(setMatieresListe)).catch(catchErr);
+      if (availableViews.includes("erp") && matieresListe.length === 0) api("/matieres").then(siEcoleInchangee(setMatieresListe)).catch(catchErr);
       if (availableViews.includes("enseignants")) api("/volumes-horaires").then(siEcoleInchangee(setVolumesHoraires)).catch(catchErr);
+      if (view === "erp" && sousOngletErp === "notes") {
+        api("/periodes-evaluation").then(siEcoleInchangee(setPeriodesEvaluation)).catch(catchErr);
+        api("/coefficients-matieres").then(siEcoleInchangee(setCoefficientsMatieres)).catch(catchErr);
+      }
       if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
       if (availableViews.includes("emploi")) api("/salles").then(siEcoleInchangee(setSallesListe)).catch(catchErr);
       if (availableViews.includes("ecoles")) api("/ecoles").then(setEcoles).catch(catchErr);
@@ -1567,6 +1583,70 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function creerPeriodeEvaluation() {
+    if (!nouvellePeriode.nom.trim()) return;
+    try {
+      const ordre = periodesEvaluation.length + 1;
+      const cree = await api("/periodes-evaluation", { method: "POST", body: { ...nouvellePeriode, ordre } });
+      setPeriodesEvaluation((liste) => [...liste, cree]);
+      setNouvellePeriode({ nom: "", date_debut: "", date_fin: "" });
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerPeriodeEvaluation(id) {
+    if (!window.confirm("Supprimer cette période ? Toutes les notes qui y sont rattachées seront perdues.")) return;
+    try {
+      await api(`/periodes-evaluation/${id}`, { method: "DELETE" });
+      setPeriodesEvaluation((liste) => liste.filter((p) => p.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function creerCoefficient() {
+    if (!nouveauCoefficient.matiere_id || !nouveauCoefficient.niveau) return;
+    try {
+      const cree = await api("/coefficients-matieres", { method: "POST", body: nouveauCoefficient });
+      const matiere = matieresListe.find((m) => m.id === nouveauCoefficient.matiere_id);
+      setCoefficientsMatieres((liste) => [...liste, { ...cree, matiere_nom: matiere?.nom }]);
+      setNouveauCoefficient({ matiere_id: "", niveau: "", coefficient: "1" });
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerCoefficient(id) {
+    try {
+      await api(`/coefficients-matieres/${id}`, { method: "DELETE" });
+      setCoefficientsMatieres((liste) => liste.filter((c) => c.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  useEffect(() => {
+    if (!saisieClasseId || !saisieMatiereId || !saisiePeriodeId) { setNotesSaisie([]); return; }
+    api(`/notes?classe_id=${saisieClasseId}&matiere_id=${saisieMatiereId}&periode_id=${saisiePeriodeId}`).then(setNotesSaisie).catch(catchErr);
+  }, [saisieClasseId, saisieMatiereId, saisiePeriodeId, api]);
+
+  async function enregistrerNote(eleveId, noteExistante, valeur) {
+    if (valeur === "" || valeur == null) return;
+    try {
+      if (noteExistante) {
+        const maj = await api(`/notes/${noteExistante.id}`, { method: "PATCH", body: { valeur } });
+        setNotesSaisie((liste) => liste.map((n) => n.id === maj.id ? maj : n));
+      } else {
+        const cree = await api("/notes", {
+          method: "POST",
+          body: { eleve_id: eleveId, matiere_id: saisieMatiereId, periode_id: saisiePeriodeId, classe_id: saisieClasseId, valeur },
+        });
+        setNotesSaisie((liste) => [...liste, cree]);
+      }
+    } catch (e) { catchErr(e); }
+  }
+
+  async function chargerBulletin() {
+    if (!bulletinEleveId || !bulletinPeriodeId) return;
+    try {
+      const data = await api(`/bulletins/eleve/${bulletinEleveId}?periode_id=${bulletinPeriodeId}`);
+      setBulletinData(data);
+    } catch (e) { catchErr(e); }
+  }
+
   async function lancerPaiementRenouvellement() {
     try {
       const res = await api("/paiements/initier", {
@@ -2331,11 +2411,139 @@ function App({ session, onLogout }) {
               <button onClick={() => setSousOngletErp("notes")} style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 9, border: `1px solid ${sousOngletErp === "notes" ? COLORS.marker : COLORS.line}`, background: sousOngletErp === "notes" ? "rgba(217,164,65,0.14)" : "transparent", color: sousOngletErp === "notes" ? COLORS.marker : COLORS.craieDim, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>📝 Notes et bulletins</button>
               <button onClick={() => setSousOngletErp("frais")} style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 9, border: `1px solid ${sousOngletErp === "frais" ? COLORS.marker : COLORS.line}`, background: sousOngletErp === "frais" ? "rgba(217,164,65,0.14)" : "transparent", color: sousOngletErp === "frais" ? COLORS.marker : COLORS.craieDim, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>💰 Frais de scolarité</button>
             </div>
-            <Card>
-              <div style={{ padding: 30, textAlign: "center", color: COLORS.craieDim, fontSize: 13 }}>
-                {"notes" === sousOngletErp ? "Le module \"Notes et bulletins\" arrive dans une prochaine mise à jour." : "Le module \"Frais de scolarité\" arrive dans une prochaine mise à jour."}
-              </div>
-            </Card>
+
+            {sousOngletErp === "frais" && (
+              <Card>
+                <div style={{ padding: 30, textAlign: "center", color: COLORS.craieDim, fontSize: 13 }}>Le module "Frais de scolarité" arrive dans une prochaine mise à jour.</div>
+              </Card>
+            )}
+
+            {sousOngletErp === "notes" && (
+              <React.Fragment>
+                {(role === "direction" || role === "super_admin") && (
+                  <Card title="Périodes d'évaluation (semestres ou trimestres)" style={{ marginBottom: 20 }}>
+                    <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                      Nomme librement tes périodes — "1er Semestre" / "2ème Semestre", ou "1er Trimestre" / "2ème Trimestre" / "3ème Trimestre" selon l'organisation de ton établissement.
+                    </div>
+                    {periodesEvaluation.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucune période créée pour l'instant.</div>}
+                    {periodesEvaluation.map((p, i) => (
+                      <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < periodesEvaluation.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                        <span style={{ fontWeight: 500, flex: 1 }}>{p.nom}</span>
+                        <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>{p.date_debut ? new Date(p.date_debut).toLocaleDateString("fr-FR") : "?"} → {p.date_fin ? new Date(p.date_fin).toLocaleDateString("fr-FR") : "?"}</span>
+                        <button onClick={() => supprimerPeriodeEvaluation(p.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                      </div>
+                    ))}
+                    <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}` }}>
+                      <Field label="Nom (ex. 1er Semestre)"><input style={inputStyle} value={nouvellePeriode.nom} onChange={(e) => setNouvellePeriode((v) => ({ ...v, nom: e.target.value }))} /></Field>
+                      <Field label="Date de début"><input type="date" style={inputStyle} value={nouvellePeriode.date_debut} onChange={(e) => setNouvellePeriode((v) => ({ ...v, date_debut: e.target.value }))} /></Field>
+                      <Field label="Date de fin"><input type="date" style={inputStyle} value={nouvellePeriode.date_fin} onChange={(e) => setNouvellePeriode((v) => ({ ...v, date_fin: e.target.value }))} /></Field>
+                      <Button small icon={P.plus} onClick={creerPeriodeEvaluation}>Créer</Button>
+                    </div>
+                  </Card>
+                )}
+
+                {(role === "direction" || role === "super_admin") && (
+                  <Card title="Coefficients par matière" style={{ marginBottom: 20 }}>
+                    <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                      Une matière sans coefficient défini pour un niveau compte pour 1 par défaut dans le calcul de la moyenne générale.
+                    </div>
+                    {coefficientsMatieres.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun coefficient personnalisé — tout compte pour 1 par défaut.</div>}
+                    {coefficientsMatieres.map((c, i) => (
+                      <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < coefficientsMatieres.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                        <span style={{ fontWeight: 500, flex: 1 }}>{c.matiere_nom}</span>
+                        <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>{c.classe_nom || c.niveau}</span>
+                        <span style={{ fontSize: 12.5, color: COLORS.marker, fontWeight: 600, width: 50, textAlign: "right" }}>× {c.coefficient}</span>
+                        <button onClick={() => supprimerCoefficient(c.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                      </div>
+                    ))}
+                    <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}` }}>
+                      <Field label="Matière">
+                        <select style={inputStyle} value={nouveauCoefficient.matiere_id} onChange={(e) => setNouveauCoefficient((v) => ({ ...v, matiere_id: e.target.value }))}>
+                          <option value="">— Choisir —</option>
+                          {matieresListe.map((m) => <option key={m.id} value={m.id}>{m.nom}</option>)}
+                        </select>
+                      </Field>
+                      <Field label="Niveau">
+                        <select style={inputStyle} value={nouveauCoefficient.niveau} onChange={(e) => setNouveauCoefficient((v) => ({ ...v, niveau: e.target.value }))}>
+                          <option value="">— Choisir —</option>
+                          {["6ème", "5ème", "4ème", "3ème", "2nde", "1ère", "Terminale"].map((n) => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </Field>
+                      <Field label="Coefficient"><input type="number" min="0.5" step="0.5" style={{ ...inputStyle, width: 80 }} value={nouveauCoefficient.coefficient} onChange={(e) => setNouveauCoefficient((v) => ({ ...v, coefficient: e.target.value }))} /></Field>
+                      <Button small icon={P.plus} onClick={creerCoefficient}>Ajouter</Button>
+                    </div>
+                  </Card>
+                )}
+
+                <Card title="Saisie des notes" style={{ marginBottom: 20 }}>
+                  <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", borderBottom: `1px solid ${COLORS.line}` }}>
+                    <SelectClasseParNiveau classes={classes} value={saisieClasseId} onChange={(e) => setSaisieClasseId(e.target.value)} style={inputStyle} />
+                    <select style={inputStyle} value={saisieMatiereId} onChange={(e) => setSaisieMatiereId(e.target.value)}>
+                      <option value="">— Matière —</option>
+                      {matieresListe.filter((m) => role !== "enseignant" || (session.user.matieres || "").split(",").map((x) => x.trim()).includes(m.nom)).map((m) => <option key={m.id} value={m.id}>{m.nom}</option>)}
+                    </select>
+                    <select style={inputStyle} value={saisiePeriodeId} onChange={(e) => setSaisiePeriodeId(e.target.value)}>
+                      <option value="">— Période —</option>
+                      {periodesEvaluation.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+                    </select>
+                  </div>
+                  {(!saisieClasseId || !saisieMatiereId || !saisiePeriodeId) && (
+                    <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Choisis une classe, une matière et une période pour saisir les notes.</div>
+                  )}
+                  {saisieClasseId && saisieMatiereId && saisiePeriodeId && students.filter((s) => s.classe_id === saisieClasseId).map((eleve, i, liste) => {
+                    const notesEleve = notesSaisie.filter((n) => n.eleve_id === eleve.id);
+                    const derniereNote = notesEleve[notesEleve.length - 1];
+                    return (
+                      <div key={eleve.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < liste.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                        <span style={{ fontSize: 13, flex: 1 }}>{eleve.nom}</span>
+                        <input
+                          type="number" min="0" max="20" step="0.5"
+                          style={{ ...inputStyle, width: 70 }}
+                          defaultValue={derniereNote?.valeur ?? ""}
+                          placeholder="/ 20"
+                          onBlur={(e) => e.target.value !== "" && enregistrerNote(eleve.id, derniereNote, e.target.value)}
+                        />
+                      </div>
+                    );
+                  })}
+                </Card>
+
+                <Card title="Bulletin d'un élève">
+                  <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
+                    <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={bulletinEleveId} onChange={(e) => setBulletinEleveId(e.target.value)}>
+                      <option value="">— Choisir un élève —</option>
+                      {students.map((s) => <option key={s.id} value={s.id}>{s.nom} ({s.classe_nom})</option>)}
+                    </select>
+                    <select style={inputStyle} value={bulletinPeriodeId} onChange={(e) => setBulletinPeriodeId(e.target.value)}>
+                      <option value="">— Période —</option>
+                      {periodesEvaluation.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+                    </select>
+                    <Button small onClick={chargerBulletin}>Afficher</Button>
+                  </div>
+                  {bulletinData && (
+                    <div style={{ padding: 18 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+                        <div>
+                          <div style={{ fontSize: 15, fontWeight: 600 }}>{bulletinData.eleve.nom}</div>
+                          <div style={{ fontSize: 11.5, color: COLORS.craieDim }}>{bulletinData.eleve.classe_nom}</div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 20, fontWeight: 700, color: COLORS.marker }}>{bulletinData.moyenne_generale != null ? bulletinData.moyenne_generale : "—"} / 20</div>
+                          <div style={{ fontSize: 11.5, color: COLORS.craieDim }}>{bulletinData.rang ? `Rang ${bulletinData.rang} / ${bulletinData.effectif_classe}` : "Pas encore classé"}</div>
+                        </div>
+                      </div>
+                      {bulletinData.details.map((d, i) => (
+                        <div key={d.matiere_id} style={{ display: "flex", alignItems: "center", padding: "7px 0", borderBottom: i < bulletinData.details.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                          <span style={{ flex: 1 }}>{d.matiere_nom}</span>
+                          <span style={{ color: COLORS.craieDim, fontSize: 11.5, width: 70 }}>coef. {d.coefficient}</span>
+                          <span style={{ fontWeight: 600, width: 70, textAlign: "right" }}>{d.moyenne} / 20</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              </React.Fragment>
+            )}
           </div>
         )}
 

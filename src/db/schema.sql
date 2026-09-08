@@ -421,3 +421,56 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   auth TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ============================================================================
+-- MODULE ERP — Notes et bulletins
+-- ⚠ Hypothèses par défaut (à confirmer/ajuster) : notation sur 20, découpage
+-- en semestres (modifiable en trimestres si l'établissement le souhaite —
+-- c'est juste une liste de périodes librement nommées), coefficient par
+-- matière définissable par niveau (ex. Maths peut peser plus en Terminale D
+-- qu'en 6ème).
+-- ============================================================================
+
+-- Périodes d'évaluation (semestres ou trimestres) d'une année scolaire donnée.
+CREATE TABLE IF NOT EXISTS periodes_evaluation (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ecole_id UUID REFERENCES ecoles(id),
+  annee_scolaire_id UUID REFERENCES annees_scolaires(id),
+  nom TEXT NOT NULL, -- ex. "1er Semestre", "2ème Trimestre"
+  ordre INTEGER NOT NULL DEFAULT 1,
+  date_debut DATE,
+  date_fin DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Coefficient d'une matière — par niveau (le plus courant) ou par classe précise
+-- (si un cas particulier le justifie). Une valeur par défaut de 1 s'applique si
+-- rien n'est défini pour un niveau donné.
+CREATE TABLE IF NOT EXISTS coefficients_matieres (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ecole_id UUID REFERENCES ecoles(id),
+  matiere_id UUID REFERENCES matieres(id) ON DELETE CASCADE,
+  niveau TEXT,
+  classe_id UUID REFERENCES classes(id) ON DELETE CASCADE,
+  coefficient NUMERIC NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Notes individuelles d'un élève, dans une matière, pour une période donnée.
+-- La moyenne d'une matière pour un élève = moyenne simple de ses notes de
+-- cette matière sur la période (V1 — sans pondération devoir/composition).
+CREATE TABLE IF NOT EXISTS notes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  eleve_id UUID REFERENCES students(id) ON DELETE CASCADE,
+  matiere_id UUID REFERENCES matieres(id) ON DELETE CASCADE,
+  periode_id UUID REFERENCES periodes_evaluation(id) ON DELETE CASCADE,
+  classe_id UUID REFERENCES classes(id),
+  type_evaluation TEXT DEFAULT 'devoir', -- 'devoir' ou 'composition', informatif pour l'instant
+  valeur NUMERIC NOT NULL,
+  note_sur NUMERIC NOT NULL DEFAULT 20,
+  saisi_par UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_notes_eleve_periode ON notes(eleve_id, periode_id);
+CREATE INDEX IF NOT EXISTS idx_notes_matiere_periode ON notes(matiere_id, periode_id);
+

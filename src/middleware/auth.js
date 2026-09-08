@@ -24,6 +24,21 @@ function requireRole(...roles) {
   };
 }
 
+// Bloque l'accès aux routes du module ERP (notes/bulletins, frais de scolarité)
+// tant que l'établissement concerné n'a pas activé cette option payante séparée.
+// Le Super-administrateur passe toujours, même sans ecole_id précisé (utile
+// pour parcourir les réglages globaux du module).
+async function requireErpActif(req, res, next) {
+  if (req.user.role === "super_admin") return next();
+  const ecoleId = req.user.ecole_id || req.query?.ecole_id || req.body?.ecole_id || null;
+  if (!ecoleId) return res.status(403).json({ error: "Aucune école déterminée pour vérifier l'accès au module ERP." });
+  const { rows } = await pool.query("SELECT erp_actif FROM ecoles WHERE id = $1", [ecoleId]);
+  if (!rows[0]?.erp_actif) {
+    return res.status(403).json({ error: "Le module ERP n'est pas activé pour cet établissement. Contacte l'administrateur du système." });
+  }
+  next();
+}
+
 // Authentification du petit programme "agent" local (relais des lecteurs
 // biométriques) — pas de compte utilisateur, juste la clé secrète de l'école,
 // envoyée dans l'en-tête X-Agent-Key.
@@ -38,4 +53,4 @@ async function authAgent(req, res, next) {
   next();
 }
 
-module.exports = { authRequired, requireRole, authAgent };
+module.exports = { authRequired, requireRole, requireErpActif, authAgent };
