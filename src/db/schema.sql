@@ -187,6 +187,13 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS cycle_enseignement TEXT CHECK (cycle_
 ALTER TABLE students ADD COLUMN IF NOT EXISTS photo_url TEXT;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS date_naissance DATE;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS lieu_naissance TEXT;
+-- Champs ajoutés pour compléter l'export DESPS (Fichier National des Élèves) —
+-- jusqu'ici absents, ils devaient être remplis à la main à chaque export.
+ALTER TABLE students ADD COLUMN IF NOT EXISTS prenoms TEXT;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS genre TEXT CHECK (genre IN ('M', 'F') OR genre IS NULL);
+ALTER TABLE students ADD COLUMN IF NOT EXISTS nationalite TEXT DEFAULT 'Ivoirienne';
+ALTER TABLE students ADD COLUMN IF NOT EXISTS nom_pere TEXT;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS nom_mere TEXT;
 
 -- --------------------------------------------------------------------------
 -- Créneaux exceptionnels (heures de rattrapage) : un créneau normal se répète

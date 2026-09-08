@@ -417,7 +417,7 @@ function App({ session, onLogout }) {
   const [inclureSamedi, setInclureSamedi] = useState(false);
   const [resultatImport, setResultatImport] = useState(null);
   const [resultatImportEnseignants, setResultatImportEnseignants] = useState(null);
-  const [newEleve, setNewEleve] = useState({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "" });
+  const [newEleve, setNewEleve] = useState({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "", prenoms: "", genre: "", nationalite: "Ivoirienne", nom_pere: "", nom_mere: "" });
   const [newCreneau, setNewCreneau] = useState({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "09:00", matiere: "", enseignant: "", estRattrapage: false, date_exceptionnelle: "", salle_id: null, est_pause: false });
   const [formError, setFormError] = useState("");
 
@@ -462,6 +462,11 @@ function App({ session, onLogout }) {
   const [rapportEleveId, setRapportEleveId] = useState("");
   const [rapportUserId, setRapportUserId] = useState("");
   const [afficherInfosRhCreation, setAfficherInfosRhCreation] = useState(false);
+  const [afficherInfosDespsCreation, setAfficherInfosDespsCreation] = useState(false);
+  const [afficherInfosDespsDossier, setAfficherInfosDespsDossier] = useState(false);
+  const [showChangerMotDePasse, setShowChangerMotDePasse] = useState(false);
+  const [changementMdpForm, setChangementMdpForm] = useState({ ancien: "", nouveau: "", confirmation: "" });
+  const [changementMdpErreur, setChangementMdpErreur] = useState("");
   const [afficherVolumesClasses, setAfficherVolumesClasses] = useState(false);
   const [renouvellementEcole, setRenouvellementEcole] = useState(null);
   const [sousOngletErp, setSousOngletErp] = useState("notes");
@@ -859,9 +864,9 @@ function App({ session, onLogout }) {
     if (!selectedClasseId) return setFormError("Sélectionne d'abord une classe.");
     if (!newEleve.parentTel.trim()) return setFormError("Le téléphone du parent/tuteur est obligatoire dès l'inscription.");
     try {
-      const created = await api("/students", { method: "POST", body: { matricule: newEleve.matricule.trim(), nom: newEleve.nom.trim(), classe_id: selectedClasseId, methode_biometrique: newEleve.methode_biometrique, parent_nom: newEleve.parentNom.trim(), parent_telephone: newEleve.parentTel.trim(), date_naissance: newEleve.date_naissance || null, lieu_naissance: newEleve.lieu_naissance.trim() || null } });
+      const created = await api("/students", { method: "POST", body: { matricule: newEleve.matricule.trim(), nom: newEleve.nom.trim(), classe_id: selectedClasseId, methode_biometrique: newEleve.methode_biometrique, parent_nom: newEleve.parentNom.trim(), parent_telephone: newEleve.parentTel.trim(), date_naissance: newEleve.date_naissance || null, lieu_naissance: newEleve.lieu_naissance.trim() || null, prenoms: newEleve.prenoms.trim() || null, genre: newEleve.genre || null, nationalite: newEleve.nationalite.trim() || null, nom_pere: newEleve.nom_pere.trim() || null, nom_mere: newEleve.nom_mere.trim() || null } });
       await refreshStudents();
-      setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "" });
+      setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "", prenoms: "", genre: "", nationalite: "Ivoirienne", nom_pere: "", nom_mere: "" });
       setShowAddEleve(false);
     } catch (e) { setFormError(e.message); }
   }
@@ -1287,6 +1292,41 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function reinitialiserMotDePasse(id, nomAffiche) {
+    const nouveau = window.prompt(`Nouveau mot de passe pour ${nomAffiche} (6 caractères minimum) :`);
+    if (!nouveau) return;
+    if (nouveau.length < 6) { setGlobalError("Le mot de passe doit faire au moins 6 caractères."); setTimeout(() => setGlobalError(""), 4000); return; }
+    try {
+      await api(`/users/${id}/mot-de-passe`, { method: "PATCH", body: { nouveau_mot_de_passe: nouveau } });
+      setGlobalInfo(`Mot de passe de ${nomAffiche} réinitialisé — transmets-le-lui directement.`);
+      setTimeout(() => setGlobalInfo(""), 8000);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changerMonMotDePasse() {
+    setChangementMdpErreur("");
+    if (!changementMdpForm.ancien || !changementMdpForm.nouveau) {
+      setChangementMdpErreur("Renseigne l'ancien et le nouveau mot de passe.");
+      return;
+    }
+    if (changementMdpForm.nouveau.length < 6) {
+      setChangementMdpErreur("Le nouveau mot de passe doit faire au moins 6 caractères.");
+      return;
+    }
+    if (changementMdpForm.nouveau !== changementMdpForm.confirmation) {
+      setChangementMdpErreur("La confirmation ne correspond pas au nouveau mot de passe.");
+      return;
+    }
+    try {
+      await api("/auth/mot-de-passe", { method: "PATCH", body: { ancien_mot_de_passe: changementMdpForm.ancien, nouveau_mot_de_passe: changementMdpForm.nouveau } });
+      setShowChangerMotDePasse(false);
+      setGlobalInfo("Mot de passe changé avec succès.");
+      setTimeout(() => setGlobalInfo(""), 5000);
+    } catch (e) {
+      setChangementMdpErreur(e.message);
+    }
+  }
+
   async function changeUserMatieres(id, matieres) {
     try {
       const updated = await api(`/users/${id}/matieres`, { method: "PATCH", body: { matieres: matieres === "—" ? "" : matieres } });
@@ -1360,6 +1400,13 @@ function App({ session, onLogout }) {
     try {
       const updated = await api(`/students/${id}`, { method: "PATCH", body: { lieu_naissance: lieu_naissance || "" } });
       setDossierEleve((d) => d && d.id === id ? { ...d, lieu_naissance: updated.lieu_naissance } : d);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changeChampDespsEleve(id, champ, valeur) {
+    try {
+      const updated = await api(`/students/${id}`, { method: "PATCH", body: { [champ]: valeur || "" } });
+      setDossierEleve((d) => d && d.id === id ? { ...d, [champ]: updated[champ] } : d);
     } catch (e) { catchErr(e); }
   }
 
@@ -2158,7 +2205,12 @@ function App({ session, onLogout }) {
           {availableViews.includes("ecoles") && <NavItem label="Écoles" active={view === "ecoles"} onClick={() => { setSidebarOuverte(false); setView("ecoles"); }} count={ecoles.length} />}
         </nav>
         </div>
-        <div style={{ flexShrink: 0, padding: "12px 14px", borderTop: `1px solid ${COLORS.line}` }}><Button variant="ghost" small onClick={onLogout}>Se déconnecter</Button></div>
+        <div style={{ flexShrink: 0, padding: "12px 14px", borderTop: `1px solid ${COLORS.line}`, display: "flex", flexDirection: "column", gap: 6 }}>
+          <button onClick={() => { setChangementMdpForm({ ancien: "", nouveau: "", confirmation: "" }); setChangementMdpErreur(""); setShowChangerMotDePasse(true); }} style={{ background: "transparent", border: "none", color: COLORS.craieDim, cursor: "pointer", fontSize: 11.5, textAlign: "left", padding: 0, display: "flex", alignItems: "center", gap: 6 }}>
+            <Icon path={P.lock} size={12} /> Changer mon mot de passe
+          </button>
+          <Button variant="ghost" small onClick={onLogout}>Se déconnecter</Button>
+        </div>
       </aside>
 
       <main className="app-main">
@@ -2365,7 +2417,7 @@ function App({ session, onLogout }) {
                   <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={handleImportFichier} />
                 </label>
               )}
-              {(role === "direction" || role === "surveillant") && <Button icon={P.users} onClick={() => { setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "" }); setShowAddEleve(true); setShowAddClasse(false); setFormError(""); }}>Ajouter un élève</Button>}
+              {(role === "direction" || role === "surveillant") && <Button icon={P.users} onClick={() => { setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "", prenoms: "", genre: "", nationalite: "Ivoirienne", nom_pere: "", nom_mere: "" }); setShowAddEleve(true); setShowAddClasse(false); setFormError(""); }}>Ajouter un élève</Button>}
             </div>
             {resultatImport && (
               <div style={{ background: resultatImport.erreurs.length > 0 ? COLORS.alertBg : COLORS.successBg, border: `1px solid ${resultatImport.erreurs.length > 0 ? COLORS.alert : COLORS.success}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 12.5 }}>
@@ -2430,6 +2482,28 @@ function App({ session, onLogout }) {
                   <Field label="Nom du parent / tuteur"><input style={inputStyle} value={newEleve.parentNom} onChange={(e) => setNewEleve((v) => ({ ...v, parentNom: e.target.value }))} placeholder="ex. M. Kouassi" /></Field>
                   <Field label="Téléphone du parent (obligatoire)"><input style={inputStyle} value={newEleve.parentTel} onChange={(e) => setNewEleve((v) => ({ ...v, parentTel: e.target.value }))} placeholder="+225 07 00 00 00 00" /></Field>
                 </div>
+                <button type="button" onClick={() => setAfficherInfosDespsCreation((v) => !v)} style={{ background: "transparent", border: "none", color: COLORS.marker, cursor: "pointer", fontSize: 12, padding: "6px 0", textAlign: "left" }}>
+                  {afficherInfosDespsCreation ? "▾" : "▸"} Informations complémentaires (export DESPS — optionnel, à renseigner maintenant ou plus tard)
+                </button>
+                {afficherInfosDespsCreation && (
+                  <React.Fragment>
+                    <div style={{ display: "flex", gap: 12 }}>
+                      <Field label="Prénoms (séparés du nom, pour l'export DESPS)"><input style={inputStyle} value={newEleve.prenoms} onChange={(e) => setNewEleve((v) => ({ ...v, prenoms: e.target.value }))} placeholder="ex. Aïcha Fatou" /></Field>
+                      <Field label="Genre">
+                        <select style={inputStyle} value={newEleve.genre} onChange={(e) => setNewEleve((v) => ({ ...v, genre: e.target.value }))}>
+                          <option value="">— Non renseigné —</option>
+                          <option value="F">Féminin</option>
+                          <option value="M">Masculin</option>
+                        </select>
+                      </Field>
+                    </div>
+                    <Field label="Nationalité"><input style={inputStyle} value={newEleve.nationalite} onChange={(e) => setNewEleve((v) => ({ ...v, nationalite: e.target.value }))} placeholder="ex. Ivoirienne" /></Field>
+                    <div style={{ display: "flex", gap: 12 }}>
+                      <Field label="Nom et prénoms du Père"><input style={inputStyle} value={newEleve.nom_pere} onChange={(e) => setNewEleve((v) => ({ ...v, nom_pere: e.target.value }))} /></Field>
+                      <Field label="Nom et prénoms de la Mère"><input style={inputStyle} value={newEleve.nom_mere} onChange={(e) => setNewEleve((v) => ({ ...v, nom_mere: e.target.value }))} /></Field>
+                    </div>
+                  </React.Fragment>
+                )}
                 <div style={{ fontSize: 11, color: COLORS.craieDim }}>Utilise de préférence le matricule national de l'élève — c'est aussi celui à saisir sur le lecteur ZKTeco/Hikvision lors de l'enrôlement, pour que les pointages se relient au bon élève. Le bouton "Générer" ne sert qu'en dépannage, pour un élève sans matricule national.</div>
               </FormPanel>
             )}
@@ -3404,6 +3478,7 @@ function App({ session, onLogout }) {
                     </button>
                     <button onClick={() => imprimerBulletinSalaire(u.id, u.nom)} title="Imprimer le bulletin de salaire" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.scan} size={14} /></button>
                     {u.role === "enseignant" && <button onClick={() => setDossierEnseignantId(u.id)} title="Voir le dossier complet" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.users} size={14} /></button>}
+                    <button onClick={() => reinitialiserMotDePasse(u.id, u.nom)} title="Réinitialiser le mot de passe" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.lock} size={14} /></button>
                     <button onClick={() => removeUser(u.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={14} /></button>
                   </div>
                   {estDirectionGenerale && (
@@ -4146,6 +4221,7 @@ function App({ session, onLogout }) {
 
                 <div style={{ display: "flex", gap: 8, marginTop: 18, paddingTop: 14, borderTop: `1px solid ${COLORS.line}` }}>
                   <Button small variant="ghost" icon={P.scan} onClick={() => imprimerBulletinSalaire(u.id, u.nom)}>Bulletin de salaire</Button>
+                  <Button small variant="ghost" icon={P.lock} onClick={() => reinitialiserMotDePasse(u.id, u.nom)}>Réinitialiser le mot de passe</Button>
                   <div style={{ flex: 1 }} />
                   <button onClick={() => { setDossierEnseignantId(null); removeUser(u.id); }} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.alert, fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}>
                     <Icon path={P.trash} size={14} /> Supprimer le compte
@@ -4156,23 +4232,26 @@ function App({ session, onLogout }) {
           );
         })()}
 
-        {renouvellementEcole && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setRenouvellementEcole(null)}>
-            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 360 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Renouveler — {renouvellementEcole.nom}</span>
-                <button onClick={() => setRenouvellementEcole(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
+        {showChangerMotDePasse && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setShowChangerMotDePasse(false)}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 14, padding: 22, width: 340 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 600 }}>Changer mon mot de passe</span>
+                <button onClick={() => setShowChangerMotDePasse(false)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.x} size={16} /></button>
               </div>
-              <div style={{ fontSize: 11, color: COLORS.craieDim, marginBottom: 14 }}>
-                Génère un lien de paiement Orange Money. Une fois le paiement confirmé, la date de fin d'utilisation de cet établissement sera prolongée automatiquement — rien à faire manuellement après.
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <Field label="Ancien mot de passe">
+                  <input type="password" style={inputStyle} value={changementMdpForm.ancien} onChange={(e) => setChangementMdpForm((v) => ({ ...v, ancien: e.target.value }))} />
+                </Field>
+                <Field label="Nouveau mot de passe (6 caractères min.)">
+                  <input type="password" style={inputStyle} value={changementMdpForm.nouveau} onChange={(e) => setChangementMdpForm((v) => ({ ...v, nouveau: e.target.value }))} />
+                </Field>
+                <Field label="Confirmer le nouveau mot de passe">
+                  <input type="password" style={inputStyle} value={changementMdpForm.confirmation} onChange={(e) => setChangementMdpForm((v) => ({ ...v, confirmation: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && changerMonMotDePasse()} />
+                </Field>
+                {changementMdpErreur && <div style={{ fontSize: 12, color: COLORS.alert }}>{changementMdpErreur}</div>}
+                <Button icon={P.check} onClick={changerMonMotDePasse}>Changer le mot de passe</Button>
               </div>
-              <Field label="Montant (F CFA)">
-                <input type="number" style={inputStyle} value={renouvellementMontant} onChange={(e) => setRenouvellementMontant(e.target.value)} />
-              </Field>
-              <Field label="Nombre de mois à ajouter">
-                <input type="number" min="1" style={inputStyle} value={renouvellementMois} onChange={(e) => setRenouvellementMois(e.target.value)} />
-              </Field>
-              <Button icon={P.check} onClick={lancerPaiementRenouvellement} style={{ width: "100%", marginTop: 8 }}>Générer le lien de paiement</Button>
             </div>
           </div>
         )}
@@ -4376,6 +4455,30 @@ function App({ session, onLogout }) {
                   )}
                 </div>
               </div>
+
+              {role !== "enseignant" && (
+                <div style={{ marginBottom: 16 }}>
+                  <button type="button" onClick={() => setAfficherInfosDespsDossier((v) => !v)} style={{ background: "transparent", border: "none", color: COLORS.marker, cursor: "pointer", fontSize: 12, padding: "6px 0", textAlign: "left" }}>
+                    {afficherInfosDespsDossier ? "▾" : "▸"} Informations complémentaires (export DESPS)
+                  </button>
+                  {afficherInfosDespsDossier && (
+                    <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 12.5, marginTop: 8 }}>
+                      <div><span style={{ color: COLORS.craieDim }}>Prénoms</span><NomEditable valeur={dossierEleve.prenoms || "Non renseignés"} onValider={(v) => changeChampDespsEleve(dossierEleve.id, "prenoms", v === "Non renseignés" ? "" : v)} style={{ fontWeight: 600 }} /></div>
+                      <div>
+                        <span style={{ color: COLORS.craieDim }}>Genre</span>
+                        <select style={{ ...inputStyle, fontSize: 12.5, padding: "4px 8px" }} value={dossierEleve.genre || ""} onChange={(e) => changeChampDespsEleve(dossierEleve.id, "genre", e.target.value)}>
+                          <option value="">— Non renseigné —</option>
+                          <option value="F">Féminin</option>
+                          <option value="M">Masculin</option>
+                        </select>
+                      </div>
+                      <div><span style={{ color: COLORS.craieDim }}>Nationalité</span><NomEditable valeur={dossierEleve.nationalite || "Non renseignée"} onValider={(v) => changeChampDespsEleve(dossierEleve.id, "nationalite", v === "Non renseignée" ? "" : v)} style={{ fontWeight: 600 }} /></div>
+                      <div><span style={{ color: COLORS.craieDim }}>Nom et prénoms du Père</span><NomEditable valeur={dossierEleve.nom_pere || "Non renseigné"} onValider={(v) => changeChampDespsEleve(dossierEleve.id, "nom_pere", v === "Non renseigné" ? "" : v)} style={{ fontWeight: 600 }} /></div>
+                      <div><span style={{ color: COLORS.craieDim }}>Nom et prénoms de la Mère</span><NomEditable valeur={dossierEleve.nom_mere || "Non renseigné"} onValider={(v) => changeChampDespsEleve(dossierEleve.id, "nom_mere", v === "Non renseigné" ? "" : v)} style={{ fontWeight: 600 }} /></div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div style={{ fontSize: 12.5, fontWeight: 600, color: COLORS.marker, marginBottom: 8 }}>Parent(s) rattaché(s)</div>
               {dossierParents.length === 0 && <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 16 }}>Aucun parent rattaché pour l'instant.</div>}

@@ -105,7 +105,8 @@ router.get("/export-desps", async (req, res) => {
   const ecoleId = ecoleEffective(req);
   if (ecoleId) { params.push(ecoleId); filtreEcole = "c.ecole_id = $1"; }
   const { rows } = await pool.query(
-    `SELECT s.matricule, s.nom, c.nom AS classe, c.niveau, s.date_naissance, s.lieu_naissance,
+    `SELECT s.matricule, s.nom, s.prenoms, s.genre, s.nationalite, s.nom_pere, s.nom_mere,
+            c.nom AS classe, c.niveau, s.date_naissance, s.lieu_naissance,
             p.nom AS parent_nom, p.telephone AS parent_telephone, ec.nom AS ecole_nom
      FROM students s
      LEFT JOIN classes c ON c.id = s.classe_id
@@ -126,15 +127,15 @@ router.get("/export-desps", async (req, res) => {
     "Classe": r.classe || "",
     "Matricule national (si déjà attribué)": r.matricule || "",
     "Nom": r.nom || "",
-    "Prénoms (à compléter)": "",
+    "Prénoms": r.prenoms || "",
     "Date de naissance (JJ/MM/AAAA)": r.date_naissance ? r.date_naissance.toISOString().slice(0, 10).split("-").reverse().join("/") : "",
     "Lieu de naissance — Localité/Commune": r.lieu_naissance || "",
     "Lieu de naissance — Sous-préfecture ou Ville (à compléter)": "",
     "Pays de naissance (à compléter)": "",
-    "Genre (à compléter — M/F)": "",
-    "Nationalité (à compléter)": "",
-    "Nom et prénoms du Père (à compléter)": "",
-    "Nom et prénoms de la Mère (à compléter)": r.parent_nom || "",
+    "Genre": r.genre || "",
+    "Nationalité": r.nationalite || "",
+    "Nom et prénoms du Père": r.nom_pere || "",
+    "Nom et prénoms de la Mère": r.nom_mere || (r.parent_nom || ""),
     "Contact parent/tuteur": r.parent_telephone || "",
   }));
   const feuille = XLSX.utils.json_to_sheet(donneesExport);
@@ -150,11 +151,12 @@ router.get("/export-desps", async (req, res) => {
 
 // POST /api/students  { matricule, nom, classe_id, methode_biometrique }
 router.post("/", requireRole("direction", "surveillant"), async (req, res) => {
-  const { matricule, nom, classe_id, methode_biometrique, parent_nom, parent_telephone, date_naissance, lieu_naissance } = req.body;
+  const { matricule, nom, classe_id, methode_biometrique, parent_nom, parent_telephone, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere } = req.body;
   if (!matricule || !nom) return res.status(400).json({ error: "Matricule et nom requis." });
   if (!parent_telephone || !parent_telephone.trim()) {
     return res.status(400).json({ error: "Le téléphone du parent/tuteur est requis dès l'inscription de l'élève." });
   }
+  if (genre && !["M", "F"].includes(genre)) return res.status(400).json({ error: "Genre invalide (M ou F)." });
 
   // Vérifie que la classe choisie appartient bien à l'école de l'utilisateur
   // (empêche d'inscrire un élève dans la classe d'une AUTRE école par erreur).
@@ -169,9 +171,9 @@ router.post("/", requireRole("direction", "surveillant"), async (req, res) => {
   try {
     await client.query("BEGIN");
     const { rows } = await client.query(
-      `INSERT INTO students (matricule, nom, classe_id, methode_biometrique, date_naissance, lieu_naissance)
-       VALUES ($1, $2, $3, COALESCE($4, 'aucune'), $5, $6) RETURNING *`,
-      [matricule, nom, classe_id || null, methode_biometrique, date_naissance || null, lieu_naissance || null]
+      `INSERT INTO students (matricule, nom, classe_id, methode_biometrique, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere)
+       VALUES ($1, $2, $3, COALESCE($4, 'aucune'), $5, $6, $7, $8, COALESCE($9, 'Ivoirienne'), $10, $11) RETURNING *`,
+      [matricule, nom, classe_id || null, methode_biometrique, date_naissance || null, lieu_naissance || null, prenoms || null, genre || null, nationalite || null, nom_pere || null, nom_mere || null]
     );
     const student = rows[0];
 
@@ -283,11 +285,16 @@ router.get("/:id", async (req, res) => {
   res.json(rows[0]);
 });
 
-// PATCH /api/students/:id  { nom?, matricule? } — correction du nom (et/ou du matricule) d'un élève
+// PATCH /api/students/:id  { nom?, matricule?, ... } — correction des informations d'un élève
 router.patch("/:id", requireRole("direction", "surveillant", "super_admin"), async (req, res) => {
-  const { nom, matricule, date_naissance, lieu_naissance } = req.body;
-  if (!nom?.trim() && !matricule?.trim() && date_naissance === undefined && lieu_naissance === undefined) {
+  const { nom, matricule, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere } = req.body;
+  const rienAModifier = !nom?.trim() && !matricule?.trim() && date_naissance === undefined && lieu_naissance === undefined
+    && prenoms === undefined && genre === undefined && nationalite === undefined && nom_pere === undefined && nom_mere === undefined;
+  if (rienAModifier) {
     return res.status(400).json({ error: "Indique au moins un champ à corriger." });
+  }
+  if (genre !== undefined && genre !== null && genre !== "" && !["M", "F"].includes(genre)) {
+    return res.status(400).json({ error: "Genre invalide (M ou F)." });
   }
   try {
     const { rows } = await pool.query(
@@ -295,9 +302,24 @@ router.patch("/:id", requireRole("direction", "surveillant", "super_admin"), asy
          nom = COALESCE(NULLIF($1, ''), nom),
          matricule = COALESCE(NULLIF($2, ''), matricule),
          date_naissance = CASE WHEN $3::text IS NOT NULL THEN NULLIF($3, '')::date ELSE date_naissance END,
-         lieu_naissance = CASE WHEN $4::text IS NOT NULL THEN NULLIF($4, '') ELSE lieu_naissance END
+         lieu_naissance = CASE WHEN $4::text IS NOT NULL THEN NULLIF($4, '') ELSE lieu_naissance END,
+         prenoms = CASE WHEN $6::text IS NOT NULL THEN NULLIF($6, '') ELSE prenoms END,
+         genre = CASE WHEN $7::text IS NOT NULL THEN NULLIF($7, '') ELSE genre END,
+         nationalite = CASE WHEN $8::text IS NOT NULL THEN NULLIF($8, '') ELSE nationalite END,
+         nom_pere = CASE WHEN $9::text IS NOT NULL THEN NULLIF($9, '') ELSE nom_pere END,
+         nom_mere = CASE WHEN $10::text IS NOT NULL THEN NULLIF($10, '') ELSE nom_mere END
        WHERE id = $5 RETURNING *`,
-      [nom?.trim() || "", matricule?.trim() || "", date_naissance !== undefined ? date_naissance : null, lieu_naissance !== undefined ? lieu_naissance : null, req.params.id]
+      [
+        nom?.trim() || "", matricule?.trim() || "",
+        date_naissance !== undefined ? date_naissance : null,
+        lieu_naissance !== undefined ? lieu_naissance : null,
+        req.params.id,
+        prenoms !== undefined ? prenoms : null,
+        genre !== undefined ? genre : null,
+        nationalite !== undefined ? nationalite : null,
+        nom_pere !== undefined ? nom_pere : null,
+        nom_mere !== undefined ? nom_mere : null,
+      ]
     );
     if (!rows[0]) return res.status(404).json({ error: "Élève introuvable." });
     res.json(rows[0]);

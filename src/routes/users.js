@@ -149,6 +149,26 @@ router.patch("/:id/email", async (req, res) => {
   }
 });
 
+// PATCH /api/users/:id/mot-de-passe  { nouveau_mot_de_passe }
+// Réinitialisation par la Direction ou le Super-administrateur — pour un
+// compte qui a oublié son mot de passe, sans passer par un email de
+// récupération (qu'on n'a pas). Ne demande pas l'ancien mot de passe :
+// c'est un reset supervisé, pas un changement volontaire par la personne elle-même.
+router.patch("/:id/mot-de-passe", async (req, res) => {
+  const { nouveau_mot_de_passe } = req.body;
+  if (!nouveau_mot_de_passe || nouveau_mot_de_passe.length < 6) {
+    return res.status(400).json({ error: "Le mot de passe doit faire au moins 6 caractères." });
+  }
+  const params = [req.params.id];
+  const filtreEcole = clauseEcole(req, params, "ecole_id");
+  const { rows: cible } = await pool.query(`SELECT id FROM users WHERE id = $1 AND ${filtreEcole}`, params);
+  if (!cible[0]) return res.status(404).json({ error: "Compte introuvable (ou hors de ton école)." });
+
+  const hash = await bcrypt.hash(nouveau_mot_de_passe, 10);
+  await pool.query("UPDATE users SET mot_de_passe_hash = $1 WHERE id = $2", [hash, req.params.id]);
+  res.status(204).send();
+});
+
 router.patch("/:id/matieres", async (req, res) => {
   const { matieres } = req.body;
   const params = [matieres?.trim() || null, req.params.id];
