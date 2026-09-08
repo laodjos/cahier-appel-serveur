@@ -90,6 +90,64 @@ router.get("/export", async (req, res) => {
   res.send(buffer);
 });
 
+// --------------------------------------------------------------------------
+// GET /api/students/export-desps — export au format du "Fichier National des
+// Élèves" (DESPS, mena-desps.org) : mêmes champs que la "Fiche de demande
+// d'immatriculation" officielle, pour réduire la ressaisie manuelle sur le
+// portail. ⚠ Il n'existe pas d'API publique DESPS/DOB pour l'envoi
+// automatique — ce fichier reste à déposer/saisir manuellement sur le portail.
+// Colonnes en trop dans le système (genre, nationalité, parents séparés...)
+// sont laissées vides, à compléter avant dépôt.
+// --------------------------------------------------------------------------
+router.get("/export-desps", async (req, res) => {
+  const params = [];
+  let filtreEcole = "TRUE";
+  const ecoleId = ecoleEffective(req);
+  if (ecoleId) { params.push(ecoleId); filtreEcole = "c.ecole_id = $1"; }
+  const { rows } = await pool.query(
+    `SELECT s.matricule, s.nom, c.nom AS classe, c.niveau, s.date_naissance, s.lieu_naissance,
+            p.nom AS parent_nom, p.telephone AS parent_telephone, ec.nom AS ecole_nom
+     FROM students s
+     LEFT JOIN classes c ON c.id = s.classe_id
+     LEFT JOIN ecoles ec ON ec.id = c.ecole_id
+     LEFT JOIN LATERAL (
+       SELECT pa.nom, pa.telephone FROM student_parents sp
+       JOIN parents pa ON pa.id = sp.parent_id
+       WHERE sp.student_id = s.id ORDER BY sp.parent_id LIMIT 1
+     ) p ON TRUE
+     WHERE ${filtreEcole}
+     ORDER BY c.niveau NULLS LAST, c.nom NULLS LAST, s.nom`,
+    params
+  );
+
+  const donneesExport = rows.map((r) => ({
+    "Établissement": r.ecole_nom || "",
+    "Niveau": r.niveau || "",
+    "Classe": r.classe || "",
+    "Matricule national (si déjà attribué)": r.matricule || "",
+    "Nom": r.nom || "",
+    "Prénoms (à compléter)": "",
+    "Date de naissance (JJ/MM/AAAA)": r.date_naissance ? r.date_naissance.toISOString().slice(0, 10).split("-").reverse().join("/") : "",
+    "Lieu de naissance — Localité/Commune": r.lieu_naissance || "",
+    "Lieu de naissance — Sous-préfecture ou Ville (à compléter)": "",
+    "Pays de naissance (à compléter)": "",
+    "Genre (à compléter — M/F)": "",
+    "Nationalité (à compléter)": "",
+    "Nom et prénoms du Père (à compléter)": "",
+    "Nom et prénoms de la Mère (à compléter)": r.parent_nom || "",
+    "Contact parent/tuteur": r.parent_telephone || "",
+  }));
+  const feuille = XLSX.utils.json_to_sheet(donneesExport);
+  feuille["!cols"] = Object.keys(donneesExport[0] || {}).map(() => ({ wch: 26 }));
+  const classeur = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(classeur, feuille, "Fichier National Élèves");
+  const buffer = XLSX.write(classeur, { type: "buffer", bookType: "xlsx" });
+
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", "attachment; filename=export-desps-fichier-national-eleves.xlsx");
+  res.send(buffer);
+});
+
 // POST /api/students  { matricule, nom, classe_id, methode_biometrique }
 router.post("/", requireRole("direction", "surveillant"), async (req, res) => {
   const { matricule, nom, classe_id, methode_biometrique, parent_nom, parent_telephone, date_naissance, lieu_naissance } = req.body;

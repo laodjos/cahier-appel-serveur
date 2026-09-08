@@ -703,6 +703,25 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function exporterDespsExcel() {
+    try {
+      const res = await fetch(`${session.baseUrl}/students/export-desps`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!res.ok) throw new Error("Échec de l'export.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const lien = document.createElement("a");
+      lien.href = url;
+      lien.download = "export-desps-fichier-national-eleves.xlsx";
+      document.body.appendChild(lien);
+      lien.click();
+      document.body.removeChild(lien);
+      URL.revokeObjectURL(url);
+    } catch (e) { catchErr(e); }
+  }
+
+
   async function exporterRegistreJourPdf(date) {
     try {
       const res = await api(`/attendance/registre-jour?date=${date}`);
@@ -2087,7 +2106,8 @@ function App({ session, onLogout }) {
         </button>
         <span style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600 }}>Cahier d'Appel</span>
       </div>
-      <aside className={`app-sidebar ${sidebarOuverte ? "ouverte" : ""}`} style={{ background: COLORS.ardoiseDeep, borderRight: `1px solid ${COLORS.line}`, padding: "22px 14px", display: "flex", flexDirection: "column", gap: 18 }}>
+      <aside className={`app-sidebar ${sidebarOuverte ? "ouverte" : ""}`} style={{ background: COLORS.ardoiseDeep, borderRight: `1px solid ${COLORS.line}`, display: "flex", flexDirection: "column", padding: 0 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px 14px", display: "flex", flexDirection: "column", gap: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 34, height: 34, borderRadius: 9, background: COLORS.marker, display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.ardoiseDeep, fontWeight: 700 }}>CA</div>
           <div><div style={{ fontFamily: "'Fraunces', serif", fontSize: 15.5, fontWeight: 600 }}>Cahier d'Appel</div><div style={{ fontSize: 10.5, color: COLORS.craieDim }}>Connecté au serveur</div></div>
@@ -2137,7 +2157,8 @@ function App({ session, onLogout }) {
           {availableViews.includes("parametres") && <NavItem label="Paramètres" active={view === "parametres"} onClick={() => { setSidebarOuverte(false); setView("parametres"); }} count={users.length} />}
           {availableViews.includes("ecoles") && <NavItem label="Écoles" active={view === "ecoles"} onClick={() => { setSidebarOuverte(false); setView("ecoles"); }} count={ecoles.length} />}
         </nav>
-        <div style={{ marginTop: "auto" }}><Button variant="ghost" small onClick={onLogout}>Se déconnecter</Button></div>
+        </div>
+        <div style={{ flexShrink: 0, padding: "12px 14px", borderTop: `1px solid ${COLORS.line}` }}><Button variant="ghost" small onClick={onLogout}>Se déconnecter</Button></div>
       </aside>
 
       <main className="app-main">
@@ -3148,6 +3169,13 @@ function App({ session, onLogout }) {
                   <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Export académique (Excel)</div>
                   <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>Liste complète des élèves, classes, dates de naissance et contacts parents.</div>
                   <Button small variant="ghost" onClick={exporterElevesExcel}>Télécharger le fichier Excel</Button>
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Export DESPS (Fichier National des Élèves)</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>Colonnes alignées sur la fiche officielle d'immatriculation (mena-desps.org) — à compléter et déposer manuellement, aucune API publique n'existe pour un envoi automatique.</div>
+                  <Button small variant="ghost" onClick={exporterDespsExcel}>Télécharger le fichier Excel</Button>
                 </div>
               </Card>
               <Card>
