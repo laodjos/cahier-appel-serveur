@@ -101,19 +101,24 @@ function trouverDansTable(table, nomNorm) {
   return cle ? table[cle] : null;
 }
 
-// Le cycle se détermine par le NIVEAU, pas par la présence d'une série — une
-// classe de 2nde est déjà du 2nd cycle bien qu'elle n'ait souvent pas encore
-// de série (celle-ci se choisit en général à partir de la 1ère). Sans cette
-// distinction, une 2nde sans série aurait été traitée à tort comme le 1er
-// cycle, avec le découpage du Français en trois épreuves qui ne s'y applique pas.
+// Le cycle se détermine par le NIVEAU, pas par la présence d'une série — le
+// 2nd cycle commence dès la 2nde. Important : en 2nde, seules les séries A et
+// C existent (pas encore de D, qui n'apparaît qu'à partir de la 1ère/Terminale,
+// souvent par scission de la filière C). Le Français y reste un bloc unique
+// (le découpage en trois épreuves ne concerne que le 1er cycle).
 const NIVEAUX_2ND_CYCLE = ["2nde", "1ere", "terminale"];
 
 function trouverCoefficientReference(nomMatiere, niveau, serie) {
   const nomNorm = normaliser(nomMatiere);
-  const estSecondCycle = NIVEAUX_2ND_CYCLE.includes(normaliser(niveau || ""));
+  const niveauNorm = normaliser(niveau || "");
+  const estSecondCycle = NIVEAUX_2ND_CYCLE.includes(niveauNorm);
   if (!estSecondCycle) return trouverDansTable(COEFFICIENTS_1ER_CYCLE, nomNorm);
-  // 2nd cycle : sans série connue (ex. 2nde tronc commun), on ne devine pas de
-  // coefficient plutôt que d'en appliquer un potentiellement faux.
+  // La table de référence ci-dessus (A1/A2/C/D) documente des coefficients de
+  // BAC (1ère/Terminale) — on ne sait pas s'ils s'appliquent tels quels à la
+  // 2nde, dont les séries A/C sont moins différenciées. Par prudence, on ne
+  // devine aucun coefficient en 2nde plutôt que de réutiliser à tort ceux de
+  // Terminale — à compléter si tu obtiens les vrais barèmes de 2nde.
+  if (niveauNorm === "2nde") return null;
   const table = serie ? COEFFICIENTS_2ND_CYCLE[normaliser(serie)] : null;
   return table ? trouverDansTable(table, nomNorm) : null;
 }

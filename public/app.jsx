@@ -2475,7 +2475,7 @@ function App({ session, onLogout }) {
                   <Field label="Niveau (ex. CM2, 6ème)"><input style={inputStyle} value={newClasseNiveau} onChange={(e) => setNewClasseNiveau(e.target.value)} placeholder="ex. CM2" /></Field>
                   <Field label="Nom de la classe"><input style={inputStyle} value={newClasseNom} onChange={(e) => setNewClasseNom(e.target.value)} placeholder="ex. CM2-D" autoFocus /></Field>
                 </div>
-                <Field label="Série (2nd cycle uniquement — ex. A1, A2, C, D — laisser vide sinon)">
+                <Field label="Série (2nd cycle uniquement — 2nde : A ou C ; 1ère/Terminale : A1, A2, C, D — laisser vide sinon)">
                   <input style={inputStyle} value={newClasseSerie} onChange={(e) => setNewClasseSerie(e.target.value)} placeholder="ex. D" />
                 </Field>
                 <Field label="Vacation (double vacation seulement)">
@@ -2840,7 +2840,7 @@ function App({ session, onLogout }) {
                     right={<Button small variant="ghost" icon={P.folder} onClick={genererCoefficientsAuto}>Générer automatiquement</Button>}
                   >
                     <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
-                      Une matière sans coefficient défini pour un niveau compte pour 1 par défaut. "Générer automatiquement" applique les coefficients usuels du système ivoirien (1er cycle, et 2nd cycle par série — A1, A2, C, D) pour les niveaux/séries de tes classes, sans jamais toucher un coefficient déjà personnalisé. ⚠ À vérifier avant tout usage officiel — les barèmes peuvent varier légèrement.
+                      Une matière sans coefficient défini pour un niveau compte pour 1 par défaut. "Générer automatiquement" applique les coefficients usuels du système ivoirien (1er cycle, et 1ère/Terminale par série — A1, A2, C, D) pour les niveaux/séries de tes classes, sans jamais toucher un coefficient déjà personnalisé. La 2nde n'est pas couverte (barèmes non confirmés) — à compléter manuellement si besoin. ⚠ À vérifier avant tout usage officiel — les barèmes peuvent varier légèrement.
                     </div>
                     {coefficientsMatieres.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun coefficient personnalisé — tout compte pour 1 par défaut.</div>}
                     {coefficientsMatieres.map((c, i) => (
