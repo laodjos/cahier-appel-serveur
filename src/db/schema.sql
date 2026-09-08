@@ -348,6 +348,10 @@ CREATE TABLE IF NOT EXISTS ecoles (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS ecole_id UUID REFERENCES ecoles(id);
 ALTER TABLE classes ADD COLUMN IF NOT EXISTS ecole_id UUID REFERENCES ecoles(id);
 ALTER TABLE classes ADD COLUMN IF NOT EXISTS vacation TEXT CHECK (vacation IN ('matin', 'apres_midi') OR vacation IS NULL);
+-- Série du bac (2nd cycle uniquement — A1, A2, C, D, etc.) : les coefficients
+-- des matières varient fortement selon la série choisie, pas seulement selon
+-- le niveau. NULL pour tout le 1er cycle et pour les classes de 2nde tronc commun.
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS serie TEXT;
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS ecole_id UUID REFERENCES ecoles(id);
 
 -- --------------------------------------------------------------------------
@@ -463,6 +467,7 @@ CREATE TABLE IF NOT EXISTS coefficients_matieres (
   ecole_id UUID REFERENCES ecoles(id),
   matiere_id UUID REFERENCES matieres(id) ON DELETE CASCADE,
   niveau TEXT,
+  serie TEXT, -- ex. "C", "D", "A1" — combiné à niveau pour le 2nd cycle uniquement
   classe_id UUID REFERENCES classes(id) ON DELETE CASCADE,
   coefficient NUMERIC NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()

@@ -430,6 +430,7 @@ function App({ session, onLogout }) {
   const [showAddCreneau, setShowAddCreneau] = useState(false);
   const [newClasseNom, setNewClasseNom] = useState("");
   const [newClasseNiveau, setNewClasseNiveau] = useState("");
+  const [newClasseSerie, setNewClasseSerie] = useState("");
   const [newClasseEcoleId, setNewClasseEcoleId] = useState(null);
   const [newClasseVacation, setNewClasseVacation] = useState(null);
   const [resultatGenerationAuto, setResultatGenerationAuto] = useState(null);
@@ -493,7 +494,7 @@ function App({ session, onLogout }) {
   const [periodesEvaluation, setPeriodesEvaluation] = useState([]);
   const [coefficientsMatieres, setCoefficientsMatieres] = useState([]);
   const [nouvellePeriode, setNouvellePeriode] = useState({ nom: "", date_debut: "", date_fin: "" });
-  const [nouveauCoefficient, setNouveauCoefficient] = useState({ matiere_id: "", niveau: "", coefficient: "1" });
+  const [nouveauCoefficient, setNouveauCoefficient] = useState({ matiere_id: "", niveau: "", serie: "", coefficient: "1" });
   const [saisieClasseId, setSaisieClasseId] = useState(null);
   const [saisieMatiereId, setSaisieMatiereId] = useState("");
   const [saisiePeriodeId, setSaisiePeriodeId] = useState("");
@@ -644,7 +645,7 @@ function App({ session, onLogout }) {
     if (!newClasseNom.trim()) return setFormError("Le nom de la classe est requis.");
     if (estDirectionGenerale && !newClasseEcoleId) return setFormError("Choisis d'abord une école pour cette classe.");
     try {
-      const created = await api("/classes", { method: "POST", body: { nom: newClasseNom.trim(), niveau: newClasseNiveau.trim(), ecole_id: newClasseEcoleId, vacation: newClasseVacation } });
+      const created = await api("/classes", { method: "POST", body: { nom: newClasseNom.trim(), niveau: newClasseNiveau.trim(), serie: newClasseSerie.trim() || null, ecole_id: newClasseEcoleId, vacation: newClasseVacation } });
       setClasses((c) => [...c, created]);
       setSelectedClasseId(created.id);
       setNewClasseNom(""); setNewClasseNiveau(""); setNewClasseEcoleId(null); setNewClasseVacation(null); setShowAddClasse(false);
@@ -1717,7 +1718,18 @@ function App({ session, onLogout }) {
       const cree = await api("/coefficients-matieres", { method: "POST", body: nouveauCoefficient });
       const matiere = matieresListe.find((m) => m.id === nouveauCoefficient.matiere_id);
       setCoefficientsMatieres((liste) => [...liste, { ...cree, matiere_nom: matiere?.nom }]);
-      setNouveauCoefficient({ matiere_id: "", niveau: "", coefficient: "1" });
+      setNouveauCoefficient({ matiere_id: "", niveau: "", serie: "", coefficient: "1" });
+    } catch (e) { catchErr(e); }
+  }
+
+  async function genererCoefficientsAuto() {
+    if (!window.confirm("Générer automatiquement les coefficients usuels (1er cycle, et 2nd cycle par série) pour les niveaux/séries de tes classes ? Les coefficients déjà personnalisés ne seront jamais modifiés.")) return;
+    try {
+      const res = await api("/coefficients-matieres/generer-automatiquement", { method: "POST" });
+      const frais = await api("/coefficients-matieres");
+      setCoefficientsMatieres(frais);
+      setGlobalInfo(`${res.creees} coefficient(s) généré(s) automatiquement.`);
+      setTimeout(() => setGlobalInfo(""), 5000);
     } catch (e) { catchErr(e); }
   }
 
@@ -2463,6 +2475,9 @@ function App({ session, onLogout }) {
                   <Field label="Niveau (ex. CM2, 6ème)"><input style={inputStyle} value={newClasseNiveau} onChange={(e) => setNewClasseNiveau(e.target.value)} placeholder="ex. CM2" /></Field>
                   <Field label="Nom de la classe"><input style={inputStyle} value={newClasseNom} onChange={(e) => setNewClasseNom(e.target.value)} placeholder="ex. CM2-D" autoFocus /></Field>
                 </div>
+                <Field label="Série (2nd cycle uniquement — ex. A1, A2, C, D — laisser vide sinon)">
+                  <input style={inputStyle} value={newClasseSerie} onChange={(e) => setNewClasseSerie(e.target.value)} placeholder="ex. D" />
+                </Field>
                 <Field label="Vacation (double vacation seulement)">
                   <select style={inputStyle} value={newClasseVacation || ""} onChange={(e) => setNewClasseVacation(e.target.value || null)}>
                     <option value="">Journée normale (pas de double vacation)</option>
@@ -2819,15 +2834,19 @@ function App({ session, onLogout }) {
                 )}
 
                 {(role === "direction" || role === "super_admin") && (
-                  <Card title="Coefficients par matière" style={{ marginBottom: 20 }}>
+                  <Card
+                    title="Coefficients par matière"
+                    style={{ marginBottom: 20 }}
+                    right={<Button small variant="ghost" icon={P.folder} onClick={genererCoefficientsAuto}>Générer automatiquement</Button>}
+                  >
                     <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
-                      Une matière sans coefficient défini pour un niveau compte pour 1 par défaut dans le calcul de la moyenne générale.
+                      Une matière sans coefficient défini pour un niveau compte pour 1 par défaut. "Générer automatiquement" applique les coefficients usuels du système ivoirien (1er cycle, et 2nd cycle par série — A1, A2, C, D) pour les niveaux/séries de tes classes, sans jamais toucher un coefficient déjà personnalisé. ⚠ À vérifier avant tout usage officiel — les barèmes peuvent varier légèrement.
                     </div>
                     {coefficientsMatieres.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun coefficient personnalisé — tout compte pour 1 par défaut.</div>}
                     {coefficientsMatieres.map((c, i) => (
                       <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < coefficientsMatieres.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
                         <span style={{ fontWeight: 500, flex: 1 }}>{c.matiere_nom}</span>
-                        <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>{c.classe_nom || c.niveau}</span>
+                        <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>{c.classe_nom || [c.niveau, c.serie].filter(Boolean).join(" — ")}</span>
                         <span style={{ fontSize: 12.5, color: COLORS.marker, fontWeight: 600, width: 50, textAlign: "right" }}>× {c.coefficient}</span>
                         <button onClick={() => supprimerCoefficient(c.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
                       </div>
@@ -2845,6 +2864,7 @@ function App({ session, onLogout }) {
                           {["6ème", "5ème", "4ème", "3ème", "2nde", "1ère", "Terminale"].map((n) => <option key={n} value={n}>{n}</option>)}
                         </select>
                       </Field>
+                      <Field label="Série (2nd cycle, optionnel)"><input style={{ ...inputStyle, width: 90 }} value={nouveauCoefficient.serie} onChange={(e) => setNouveauCoefficient((v) => ({ ...v, serie: e.target.value }))} placeholder="ex. D" /></Field>
                       <Field label="Coefficient"><input type="number" min="0.5" step="0.5" style={{ ...inputStyle, width: 80 }} value={nouveauCoefficient.coefficient} onChange={(e) => setNouveauCoefficient((v) => ({ ...v, coefficient: e.target.value }))} /></Field>
                       <Button small icon={P.plus} onClick={creerCoefficient}>Ajouter</Button>
                     </div>

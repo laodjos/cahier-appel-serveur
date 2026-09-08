@@ -49,7 +49,7 @@ function calculerRangs(resultats) {
 // Calcule le bulletin complet (moyennes par matière + moyenne générale) d'un
 // élève pour une période — fonction interne réutilisée pour un élève seul ou
 // pour toute une classe (calcul du rang).
-async function calculerBulletinEleve(eleveId, periodeId, classeId, niveau) {
+async function calculerBulletinEleve(eleveId, periodeId, classeId, niveau, serie) {
   const { rows: notes } = await pool.query(
     "SELECT matiere_id, valeur, note_sur FROM notes WHERE eleve_id = $1 AND periode_id = $2",
     [eleveId, periodeId]
@@ -62,7 +62,7 @@ async function calculerBulletinEleve(eleveId, periodeId, classeId, niveau) {
   const coefficients = {};
   const details = [];
   for (const m of matieresRows) {
-    const coef = await trouverCoefficient(m.id, niveau, classeId);
+    const coef = await trouverCoefficient(m.id, niveau, classeId, serie);
     coefficients[m.id] = coef;
     details.push({ matiere_id: m.id, matiere_nom: m.nom, moyenne: Math.round(moyennesParMatiere[m.id] * 100) / 100, coefficient: coef });
   }
@@ -76,20 +76,20 @@ router.get("/eleve/:eleveId", async (req, res) => {
   if (!periode_id) return res.status(400).json({ error: "periode_id est requis." });
 
   const { rows: eleveRows } = await pool.query(
-    "SELECT s.*, c.niveau, c.nom AS classe_nom FROM students s JOIN classes c ON c.id = s.classe_id WHERE s.id = $1",
+    "SELECT s.*, c.niveau, c.serie, c.nom AS classe_nom FROM students s JOIN classes c ON c.id = s.classe_id WHERE s.id = $1",
     [req.params.eleveId]
   );
   const eleve = eleveRows[0];
   if (!eleve) return res.status(404).json({ error: "Élève introuvable." });
 
-  const bulletin = await calculerBulletinEleve(eleve.id, periode_id, eleve.classe_id, eleve.niveau);
+  const bulletin = await calculerBulletinEleve(eleve.id, periode_id, eleve.classe_id, eleve.niveau, eleve.serie);
 
   // Rang de l'élève dans sa classe pour cette période — recalcule la moyenne de
   // chaque camarade de classe pour comparer (peu coûteux : une classe reste petite).
   const { rows: elevesClasse } = await pool.query("SELECT id FROM students WHERE classe_id = $1", [eleve.classe_id]);
   const resultatsClasse = [];
   for (const e of elevesClasse) {
-    const b = await calculerBulletinEleve(e.id, periode_id, eleve.classe_id, eleve.niveau);
+    const b = await calculerBulletinEleve(e.id, periode_id, eleve.classe_id, eleve.niveau, eleve.serie);
     resultatsClasse.push({ eleve_id: e.id, moyenne_generale: b.moyenne_generale });
   }
   calculerRangs(resultatsClasse);
@@ -116,7 +116,7 @@ router.get("/classe/:classeId", async (req, res) => {
   const { rows: eleves } = await pool.query("SELECT id, nom FROM students WHERE classe_id = $1 ORDER BY nom", [classe.id]);
   const resultats = [];
   for (const e of eleves) {
-    const b = await calculerBulletinEleve(e.id, periode_id, classe.id, classe.niveau);
+    const b = await calculerBulletinEleve(e.id, periode_id, classe.id, classe.niveau, classe.serie);
     resultats.push({ eleve: { id: e.id, nom: e.nom }, ...b });
   }
   calculerRangs(resultats);

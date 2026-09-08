@@ -77,15 +77,15 @@ router.post("/generer-defaut", requireRole("direction", "super_admin"), async (r
 
 // POST /api/classes  { nom, niveau, ecole_id? }
 router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
-  const { nom, niveau, vacation } = req.body;
+  const { nom, niveau, vacation, serie } = req.body;
   if (!nom || !nom.trim()) return res.status(400).json({ error: "Le nom de la classe est requis." });
 
   const ecoleCible = ecoleEffective(req);
 
   try {
     const { rows } = await pool.query(
-      "INSERT INTO classes (nom, niveau, ecole_id, vacation) VALUES ($1, $2, $3, $4) RETURNING *",
-      [nom.trim(), niveau?.trim() || null, ecoleCible, vacation || null]
+      "INSERT INTO classes (nom, niveau, ecole_id, vacation, serie) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [nom.trim(), niveau?.trim() || null, ecoleCible, vacation || null, serie?.trim() || null]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -97,15 +97,16 @@ router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
 // PATCH /api/classes/:id/vacation  { vacation } — définit la vacation (matin/après-midi) d'une classe
 // PATCH /api/classes/:id  { nom?, niveau? } — correction du nom et/ou du niveau d'une classe
 router.patch("/:id", requireRole("direction", "super_admin"), async (req, res) => {
-  const { nom, niveau } = req.body;
-  if (nom === undefined && niveau === undefined) {
-    return res.status(400).json({ error: "Indique au moins un nom ou un niveau à corriger." });
+  const { nom, niveau, serie } = req.body;
+  if (nom === undefined && niveau === undefined && serie === undefined) {
+    return res.status(400).json({ error: "Indique au moins un nom, un niveau ou une série à corriger." });
   }
 
   const champs = [];
   const params = [];
   if (nom !== undefined && nom.trim()) { params.push(nom.trim()); champs.push(`nom = $${params.length}`); }
   if (niveau !== undefined) { params.push(niveau?.trim() || null); champs.push(`niveau = $${params.length}`); }
+  if (serie !== undefined) { params.push(serie?.trim() || null); champs.push(`serie = $${params.length}`); }
 
   params.push(req.params.id);
   const indexId = params.length; // capturé AVANT clauseEcole, qui peut ajouter un paramètre après
