@@ -474,3 +474,48 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE INDEX IF NOT EXISTS idx_notes_eleve_periode ON notes(eleve_id, periode_id);
 CREATE INDEX IF NOT EXISTS idx_notes_matiere_periode ON notes(matiere_id, periode_id);
 
+-- ============================================================================
+-- MODULE ERP — Frais de scolarité
+-- ============================================================================
+
+-- Montant total de scolarité pour un niveau (ou une classe précise, si elle
+-- diffère du reste du niveau) sur une année scolaire donnée.
+CREATE TABLE IF NOT EXISTS frais_scolarite (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ecole_id UUID REFERENCES ecoles(id),
+  annee_scolaire_id UUID REFERENCES annees_scolaires(id),
+  niveau TEXT,
+  classe_id UUID REFERENCES classes(id) ON DELETE CASCADE,
+  libelle TEXT NOT NULL DEFAULT 'Frais de scolarité',
+  montant_total NUMERIC NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Échéances (tranches) d'un montant de scolarité — ex. "1ère tranche" due le
+-- 1er octobre. Optionnel : un établissement peut ne définir aucune échéance et
+-- simplement suivre un solde global, sans échéancier détaillé.
+CREATE TABLE IF NOT EXISTS echeances_scolarite (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  frais_scolarite_id UUID REFERENCES frais_scolarite(id) ON DELETE CASCADE,
+  libelle TEXT NOT NULL,
+  montant NUMERIC NOT NULL,
+  date_echeance DATE,
+  ordre INTEGER NOT NULL DEFAULT 1
+);
+
+-- Paiements effectivement reçus d'un élève — en espèces (saisi manuellement
+-- par l'administration) ou via CinetPay (Wave, Orange Money, MTN, Moov, carte).
+-- Un paiement en attente ("en_attente") ne compte PAS encore dans le solde
+-- payé tant qu'il n'est pas confirmé côté serveur par le webhook CinetPay.
+CREATE TABLE IF NOT EXISTS paiements_scolarite (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  eleve_id UUID REFERENCES students(id) ON DELETE CASCADE,
+  montant NUMERIC NOT NULL,
+  methode TEXT NOT NULL DEFAULT 'especes', -- 'especes' ou 'cinetpay'
+  statut TEXT NOT NULL DEFAULT 'reussi' CHECK (statut IN ('en_attente', 'reussi', 'echoue')),
+  reference_externe TEXT UNIQUE, -- transaction_id CinetPay, si paiement en ligne
+  saisi_par UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  confirme_at TIMESTAMPTZ
+);
+

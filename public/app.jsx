@@ -475,6 +475,13 @@ function App({ session, onLogout }) {
   const [bulletinEleveId, setBulletinEleveId] = useState("");
   const [bulletinPeriodeId, setBulletinPeriodeId] = useState("");
   const [bulletinData, setBulletinData] = useState(null);
+  const [fraisScolarite, setFraisScolarite] = useState([]);
+  const [nouveauFrais, setNouveauFrais] = useState({ niveau: "", libelle: "Frais de scolarité", montant_total: "" });
+  const [soldeEleveId, setSoldeEleveId] = useState("");
+  const [soldeData, setSoldeData] = useState(null);
+  const [montantPaiement, setMontantPaiement] = useState("");
+  const [soldeClasseId, setSoldeClasseId] = useState(null);
+  const [soldeClasseData, setSoldeClasseData] = useState(null);
   const [renouvellementMontant, setRenouvellementMontant] = useState("25000");
   const [renouvellementMois, setRenouvellementMois] = useState("1");
 
@@ -579,6 +586,9 @@ function App({ session, onLogout }) {
         api("/periodes-evaluation").then(siEcoleInchangee(setPeriodesEvaluation)).catch(catchErr);
         api("/coefficients-matieres").then(siEcoleInchangee(setCoefficientsMatieres)).catch(catchErr);
       }
+      if (view === "erp" && sousOngletErp === "frais") {
+        api("/frais-scolarite").then(siEcoleInchangee(setFraisScolarite)).catch(catchErr);
+      }
       if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
       if (availableViews.includes("emploi")) api("/salles").then(siEcoleInchangee(setSallesListe)).catch(catchErr);
       if (availableViews.includes("ecoles")) api("/ecoles").then(setEcoles).catch(catchErr);
@@ -586,7 +596,7 @@ function App({ session, onLogout }) {
     load();
     const t = setInterval(load, 8000);
     return () => clearInterval(t);
-  }, [api, view]);
+  }, [api, view, sousOngletErp]);
 
   const filteredStudents = students.filter((s) => s.nom.toLowerCase().includes(search.toLowerCase()));
   const classeEleves = students.filter((s) => s.classe_id === selectedClasseId);
@@ -1647,6 +1657,54 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function creerFraisScolarite() {
+    if (!nouveauFrais.niveau || !nouveauFrais.montant_total) return;
+    try {
+      const cree = await api("/frais-scolarite", { method: "POST", body: nouveauFrais });
+      setFraisScolarite((liste) => [...liste, cree]);
+      setNouveauFrais({ niveau: "", libelle: "Frais de scolarité", montant_total: "" });
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerFraisScolarite(id) {
+    try {
+      await api(`/frais-scolarite/${id}`, { method: "DELETE" });
+      setFraisScolarite((liste) => liste.filter((f) => f.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function chargerSoldeEleve() {
+    if (!soldeEleveId) return;
+    try {
+      const data = await api(`/frais-scolarite/solde/${soldeEleveId}`);
+      setSoldeData(data);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function enregistrerPaiementManuel() {
+    if (!soldeEleveId || !montantPaiement) return;
+    try {
+      await api("/paiements-scolarite/manuel", { method: "POST", body: { eleve_id: soldeEleveId, montant: montantPaiement } });
+      setMontantPaiement("");
+      chargerSoldeEleve();
+    } catch (e) { catchErr(e); }
+  }
+
+  async function genererLienPaiementScolarite() {
+    if (!soldeEleveId || !montantPaiement) return;
+    try {
+      const res = await api("/paiements-scolarite/initier", { method: "POST", body: { eleve_id: soldeEleveId, montant: montantPaiement } });
+      window.open(res.payment_url, "_blank");
+      setGlobalInfo("Lien de paiement ouvert dans un nouvel onglet — le solde se mettra à jour automatiquement une fois le paiement confirmé.");
+      setTimeout(() => setGlobalInfo(""), 8000);
+    } catch (e) { catchErr(e); }
+  }
+
+  useEffect(() => {
+    if (!soldeClasseId) { setSoldeClasseData(null); return; }
+    api(`/frais-scolarite/solde-classe/${soldeClasseId}`).then(setSoldeClasseData).catch(catchErr);
+  }, [soldeClasseId, api]);
+
   function imprimerBulletinScolaire(data) {
     if (!data) return;
     const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
@@ -2472,9 +2530,89 @@ function App({ session, onLogout }) {
             </div>
 
             {sousOngletErp === "frais" && (
-              <Card>
-                <div style={{ padding: 30, textAlign: "center", color: COLORS.craieDim, fontSize: 13 }}>Le module "Frais de scolarité" arrive dans une prochaine mise à jour.</div>
-              </Card>
+              <React.Fragment>
+                {(role === "direction" || role === "super_admin") && (
+                  <Card title="Frais de scolarité par niveau" style={{ marginBottom: 20 }}>
+                    {fraisScolarite.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun montant défini pour l'instant.</div>}
+                    {fraisScolarite.map((f, i) => (
+                      <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < fraisScolarite.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                        <span style={{ fontWeight: 500, flex: 1 }}>{f.classe_nom || f.niveau}</span>
+                        <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>{f.libelle}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.marker, width: 110, textAlign: "right" }}>{Number(f.montant_total).toLocaleString("fr-FR")} F</span>
+                        <button onClick={() => supprimerFraisScolarite(f.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                      </div>
+                    ))}
+                    <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}` }}>
+                      <Field label="Niveau">
+                        <select style={inputStyle} value={nouveauFrais.niveau} onChange={(e) => setNouveauFrais((v) => ({ ...v, niveau: e.target.value }))}>
+                          <option value="">— Choisir —</option>
+                          {["6ème", "5ème", "4ème", "3ème", "2nde", "1ère", "Terminale"].map((n) => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </Field>
+                      <Field label="Libellé"><input style={inputStyle} value={nouveauFrais.libelle} onChange={(e) => setNouveauFrais((v) => ({ ...v, libelle: e.target.value }))} /></Field>
+                      <Field label="Montant annuel (F CFA)"><input type="number" style={inputStyle} value={nouveauFrais.montant_total} onChange={(e) => setNouveauFrais((v) => ({ ...v, montant_total: e.target.value }))} /></Field>
+                      <Button small icon={P.plus} onClick={creerFraisScolarite}>Ajouter</Button>
+                    </div>
+                  </Card>
+                )}
+
+                <Card title="Solde d'un élève" style={{ marginBottom: 20 }}>
+                  <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
+                    <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={soldeEleveId} onChange={(e) => { setSoldeEleveId(e.target.value); setSoldeData(null); }}>
+                      <option value="">— Choisir un élève —</option>
+                      {students.map((s) => <option key={s.id} value={s.id}>{s.nom} ({s.classe_nom})</option>)}
+                    </select>
+                    <Button small onClick={chargerSoldeEleve}>Afficher</Button>
+                  </div>
+                  {soldeData && (
+                    <div style={{ padding: 18 }}>
+                      {soldeData.montant_total == null ? (
+                        <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucun montant de scolarité défini pour le niveau de cet élève.</div>
+                      ) : (
+                        <React.Fragment>
+                          <div style={{ display: "flex", gap: 20, marginBottom: 16, flexWrap: "wrap" }}>
+                            <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Total dû</div><div style={{ fontSize: 16, fontWeight: 600 }}>{soldeData.montant_total.toLocaleString("fr-FR")} F</div></div>
+                            <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Payé</div><div style={{ fontSize: 16, fontWeight: 600, color: COLORS.success }}>{soldeData.montant_paye.toLocaleString("fr-FR")} F</div></div>
+                            <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Reste à payer</div><div style={{ fontSize: 16, fontWeight: 700, color: soldeData.a_jour ? COLORS.success : COLORS.alert }}>{soldeData.solde.toLocaleString("fr-FR")} F</div></div>
+                            <span style={{ alignSelf: "center", fontSize: 11, fontWeight: 700, color: soldeData.a_jour ? COLORS.success : COLORS.alert, background: soldeData.a_jour ? COLORS.successBg : COLORS.alertBg, borderRadius: 6, padding: "6px 10px" }}>
+                              {soldeData.a_jour ? "✔ À jour" : "⚠ Solde restant"}
+                            </span>
+                          </div>
+                          {(role === "direction" || role === "super_admin") && (
+                            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", paddingTop: 14, borderTop: `1px solid ${COLORS.line}` }}>
+                              <Field label="Montant (F CFA)"><input type="number" style={{ ...inputStyle, width: 130 }} value={montantPaiement} onChange={(e) => setMontantPaiement(e.target.value)} /></Field>
+                              <Button small variant="ghost" onClick={enregistrerPaiementManuel}>Encaisser en espèces</Button>
+                              <Button small icon={P.check} onClick={genererLienPaiementScolarite}>Générer un lien de paiement</Button>
+                            </div>
+                          )}
+                        </React.Fragment>
+                      )}
+                    </div>
+                  )}
+                </Card>
+
+                <Card title="Suivi d'une classe">
+                  <div style={{ padding: 14, borderBottom: `1px solid ${COLORS.line}` }}>
+                    <SelectClasseParNiveau classes={classes} value={soldeClasseId} onChange={(e) => setSoldeClasseId(e.target.value)} style={inputStyle} />
+                  </div>
+                  {!soldeClasseData && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Choisis une classe pour voir le solde de chaque élève.</div>}
+                  {soldeClasseData && soldeClasseData.eleves.map((r, i) => (
+                    <div key={r.eleve.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < soldeClasseData.eleves.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                      <span style={{ flex: 1 }}>{r.eleve.nom}</span>
+                      {r.montant_total == null ? (
+                        <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>Aucun montant défini</span>
+                      ) : (
+                        <React.Fragment>
+                          <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>{r.montant_paye.toLocaleString("fr-FR")} / {r.montant_total.toLocaleString("fr-FR")} F</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: r.a_jour ? COLORS.success : COLORS.alert, background: r.a_jour ? COLORS.successBg : COLORS.alertBg, borderRadius: 6, padding: "4px 9px" }}>
+                            {r.a_jour ? "À jour" : `${r.solde.toLocaleString("fr-FR")} F restant`}
+                          </span>
+                        </React.Fragment>
+                      )}
+                    </div>
+                  ))}
+                </Card>
+              </React.Fragment>
             )}
 
             {sousOngletErp === "notes" && (

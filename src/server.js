@@ -27,6 +27,8 @@ const periodesEvaluationRoutes = require("./routes/periodesEvaluation");
 const coefficientsMatieresRoutes = require("./routes/coefficientsMatieres");
 const notesRoutes = require("./routes/notes");
 const bulletinsRoutes = require("./routes/bulletins");
+const fraisScolariteRoutes = require("./routes/fraisScolarite");
+const paiementsScolariteRoutes = require("./routes/paiementsScolarite");
 
 const { demarrerPollingLecteurs, demarrerEnvoiNotifications, demarrerRappelsCoursEnseignants } = require("./jobs/scheduler");
 
@@ -87,6 +89,8 @@ app.use("/api/periodes-evaluation", periodesEvaluationRoutes);
 app.use("/api/coefficients-matieres", coefficientsMatieresRoutes);
 app.use("/api/notes", notesRoutes);
 app.use("/api/bulletins", bulletinsRoutes);
+app.use("/api/frais-scolarite", fraisScolariteRoutes);
+app.use("/api/paiements-scolarite", paiementsScolariteRoutes);
 
 // Gestion d'erreurs centralisée
 app.use((err, req, res, next) => {
