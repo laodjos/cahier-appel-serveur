@@ -58,12 +58,6 @@ router.post("/generer-defaut", requireRole("direction", "super_admin"), async (r
   const MATIERES_PAR_DEFAUT = [
     // Communes aux deux cycles
     { nom: "Mathématiques", cycle: null },
-    // Le Français se décompose en trois épreuves distinctes, chacune avec son
-    // propre coefficient (Composition française 2, Orthographe-Grammaire 2,
-    // Expression orale 1) — plutôt qu'une seule matière "Français" globale.
-    { nom: "Composition Française", cycle: null },
-    { nom: "Orthographe-Grammaire", cycle: null },
-    { nom: "Expression Orale", cycle: null },
     { nom: "Anglais", cycle: null },
     { nom: "Histoire-Géographie", cycle: null },
     { nom: "Éducation Physique et Sportive (EPS)", cycle: null },
@@ -71,11 +65,18 @@ router.post("/generer-defaut", requireRole("direction", "super_admin"), async (r
     { nom: "Sciences de la Vie et de la Terre (SVT)", cycle: null },
     { nom: "Espagnol (LV2)", cycle: null },
     { nom: "Allemand (LV2)", cycle: null },
-    // 1er cycle uniquement (Collège : 6ème à 3ème)
+    // 1er cycle uniquement (Collège : 6ème à 3ème) — le Français s'y décompose
+    // en trois épreuves distinctes, chacune avec son propre coefficient
+    // (Composition française 2, Orthographe-Grammaire 2, Expression orale 1).
+    { nom: "Composition Française", cycle: "1er_cycle" },
+    { nom: "Orthographe-Grammaire", cycle: "1er_cycle" },
+    { nom: "Expression Orale", cycle: "1er_cycle" },
     { nom: "Éducation Morale et Civique (EMC)", cycle: "1er_cycle" },
     { nom: "Arts Plastiques", cycle: "1er_cycle" },
     { nom: "Éducation Musicale", cycle: "1er_cycle" },
-    // 2nd cycle uniquement (Lycée : 2nde à Terminale)
+    // 2nd cycle uniquement (Lycée : 2nde à Terminale) — le Français y reste une
+    // seule matière globale, contrairement au 1er cycle.
+    { nom: "Français", cycle: "2nd_cycle" },
     { nom: "Philosophie", cycle: "2nd_cycle" },
     { nom: "Économie", cycle: "2nd_cycle" },
     { nom: "Comptabilité", cycle: "2nd_cycle" },

@@ -72,24 +72,50 @@ const COEFFICIENTS_1ER_CYCLE = {
   "svt": 2, "physique-chimie": 2, "edhc": 1, "emc": 1, "arts plastiques": 1,
   "eps": 1, "education musicale": 1,
 };
+// Au 2nd cycle (lycée), le Français reste une seule matière globale — la
+// décomposition en trois épreuves (Composition/Orthographe/Expression orale)
+// ne s'applique qu'au 1er cycle (voir COEFFICIENTS_1ER_CYCLE ci-dessus).
 const COEFFICIENTS_2ND_CYCLE = {
-  "a1": { "philosophie": 5, "composition francaise": 2, "orthographe-grammaire": 2, "expression orale": 1, "anglais": 4, "histoire-geographie": 3, "mathematiques": 2, "eps": 1 },
-  "a2": { "philosophie": 4, "composition francaise": 2, "orthographe-grammaire": 2, "expression orale": 1, "anglais": 3, "histoire-geographie": 3, "mathematiques": 2, "eps": 1 },
-  "c": { "mathematiques": 5, "physique-chimie": 5, "svt": 2, "philosophie": 2, "composition francaise": 2, "orthographe-grammaire": 2, "expression orale": 1, "histoire-geographie": 1, "anglais": 1, "eps": 1 },
-  "d": { "mathematiques": 4, "physique-chimie": 4, "svt": 4, "philosophie": 2, "composition francaise": 2, "orthographe-grammaire": 2, "expression orale": 1, "histoire-geographie": 1, "anglais": 1, "eps": 1 },
+  "a1": { "philosophie": 5, "francais": 4, "anglais": 4, "histoire-geographie": 3, "mathematiques": 2, "eps": 1 },
+  "a2": { "philosophie": 4, "francais": 4, "anglais": 3, "histoire-geographie": 3, "mathematiques": 2, "eps": 1 },
+  "c": { "mathematiques": 5, "physique-chimie": 5, "svt": 2, "philosophie": 2, "francais": 2, "histoire-geographie": 1, "anglais": 1, "eps": 1 },
+  "d": { "mathematiques": 4, "physique-chimie": 4, "svt": 4, "philosophie": 2, "francais": 2, "histoire-geographie": 1, "anglais": 1, "eps": 1 },
 };
 
 function normaliser(texte) {
   return texte.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 }
 
-function trouverCoefficientReference(nomMatiere, serie) {
-  const nomNorm = normaliser(nomMatiere);
-  const table = serie ? COEFFICIENTS_2ND_CYCLE[normaliser(serie)] : COEFFICIENTS_1ER_CYCLE;
-  if (!table) return null;
+// Correspondance par "mot entier" plutôt que sous-chaîne brute — une simple
+// sous-chaîne aurait fait matcher à tort "Composition Française" avec la clé
+// "francais" (puisque "française" commence par "francais"). La clé doit être
+// entourée de limites non-alphabétiques (début/fin, espace, tiret, parenthèse).
+function contientMotEntier(texte, mot) {
+  const echappe = mot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z])${echappe}([^a-z]|$)`).test(texte);
+}
+
+function trouverDansTable(table, nomNorm) {
   if (table[nomNorm] != null) return table[nomNorm];
-  const cle = Object.keys(table).find((k) => nomNorm.includes(k) || k.includes(nomNorm));
+  const cle = Object.keys(table).find((k) => contientMotEntier(nomNorm, k) || contientMotEntier(k, nomNorm));
   return cle ? table[cle] : null;
+}
+
+// Le cycle se détermine par le NIVEAU, pas par la présence d'une série — une
+// classe de 2nde est déjà du 2nd cycle bien qu'elle n'ait souvent pas encore
+// de série (celle-ci se choisit en général à partir de la 1ère). Sans cette
+// distinction, une 2nde sans série aurait été traitée à tort comme le 1er
+// cycle, avec le découpage du Français en trois épreuves qui ne s'y applique pas.
+const NIVEAUX_2ND_CYCLE = ["2nde", "1ere", "terminale"];
+
+function trouverCoefficientReference(nomMatiere, niveau, serie) {
+  const nomNorm = normaliser(nomMatiere);
+  const estSecondCycle = NIVEAUX_2ND_CYCLE.includes(normaliser(niveau || ""));
+  if (!estSecondCycle) return trouverDansTable(COEFFICIENTS_1ER_CYCLE, nomNorm);
+  // 2nd cycle : sans série connue (ex. 2nde tronc commun), on ne devine pas de
+  // coefficient plutôt que d'en appliquer un potentiellement faux.
+  const table = serie ? COEFFICIENTS_2ND_CYCLE[normaliser(serie)] : null;
+  return table ? trouverDansTable(table, nomNorm) : null;
 }
 
 // POST /api/coefficients-matieres/generer-automatiquement
@@ -114,7 +140,7 @@ router.post("/generer-automatiquement", requireRole("direction", "super_admin"),
     for (const m of matieres) {
       const cle = `${m.id}|${combo.niveau}|${combo.serie || ""}`;
       if (dejaExistantsSet.has(cle)) continue; // ne jamais écraser un coefficient déjà défini
-      const coef = trouverCoefficientReference(m.nom, combo.serie);
+      const coef = trouverCoefficientReference(m.nom, combo.niveau, combo.serie);
       if (coef == null) continue; // matière non couverte par la table de référence -> on laisse à 1 par défaut, sans créer de ligne inutile
       await pool.query(
         "INSERT INTO coefficients_matieres (ecole_id, matiere_id, niveau, serie, coefficient) VALUES ($1, $2, $3, $4, $5)",
