@@ -58,7 +58,12 @@ router.post("/generer-defaut", requireRole("direction", "super_admin"), async (r
   const MATIERES_PAR_DEFAUT = [
     // Communes aux deux cycles
     { nom: "Mathématiques", cycle: null },
-    { nom: "Français", cycle: null },
+    // Le Français se décompose en trois épreuves distinctes, chacune avec son
+    // propre coefficient (Composition française 2, Orthographe-Grammaire 2,
+    // Expression orale 1) — plutôt qu'une seule matière "Français" globale.
+    { nom: "Composition Française", cycle: null },
+    { nom: "Orthographe-Grammaire", cycle: null },
+    { nom: "Expression Orale", cycle: null },
     { nom: "Anglais", cycle: null },
     { nom: "Histoire-Géographie", cycle: null },
     { nom: "Éducation Physique et Sportive (EPS)", cycle: null },

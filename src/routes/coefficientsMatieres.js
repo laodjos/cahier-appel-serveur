@@ -67,15 +67,16 @@ router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
 // transmis aux familles, dossiers d'orientation).
 // --------------------------------------------------------------------------
 const COEFFICIENTS_1ER_CYCLE = {
-  "francais": 4, "mathematiques": 3, "anglais": 2, "histoire-geographie": 2,
+  "composition francaise": 2, "orthographe-grammaire": 2, "expression orale": 1,
+  "mathematiques": 3, "anglais": 2, "histoire-geographie": 2,
   "svt": 2, "physique-chimie": 2, "edhc": 1, "emc": 1, "arts plastiques": 1,
   "eps": 1, "education musicale": 1,
 };
 const COEFFICIENTS_2ND_CYCLE = {
-  "a1": { "philosophie": 5, "francais": 4, "anglais": 4, "histoire-geographie": 3, "mathematiques": 2, "eps": 1 },
-  "a2": { "philosophie": 4, "francais": 4, "anglais": 3, "histoire-geographie": 3, "mathematiques": 2, "eps": 1 },
-  "c": { "mathematiques": 5, "physique-chimie": 5, "svt": 2, "philosophie": 2, "francais": 2, "histoire-geographie": 1, "anglais": 1, "eps": 1 },
-  "d": { "mathematiques": 4, "physique-chimie": 4, "svt": 4, "philosophie": 2, "francais": 2, "histoire-geographie": 1, "anglais": 1, "eps": 1 },
+  "a1": { "philosophie": 5, "composition francaise": 2, "orthographe-grammaire": 2, "expression orale": 1, "anglais": 4, "histoire-geographie": 3, "mathematiques": 2, "eps": 1 },
+  "a2": { "philosophie": 4, "composition francaise": 2, "orthographe-grammaire": 2, "expression orale": 1, "anglais": 3, "histoire-geographie": 3, "mathematiques": 2, "eps": 1 },
+  "c": { "mathematiques": 5, "physique-chimie": 5, "svt": 2, "philosophie": 2, "composition francaise": 2, "orthographe-grammaire": 2, "expression orale": 1, "histoire-geographie": 1, "anglais": 1, "eps": 1 },
+  "d": { "mathematiques": 4, "physique-chimie": 4, "svt": 4, "philosophie": 2, "composition francaise": 2, "orthographe-grammaire": 2, "expression orale": 1, "histoire-geographie": 1, "anglais": 1, "eps": 1 },
 };
 
 function normaliser(texte) {
