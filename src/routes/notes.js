@@ -26,6 +26,16 @@ async function enseignantAutorise(userId, classeId, matiereId) {
   return matieresEnseignant.includes(matiereRows[0]?.nom);
 }
 
+// La saisie des notes doit avoir été explicitement ouverte par la Direction ou
+// le Super-administrateur pour la période concernée — fermée par défaut à la
+// création d'une période. Direction/Super-admin restent toujours autorisés à
+// saisir/corriger, même période fermée (c'est justement eux qui la gèrent).
+async function saisieAutoriseePourRole(role, periodeId) {
+  if (role !== "enseignant") return true;
+  const { rows } = await pool.query("SELECT saisie_ouverte FROM periodes_evaluation WHERE id = $1", [periodeId]);
+  return !!rows[0]?.saisie_ouverte;
+}
+
 // GET /api/notes?classe_id=&matiere_id=&periode_id=
 router.get("/", async (req, res) => {
   const { classe_id, matiere_id, periode_id } = req.query;
@@ -53,6 +63,9 @@ router.post("/", async (req, res) => {
   if (req.user.role === "enseignant" && !(await enseignantAutorise(req.user.sub, classe_id, matiere_id))) {
     return res.status(403).json({ error: "Tu n'es pas rattaché à cette classe pour cette matière — impossible de saisir cette note." });
   }
+  if (!(await saisieAutoriseePourRole(req.user.role, periode_id))) {
+    return res.status(403).json({ error: "La saisie des notes est actuellement fermée pour cette période — contacte la Direction pour qu'elle l'ouvre." });
+  }
   const { rows } = await pool.query(
     `INSERT INTO notes (eleve_id, matiere_id, periode_id, classe_id, valeur, note_sur, type_evaluation, saisi_par)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
@@ -69,6 +82,9 @@ router.patch("/:id", async (req, res) => {
   if (req.user.role === "enseignant" && !(await enseignantAutorise(req.user.sub, existante[0].classe_id, existante[0].matiere_id))) {
     return res.status(403).json({ error: "Tu n'es pas rattaché à cette classe pour cette matière." });
   }
+  if (!(await saisieAutoriseePourRole(req.user.role, existante[0].periode_id))) {
+    return res.status(403).json({ error: "La saisie des notes est actuellement fermée pour cette période — contacte la Direction pour qu'elle l'ouvre." });
+  }
   if (Number(valeur) < 0 || Number(valeur) > Number(existante[0].note_sur)) {
     return res.status(400).json({ error: `La note doit être comprise entre 0 et ${existante[0].note_sur}.` });
   }
@@ -82,6 +98,9 @@ router.delete("/:id", async (req, res) => {
   if (!existante[0]) return res.status(404).json({ error: "Note introuvable." });
   if (req.user.role === "enseignant" && !(await enseignantAutorise(req.user.sub, existante[0].classe_id, existante[0].matiere_id))) {
     return res.status(403).json({ error: "Tu n'es pas rattaché à cette classe pour cette matière." });
+  }
+  if (!(await saisieAutoriseePourRole(req.user.role, existante[0].periode_id))) {
+    return res.status(403).json({ error: "La saisie des notes est actuellement fermée pour cette période — contacte la Direction pour qu'elle l'ouvre." });
   }
   await pool.query("DELETE FROM notes WHERE id = $1", [req.params.id]);
   res.status(204).send();

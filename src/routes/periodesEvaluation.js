@@ -41,4 +41,17 @@ router.delete("/:id", requireRole("direction", "super_admin"), async (req, res) 
   res.status(204).send();
 });
 
+// PATCH /api/periodes-evaluation/:id/saisie  { saisie_ouverte }
+// Ouvre ou ferme la saisie des notes pour cette période — seule la Direction
+// ou le Super-administrateur peut faire cette bascule.
+router.patch("/:id/saisie", requireRole("direction", "super_admin"), async (req, res) => {
+  const { saisie_ouverte } = req.body;
+  const { rows } = await pool.query(
+    "UPDATE periodes_evaluation SET saisie_ouverte = $1 WHERE id = $2 RETURNING *",
+    [!!saisie_ouverte, req.params.id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Période introuvable." });
+  res.json(rows[0]);
+});
+
 module.exports = router;

@@ -562,7 +562,7 @@ function App({ session, onLogout }) {
 
   // Stats dashboard + absentéisme + notifications + lecteurs (polling toutes les 8s)
   useEffect(() => {
-    if (!availableViews.includes("dashboard") && !availableViews.includes("incidents")) return;
+    if (!availableViews.includes("dashboard") && !availableViews.includes("incidents") && !availableViews.includes("erp") && !availableViews.includes("caisse")) return;
     const load = () => {
       const ecoleAuMoment = ecoleActiveId;
       const siEcoleInchangee = (fn) => (data) => { if (ecoleActiveIdRef.current === ecoleAuMoment) fn(data); };
@@ -1613,6 +1613,13 @@ function App({ session, onLogout }) {
     try {
       await api(`/periodes-evaluation/${id}`, { method: "DELETE" });
       setPeriodesEvaluation((liste) => liste.filter((p) => p.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function basculerSaisiePeriode(periode) {
+    try {
+      const maj = await api(`/periodes-evaluation/${periode.id}/saisie`, { method: "PATCH", body: { saisie_ouverte: !periode.saisie_ouverte } });
+      setPeriodesEvaluation((liste) => liste.map((p) => p.id === periode.id ? maj : p));
     } catch (e) { catchErr(e); }
   }
 
@@ -2667,13 +2674,16 @@ function App({ session, onLogout }) {
                 {(role === "direction" || role === "super_admin") && (
                   <Card title="Périodes d'évaluation (semestres ou trimestres)" style={{ marginBottom: 20 }}>
                     <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
-                      Nomme librement tes périodes — "1er Semestre" / "2ème Semestre", ou "1er Trimestre" / "2ème Trimestre" / "3ème Trimestre" selon l'organisation de ton établissement.
+                      Nomme librement tes périodes — "1er Semestre" / "2ème Semestre", ou "1er Trimestre" / "2ème Trimestre" / "3ème Trimestre" selon l'organisation de ton établissement. Une période est <strong>fermée à la saisie par défaut</strong> — les enseignants ne peuvent y entrer des notes qu'une fois que tu l'ouvres explicitement ci-dessous.
                     </div>
                     {periodesEvaluation.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucune période créée pour l'instant.</div>}
                     {periodesEvaluation.map((p, i) => (
                       <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < periodesEvaluation.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
                         <span style={{ fontWeight: 500, flex: 1 }}>{p.nom}</span>
                         <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>{p.date_debut ? new Date(p.date_debut).toLocaleDateString("fr-FR") : "?"} → {p.date_fin ? new Date(p.date_fin).toLocaleDateString("fr-FR") : "?"}</span>
+                        <Button small variant={p.saisie_ouverte ? "primary" : "ghost"} onClick={() => basculerSaisiePeriode(p)}>
+                          {p.saisie_ouverte ? "🔓 Saisie ouverte" : "🔒 Saisie fermée"}
+                        </Button>
                         <button onClick={() => supprimerPeriodeEvaluation(p.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
                       </div>
                     ))}
@@ -2728,13 +2738,16 @@ function App({ session, onLogout }) {
                     </select>
                     <select style={inputStyle} value={saisiePeriodeId} onChange={(e) => setSaisiePeriodeId(e.target.value)}>
                       <option value="">— Période —</option>
-                      {periodesEvaluation.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+                      {periodesEvaluation.map((p) => <option key={p.id} value={p.id}>{p.nom}{role === "enseignant" && !p.saisie_ouverte ? " (fermée)" : ""}</option>)}
                     </select>
                   </div>
                   {(!saisieClasseId || !saisieMatiereId || !saisiePeriodeId) && (
                     <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Choisis une classe, une matière et une période pour saisir les notes.</div>
                   )}
-                  {saisieClasseId && saisieMatiereId && saisiePeriodeId && students.filter((s) => s.classe_id === saisieClasseId).map((eleve, i, liste) => {
+                  {saisieClasseId && saisieMatiereId && saisiePeriodeId && role === "enseignant" && !periodesEvaluation.find((p) => p.id === saisiePeriodeId)?.saisie_ouverte && (
+                    <div style={{ padding: 18, fontSize: 12.5, color: COLORS.alert, background: COLORS.alertBg }}>🔒 La saisie des notes est actuellement fermée pour cette période par la Direction — reviens une fois qu'elle l'aura ouverte.</div>
+                  )}
+                  {saisieClasseId && saisieMatiereId && saisiePeriodeId && (role !== "enseignant" || periodesEvaluation.find((p) => p.id === saisiePeriodeId)?.saisie_ouverte) && students.filter((s) => s.classe_id === saisieClasseId).map((eleve, i, liste) => {
                     const notesEleve = notesSaisie.filter((n) => n.eleve_id === eleve.id);
                     const derniereNote = notesEleve[notesEleve.length - 1];
                     return (

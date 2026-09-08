@@ -440,7 +440,12 @@ CREATE TABLE IF NOT EXISTS periodes_evaluation (
   ordre INTEGER NOT NULL DEFAULT 1,
   date_debut DATE,
   date_fin DATE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- Fermée par défaut : la Direction (ou le Super-administrateur) doit
+  -- explicitement "ouvrir" la saisie des notes pour cette période avant qu'un
+  -- enseignant ne puisse y entrer la moindre note. Direction/Super-admin
+  -- restent toujours en mesure de saisir/corriger, même période fermée.
+  saisie_ouverte BOOLEAN NOT NULL DEFAULT false
 );
 
 -- Coefficient d'une matière — par niveau (le plus courant) ou par classe précise
