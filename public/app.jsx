@@ -2926,17 +2926,13 @@ function App({ session, onLogout }) {
                               {matieresGrille.map((m) => (
                                 <th key={m.id} style={{ padding: "9px 10px", borderBottom: `1px solid ${COLORS.line}`, borderLeft: `1px solid ${COLORS.line}`, fontWeight: 600, color: COLORS.craieDim, whiteSpace: "nowrap", minWidth: 76 }}>{m.nom}</th>
                               ))}
-                              <th style={{ padding: "9px 10px", borderBottom: `1px solid ${COLORS.line}`, borderLeft: `2px solid ${COLORS.line}`, fontWeight: 700, color: COLORS.marker, whiteSpace: "nowrap" }}>Moyenne</th>
-                              <th style={{ padding: "9px 10px", borderBottom: `1px solid ${COLORS.line}`, borderLeft: `1px solid ${COLORS.line}`, fontWeight: 600, color: COLORS.craieDim, whiteSpace: "nowrap" }}>Rang</th>
                             </tr>
                           </thead>
                           <tbody>
                             {elevesGrille.length === 0 && (
-                              <tr><td colSpan={matieresGrille.length + 3} style={{ padding: 18, color: COLORS.craieDim }}>Aucun élève dans cette classe.</td></tr>
+                              <tr><td colSpan={matieresGrille.length + 1} style={{ padding: 18, color: COLORS.craieDim }}>Aucun élève dans cette classe.</td></tr>
                             )}
-                            {elevesGrille.map((eleve, i) => {
-                              const resultatEleve = moyennesGrille?.eleves.find((r) => r.eleve.id === eleve.id);
-                              return (
+                            {elevesGrille.map((eleve, i) => (
                               <tr key={eleve.id}>
                                 <td style={{ position: "sticky", left: 0, background: COLORS.ardoiseDeep, padding: "7px 14px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none", whiteSpace: "nowrap" }}>{nomCompletEleve(eleve)}</td>
                                 {matieresGrille.map((m) => {
@@ -2954,21 +2950,45 @@ function App({ session, onLogout }) {
                                     </td>
                                   );
                                 })}
-                                <td style={{ padding: "7px 10px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none", borderLeft: `2px solid ${COLORS.line}`, textAlign: "center", fontWeight: 700, color: COLORS.marker, whiteSpace: "nowrap" }}>
-                                  {resultatEleve?.moyenne_generale != null ? `${resultatEleve.moyenne_generale} / 20` : "—"}
-                                </td>
-                                <td style={{ padding: "7px 10px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none", borderLeft: `1px solid ${COLORS.line}`, textAlign: "center", color: COLORS.craieDim, whiteSpace: "nowrap" }}>
-                                  {resultatEleve?.rang ? `${resultatEleve.rang} / ${moyennesGrille.effectif}` : "—"}
-                                </td>
                               </tr>
-                              );
-                            })}
+                            ))}
                           </tbody>
                         </table>
-                        <div style={{ padding: "10px 14px", fontSize: 11, color: COLORS.craieDim }}>La moyenne tient compte de toutes les matières notées pour cette période (pas seulement celles affichées ci-dessus), avec leurs coefficients respectifs.</div>
                       </div>
                     );
                   })()}
+                </Card>
+
+                <Card title="Moyennes de la classe" style={{ marginBottom: 20 }}>
+                  <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
+                    <SelectClasseParNiveau classes={classes} value={saisieClasseId} onChange={(e) => setSaisieClasseId(e.target.value)} style={inputStyle} />
+                    <select style={inputStyle} value={saisiePeriodeId} onChange={(e) => setSaisiePeriodeId(e.target.value)}>
+                      <option value="">— Période —</option>
+                      {periodesEvaluation.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+                    </select>
+                  </div>
+                  {(!saisieClasseId || !saisiePeriodeId) && (
+                    <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Choisis une classe et une période pour voir les moyennes.</div>
+                  )}
+                  {saisieClasseId && saisiePeriodeId && !moyennesGrille && (
+                    <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Chargement…</div>
+                  )}
+                  {saisieClasseId && saisiePeriodeId && moyennesGrille && (
+                    <React.Fragment>
+                      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
+                        <span>Élève</span><span>Moyenne</span><span>Rang</span>
+                      </div>
+                      {moyennesGrille.eleves.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun élève dans cette classe.</div>}
+                      {[...moyennesGrille.eleves].sort((a, b) => (a.rang || 999) - (b.rang || 999)).map((r, i, liste) => (
+                        <div key={r.eleve.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", alignItems: "center", padding: "10px 18px", borderBottom: i < liste.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                          <span>{nomCompletEleve(r.eleve)}</span>
+                          <span style={{ fontWeight: 700, color: COLORS.marker }}>{r.moyenne_generale != null ? `${r.moyenne_generale} / 20` : "—"}</span>
+                          <span style={{ color: COLORS.craieDim }}>{r.rang ? `${r.rang} / ${moyennesGrille.effectif}` : "—"}</span>
+                        </div>
+                      ))}
+                      <div style={{ padding: "10px 18px", fontSize: 11, color: COLORS.craieDim }}>Calculée à partir de toutes les matières notées pour cette période, avec leurs coefficients respectifs.</div>
+                    </React.Fragment>
+                  )}
                 </Card>
 
                 <Card title="Bulletin d'un élève">
