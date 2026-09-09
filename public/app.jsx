@@ -508,7 +508,6 @@ function App({ session, onLogout }) {
   const [nouvellePeriode, setNouvellePeriode] = useState({ nom: "", date_debut: "", date_fin: "" });
   const [nouveauCoefficient, setNouveauCoefficient] = useState({ matiere_id: "", niveau: "", serie: "", coefficient: "1" });
   const [saisieClasseId, setSaisieClasseId] = useState(null);
-  const [saisieMatiereId, setSaisieMatiereId] = useState("");
   const [saisiePeriodeId, setSaisiePeriodeId] = useState("");
   const [notesSaisie, setNotesSaisie] = useState([]);
   const [bulletinEleveId, setBulletinEleveId] = useState("");
@@ -1753,11 +1752,11 @@ function App({ session, onLogout }) {
   }
 
   useEffect(() => {
-    if (!saisieClasseId || !saisieMatiereId || !saisiePeriodeId) { setNotesSaisie([]); return; }
-    api(`/notes?classe_id=${saisieClasseId}&matiere_id=${saisieMatiereId}&periode_id=${saisiePeriodeId}`).then(setNotesSaisie).catch(catchErr);
-  }, [saisieClasseId, saisieMatiereId, saisiePeriodeId, api]);
+    if (!saisieClasseId || !saisiePeriodeId) { setNotesSaisie([]); return; }
+    api(`/notes?classe_id=${saisieClasseId}&periode_id=${saisiePeriodeId}`).then(setNotesSaisie).catch(catchErr);
+  }, [saisieClasseId, saisiePeriodeId, api]);
 
-  async function enregistrerNote(eleveId, noteExistante, valeur) {
+  async function enregistrerNote(eleveId, matiereId, noteExistante, valeur) {
     if (valeur === "" || valeur == null) return;
     try {
       if (noteExistante) {
@@ -1766,7 +1765,7 @@ function App({ session, onLogout }) {
       } else {
         const cree = await api("/notes", {
           method: "POST",
-          body: { eleve_id: eleveId, matiere_id: saisieMatiereId, periode_id: saisiePeriodeId, classe_id: saisieClasseId, valeur },
+          body: { eleve_id: eleveId, matiere_id: matiereId, periode_id: saisiePeriodeId, classe_id: saisieClasseId, valeur },
         });
         setNotesSaisie((liste) => [...liste, cree]);
       }
@@ -2889,37 +2888,63 @@ function App({ session, onLogout }) {
                 <Card title="Saisie des notes" style={{ marginBottom: 20 }}>
                   <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", borderBottom: `1px solid ${COLORS.line}` }}>
                     <SelectClasseParNiveau classes={classes} value={saisieClasseId} onChange={(e) => setSaisieClasseId(e.target.value)} style={inputStyle} />
-                    <select style={inputStyle} value={saisieMatiereId} onChange={(e) => setSaisieMatiereId(e.target.value)}>
-                      <option value="">— Matière —</option>
-                      {matieresListe.filter((m) => role !== "enseignant" || (session.user.matieres || "").split(",").map((x) => x.trim()).includes(m.nom)).map((m) => <option key={m.id} value={m.id}>{m.nom}</option>)}
-                    </select>
                     <select style={inputStyle} value={saisiePeriodeId} onChange={(e) => setSaisiePeriodeId(e.target.value)}>
                       <option value="">— Période —</option>
                       {periodesEvaluation.map((p) => <option key={p.id} value={p.id}>{p.nom}{role === "enseignant" && !p.saisie_ouverte ? " (fermée)" : ""}</option>)}
                     </select>
                   </div>
-                  {(!saisieClasseId || !saisieMatiereId || !saisiePeriodeId) && (
-                    <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Choisis une classe, une matière et une période pour saisir les notes.</div>
+                  {(!saisieClasseId || !saisiePeriodeId) && (
+                    <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Choisis une classe et une période pour saisir les notes.</div>
                   )}
-                  {saisieClasseId && saisieMatiereId && saisiePeriodeId && role === "enseignant" && !periodesEvaluation.find((p) => p.id === saisiePeriodeId)?.saisie_ouverte && (
+                  {saisieClasseId && saisiePeriodeId && role === "enseignant" && !periodesEvaluation.find((p) => p.id === saisiePeriodeId)?.saisie_ouverte && (
                     <div style={{ padding: 18, fontSize: 12.5, color: COLORS.alert, background: COLORS.alertBg }}>🔒 La saisie des notes est actuellement fermée pour cette période par la Direction — reviens une fois qu'elle l'aura ouverte.</div>
                   )}
-                  {saisieClasseId && saisieMatiereId && saisiePeriodeId && (role !== "enseignant" || periodesEvaluation.find((p) => p.id === saisiePeriodeId)?.saisie_ouverte) && students.filter((s) => s.classe_id === saisieClasseId).map((eleve, i, liste) => {
-                    const notesEleve = notesSaisie.filter((n) => n.eleve_id === eleve.id);
-                    const derniereNote = notesEleve[notesEleve.length - 1];
+                  {saisieClasseId && saisiePeriodeId && (role !== "enseignant" || periodesEvaluation.find((p) => p.id === saisiePeriodeId)?.saisie_ouverte) && (() => {
+                    const matieresGrille = matieresListe.filter((m) => role !== "enseignant" || (session.user.matieres || "").split(",").map((x) => x.trim()).includes(m.nom));
+                    const elevesGrille = students.filter((s) => s.classe_id === saisieClasseId);
+                    if (matieresGrille.length === 0) {
+                      return <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucune matière à saisir pour toi sur cette classe — vérifie que tes matières sont bien renseignées dans ton profil.</div>;
+                    }
                     return (
-                      <div key={eleve.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < liste.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
-                        <span style={{ fontSize: 13, flex: 1 }}>{nomCompletEleve(eleve)}</span>
-                        <input
-                          type="number" min="0" max="20" step="0.5"
-                          style={{ ...inputStyle, width: 70 }}
-                          defaultValue={derniereNote?.valeur ?? ""}
-                          placeholder="/ 20"
-                          onBlur={(e) => e.target.value !== "" && enregistrerNote(eleve.id, derniereNote, e.target.value)}
-                        />
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
+                          <thead>
+                            <tr>
+                              <th style={{ position: "sticky", left: 0, background: COLORS.ardoiseDeep, textAlign: "left", padding: "9px 14px", borderBottom: `1px solid ${COLORS.line}`, whiteSpace: "nowrap" }}>Élève</th>
+                              {matieresGrille.map((m) => (
+                                <th key={m.id} style={{ padding: "9px 10px", borderBottom: `1px solid ${COLORS.line}`, borderLeft: `1px solid ${COLORS.line}`, fontWeight: 600, color: COLORS.craieDim, whiteSpace: "nowrap", minWidth: 76 }}>{m.nom}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {elevesGrille.length === 0 && (
+                              <tr><td colSpan={matieresGrille.length + 1} style={{ padding: 18, color: COLORS.craieDim }}>Aucun élève dans cette classe.</td></tr>
+                            )}
+                            {elevesGrille.map((eleve, i) => (
+                              <tr key={eleve.id}>
+                                <td style={{ position: "sticky", left: 0, background: COLORS.ardoiseDeep, padding: "7px 14px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none", whiteSpace: "nowrap" }}>{nomCompletEleve(eleve)}</td>
+                                {matieresGrille.map((m) => {
+                                  const notesCellule = notesSaisie.filter((n) => n.eleve_id === eleve.id && n.matiere_id === m.id);
+                                  const derniereNote = notesCellule[notesCellule.length - 1];
+                                  return (
+                                    <td key={m.id} style={{ padding: "4px 6px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none", borderLeft: `1px solid ${COLORS.line}`, textAlign: "center" }}>
+                                      <input
+                                        type="number" min="0" max="20" step="0.5"
+                                        style={{ ...inputStyle, width: 62, padding: "6px 6px", textAlign: "center" }}
+                                        defaultValue={derniereNote?.valeur ?? ""}
+                                        placeholder="—"
+                                        onBlur={(e) => e.target.value !== "" && enregistrerNote(eleve.id, m.id, derniereNote, e.target.value)}
+                                      />
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     );
-                  })}
+                  })()}
                 </Card>
 
                 <Card title="Bulletin d'un élève">
