@@ -3062,14 +3062,31 @@ function App({ session, onLogout }) {
             <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Caisse</h1>
             <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Frais de scolarité et paiements — visible uniquement par la Direction.</div>
                 {(role === "direction" || role === "super_admin") && (
-                  <Card title="Frais de scolarité par niveau" style={{ marginBottom: 20 }}>
+                  <Card title="Frais par promotion (scolarité, inscription, cantine...)" style={{ marginBottom: 20 }}>
+                    <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                      Ajoute autant de lignes que nécessaire pour une même promotion — scolarité, inscription, cantine, transport... Le solde d'un élève additionne automatiquement tous les frais de son niveau.
+                    </div>
                     {fraisScolarite.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun montant défini pour l'instant.</div>}
-                    {fraisScolarite.map((f, i) => (
-                      <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < fraisScolarite.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
-                        <span style={{ fontWeight: 500, flex: 1 }}>{f.classe_nom || f.niveau}</span>
-                        <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>{f.libelle}</span>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.marker, width: 110, textAlign: "right" }}>{Number(f.montant_total).toLocaleString("fr-FR")} F</span>
-                        <button onClick={() => supprimerFraisScolarite(f.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                    {Object.entries(
+                      fraisScolarite.reduce((groupes, f) => {
+                        const cle = f.classe_nom || f.niveau;
+                        (groupes[cle] = groupes[cle] || []).push(f);
+                        return groupes;
+                      }, {})
+                    ).map(([groupe, items], gi, tousGroupes) => (
+                      <div key={groupe} style={{ borderBottom: gi < tousGroupes.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                        <div style={{ padding: "8px 18px 0 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", letterSpacing: 0.4 }}>{groupe}</div>
+                        {items.map((f, i) => (
+                          <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "7px 18px", fontSize: 13 }}>
+                            <span style={{ flex: 1 }}>{f.libelle}</span>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.marker, width: 110, textAlign: "right" }}>{Number(f.montant_total).toLocaleString("fr-FR")} F</span>
+                            <button onClick={() => supprimerFraisScolarite(f.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                          </div>
+                        ))}
+                        <div style={{ display: "flex", padding: "4px 18px 10px 18px", fontSize: 11.5, color: COLORS.craieDim, fontWeight: 600 }}>
+                          <span style={{ flex: 1 }}>Total {groupe}</span>
+                          <span style={{ width: 110, textAlign: "right" }}>{items.reduce((s, f) => s + Number(f.montant_total), 0).toLocaleString("fr-FR")} F</span>
+                        </div>
                       </div>
                     ))}
                     <div style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", borderTop: `1px solid ${COLORS.line}` }}>
@@ -3079,7 +3096,7 @@ function App({ session, onLogout }) {
                           {["6ème", "5ème", "4ème", "3ème", "2nde", "1ère", "Terminale"].map((n) => <option key={n} value={n}>{n}</option>)}
                         </select>
                       </Field>
-                      <Field label="Libellé"><input style={inputStyle} value={nouveauFrais.libelle} onChange={(e) => setNouveauFrais((v) => ({ ...v, libelle: e.target.value }))} /></Field>
+                      <Field label="Libellé (ex. Scolarité, Inscription, Cantine)"><input style={inputStyle} value={nouveauFrais.libelle} onChange={(e) => setNouveauFrais((v) => ({ ...v, libelle: e.target.value }))} /></Field>
                       <Field label="Montant annuel (F CFA)"><input type="number" style={inputStyle} value={nouveauFrais.montant_total} onChange={(e) => setNouveauFrais((v) => ({ ...v, montant_total: e.target.value }))} /></Field>
                       <Button small icon={P.plus} onClick={creerFraisScolarite}>Ajouter</Button>
                     </div>
@@ -3100,6 +3117,15 @@ function App({ session, onLogout }) {
                         <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucun montant de scolarité défini pour le niveau de cet élève.</div>
                       ) : (
                         <React.Fragment>
+                          {soldeData.detail?.length > 0 && (
+                            <div style={{ marginBottom: 14 }}>
+                              {soldeData.detail.map((f) => (
+                                <div key={f.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, color: COLORS.craieDim }}>
+                                  <span>{f.libelle}</span><span>{f.montant.toLocaleString("fr-FR")} F</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           <div style={{ display: "flex", gap: 20, marginBottom: 16, flexWrap: "wrap" }}>
                             <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Total dû</div><div style={{ fontSize: 16, fontWeight: 600 }}>{soldeData.montant_total.toLocaleString("fr-FR")} F</div></div>
                             <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Payé</div><div style={{ fontSize: 16, fontWeight: 600, color: COLORS.success }}>{soldeData.montant_paye.toLocaleString("fr-FR")} F</div></div>

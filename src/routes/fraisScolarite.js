@@ -16,20 +16,27 @@ function ecoleEffective(req) {
 // priorité, sinon le niveau de sa classe), et calcule son solde à partir des
 // paiements déjà confirmés — les paiements "en_attente" ne comptent jamais
 // tant qu'ils ne sont pas confirmés côté serveur (voir webhook CinetPay).
+// Retrouve TOUS les frais applicables à un élève (classe précise et/ou tous
+// ceux du niveau) et les additionne — un établissement peut avoir plusieurs
+// types de frais pour la même promotion (scolarité, inscription, cantine...),
+// chacun suivi séparément dans le détail, mais réglés contre un solde total unique.
 async function calculerSoldeEleve(eleve) {
   const { rows: fraisRows } = await pool.query(
-    `SELECT * FROM frais_scolarite WHERE (classe_id = $1 OR (classe_id IS NULL AND niveau = $2))
-     ORDER BY classe_id NULLS LAST LIMIT 1`,
+    `SELECT * FROM frais_scolarite WHERE classe_id = $1 OR (classe_id IS NULL AND niveau = $2)
+     ORDER BY libelle`,
     [eleve.classe_id, eleve.niveau]
   );
-  const frais = fraisRows[0] || null;
   const { rows: paiements } = await pool.query(
     "SELECT montant FROM paiements_scolarite WHERE eleve_id = $1 AND statut = 'reussi'", [eleve.id]
   );
   const montantPaye = paiements.reduce((s, p) => s + Number(p.montant), 0);
-  const montantTotal = frais ? Number(frais.montant_total) : null;
+  const montantTotal = fraisRows.length > 0 ? fraisRows.reduce((s, f) => s + Number(f.montant_total), 0) : null;
   const solde = montantTotal != null ? montantTotal - montantPaye : null;
-  return { frais_id: frais?.id || null, libelle: frais?.libelle || null, montant_total: montantTotal, montant_paye: montantPaye, solde, a_jour: solde != null ? solde <= 0 : null };
+  return {
+    detail: fraisRows.map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant_total) })),
+    montant_total: montantTotal, montant_paye: montantPaye, solde,
+    a_jour: solde != null ? solde <= 0 : null,
+  };
 }
 
 // GET /api/frais-scolarite
