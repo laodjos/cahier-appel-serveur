@@ -99,6 +99,7 @@ router.patch("/:id", async (req, res) => {
 
 // DELETE /api/notes/:id
 router.delete("/:id", async (req, res) => {
+  try {
   const { rows: existante } = await pool.query("SELECT * FROM notes WHERE id = $1", [req.params.id]);
   if (!existante[0]) return res.status(404).json({ error: "Note introuvable." });
   if (req.user.role === "enseignant" && !(await enseignantAutorise(req.user.sub, existante[0].classe_id, existante[0].matiere_id))) {
@@ -109,6 +110,10 @@ router.delete("/:id", async (req, res) => {
   }
   await pool.query("DELETE FROM notes WHERE id = $1", [req.params.id]);
   res.status(204).send();
+  } catch (err) {
+    console.error("Erreur suppression note :", err);
+    res.status(500).json({ error: "Impossible de supprimer cette note pour le moment." });
+  }
 });
 
 module.exports = router;

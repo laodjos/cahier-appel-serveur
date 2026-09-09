@@ -1785,6 +1785,15 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function supprimerNote(noteId) {
+    if (!window.confirm("Supprimer cette note ? Cette action est irréversible.")) return;
+    try {
+      await api(`/notes/${noteId}`, { method: "DELETE" });
+      setNotesSaisie((liste) => liste.filter((n) => n.id !== noteId));
+      rechargerMoyennesGrille();
+    } catch (e) { catchErr(e); }
+  }
+
   async function chargerBulletin() {
     if (!bulletinEleveId || !bulletinPeriodeId) return;
     try {
@@ -2944,6 +2953,11 @@ function App({ session, onLogout }) {
                                   placeholder="/ 20"
                                   onBlur={(e) => e.target.value !== "" && enregistrerNote(eleve.id, matiereActive.id, derniereNote, e.target.value)}
                                 />
+                                {derniereNote && (
+                                  <button onClick={() => supprimerNote(derniereNote.id)} title="Supprimer cette note (mal saisie)" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim, padding: 4 }}>
+                                    <Icon path={P.trash} size={14} />
+                                  </button>
+                                )}
                               </div>
                             );
                           })}
