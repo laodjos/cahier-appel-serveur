@@ -83,6 +83,7 @@ router.get("/solde/:eleveId", async (req, res) => {
 // bulletins de classe, qui pouvait provoquer un délai excessif (voire une
 // erreur 502) sur une classe chargée.
 router.get("/solde-classe/:classeId", async (req, res) => {
+  try {
   const { rows: classeRows } = await pool.query("SELECT * FROM classes WHERE id = $1", [req.params.classeId]);
   const classe = classeRows[0];
   if (!classe) return res.status(404).json({ error: "Classe introuvable." });
@@ -118,6 +119,10 @@ router.get("/solde-classe/:classeId", async (req, res) => {
     };
   });
   res.json({ classe: { id: classe.id, nom: classe.nom }, eleves: resultats });
+  } catch (err) {
+    console.error("Erreur solde-classe :", err);
+    res.status(500).json({ error: "Impossible de calculer le solde de la classe pour le moment." });
+  }
 });
 
 // GET /api/frais-scolarite/:eleveId/qr-portail — QR code encodant le lien vers

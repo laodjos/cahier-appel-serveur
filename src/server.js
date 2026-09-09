@@ -5,6 +5,25 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 
+// --------------------------------------------------------------------------
+// Filet de sécurité global — cette application tourne sur Express 4, qui ne
+// rattrape PAS automatiquement une erreur survenant dans une route "async"
+// (contrairement à Express 5). Sans ce filet, une erreur inattendue dans une
+// seule requête (ex. une donnée imprévue) devient une "unhandled promise
+// rejection", et Node.js — depuis la version 15 — ARRÊTE TOUT LE PROCESSUS
+// par défaut dans ce cas, pas seulement cette requête. C'est ce qui expliquait
+// un service marqué "Failed" sur Render après une seule requête malheureuse :
+// tout le serveur s'arrêtait d'un coup, pas juste la page consultée.
+// On journalise l'erreur en détail pour pouvoir la corriger, sans jamais
+// laisser une requête isolée emporter tout le serveur avec elle.
+// --------------------------------------------------------------------------
+process.on("unhandledRejection", (raison) => {
+  console.error("✘ Promesse rejetée sans être rattrapée (le serveur continue de tourner) :", raison);
+});
+process.on("uncaughtException", (erreur) => {
+  console.error("✘ Exception non rattrapée (le serveur continue de tourner) :", erreur);
+});
+
 const authRoutes = require("./routes/auth");
 const classesRoutes = require("./routes/classes");
 const studentsRoutes = require("./routes/students");

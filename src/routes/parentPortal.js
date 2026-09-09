@@ -78,6 +78,7 @@ router.get("/enfant/:id/bulletin", async (req, res) => {
   const { periode_id } = req.query;
   if (!periode_id) return res.status(400).json({ error: "periode_id est requis." });
 
+  try {
   const bulletinsClasse = await calculerBulletinsClasseBatch(enfant.classe_id, periode_id, enfant.niveau, enfant.serie);
   const vide = { details: [], moyenne_generale: null };
   const bulletin = bulletinsClasse[enfant.id] || vide;
@@ -88,6 +89,10 @@ router.get("/enfant/:id/bulletin", async (req, res) => {
   const rang = resultatsClasse.find((r) => r.eleve_id === enfant.id)?.rang ?? null;
 
   res.json({ ...bulletin, rang, effectif_classe: elevesClasse.length });
+  } catch (err) {
+    console.error("Erreur bulletin espace parent :", err);
+    res.status(500).json({ error: "Impossible de charger le bulletin pour le moment." });
+  }
 });
 
 // GET /api/parent-portal/enfant/:id/scolarite

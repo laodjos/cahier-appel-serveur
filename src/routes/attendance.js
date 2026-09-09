@@ -214,6 +214,7 @@ router.post("/valider-appel", async (req, res) => {
   const { classe_id, creneau_id } = req.body;
   if (!classe_id) return res.status(400).json({ error: "classe_id requis." });
 
+  try {
   // Un compte enseignant ne peut valider l'appel QUE pour un créneau qui lui est
   // réellement affecté — sans ce contrôle, n'importe quel enseignant pouvait
   // valider l'appel d'une classe où il n'a pas cours. Direction/Surveillant/
@@ -255,6 +256,10 @@ router.post("/valider-appel", async (req, res) => {
     );
   }
   res.status(201).json({ total_eleves: eleves.length, marques_presents: idsAMarquer.length });
+  } catch (err) {
+    console.error("Erreur valider-appel :", err);
+    res.status(500).json({ error: "Impossible de valider l'appel pour le moment." });
+  }
 });
 
 // --------------------------------------------------------------------------

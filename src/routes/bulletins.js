@@ -136,6 +136,7 @@ router.get("/eleve/:eleveId", async (req, res) => {
   const { periode_id } = req.query;
   if (!periode_id) return res.status(400).json({ error: "periode_id est requis." });
 
+  try {
   const { rows: eleveRows } = await pool.query(
     "SELECT s.*, c.niveau, c.serie, c.nom AS classe_nom FROM students s JOIN classes c ON c.id = s.classe_id WHERE s.id = $1",
     [req.params.eleveId]
@@ -160,6 +161,10 @@ router.get("/eleve/:eleveId", async (req, res) => {
     rang,
     effectif_classe: elevesClasse.length,
   });
+  } catch (err) {
+    console.error("Erreur bulletin élève :", err);
+    res.status(500).json({ error: "Impossible de calculer le bulletin pour le moment." });
+  }
 });
 
 // GET /api/bulletins/classe/:classeId?periode_id=... — tous les élèves d'une
@@ -168,6 +173,7 @@ router.get("/classe/:classeId", async (req, res) => {
   const { periode_id } = req.query;
   if (!periode_id) return res.status(400).json({ error: "periode_id est requis." });
 
+  try {
   const { rows: classeRows } = await pool.query("SELECT * FROM classes WHERE id = $1", [req.params.classeId]);
   const classe = classeRows[0];
   if (!classe) return res.status(404).json({ error: "Classe introuvable." });
@@ -179,6 +185,10 @@ router.get("/classe/:classeId", async (req, res) => {
   calculerRangs(resultats);
 
   res.json({ classe: { id: classe.id, nom: classe.nom, niveau: classe.niveau }, effectif: eleves.length, eleves: resultats });
+  } catch (err) {
+    console.error("Erreur bulletins de classe :", err);
+    res.status(500).json({ error: "Impossible de calculer les bulletins de la classe pour le moment." });
+  }
 });
 
 module.exports = router;

@@ -38,6 +38,7 @@ async function saisieAutoriseePourRole(role, periodeId) {
 
 // GET /api/notes?classe_id=&matiere_id=&periode_id=
 router.get("/", async (req, res) => {
+  try {
   const { classe_id, matiere_id, periode_id } = req.query;
   const params = [];
   let filtre = "TRUE";
@@ -48,6 +49,10 @@ router.get("/", async (req, res) => {
     `SELECT n.* FROM notes n WHERE ${filtre} ORDER BY n.created_at`, params
   );
   res.json(rows);
+  } catch (err) {
+    console.error("Erreur GET /notes :", err);
+    res.status(500).json({ error: "Impossible de charger les notes pour le moment." });
+  }
 });
 
 // POST /api/notes  { eleve_id, matiere_id, periode_id, classe_id, valeur, note_sur, type_evaluation }
