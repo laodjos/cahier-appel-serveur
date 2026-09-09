@@ -2073,8 +2073,9 @@ function App({ session, onLogout }) {
     try {
       const res = await api("/matieres/generer-defaut", { method: "POST" });
       if (res.creees.length > 0) setMatieresListe((m) => [...m, ...res.creees].sort((a, b) => a.nom.localeCompare(b.nom)));
-      setGlobalInfo(`${res.creees.length} matière(s) ajoutée(s) sur ${res.total_demandees} (les autres existaient déjà).`);
-      setTimeout(() => setGlobalInfo(""), 5000);
+      const libelleCycles = [res.cycles_detectes?.a1erCycle && "1er cycle", res.cycles_detectes?.a2ndCycle && "2nd cycle"].filter(Boolean).join(" + ");
+      setGlobalInfo(`${res.creees.length} matière(s) ajoutée(s) sur ${res.total_demandees} (${libelleCycles} détecté(s) à partir de tes classes ; les autres matières existaient déjà).`);
+      setTimeout(() => setGlobalInfo(""), 6000);
     } catch (e) { catchErr(e); }
   }
 

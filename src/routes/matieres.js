@@ -51,9 +51,26 @@ router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
 // POST /api/matieres/generer-defaut — pré-remplit une liste de base, répartie par cycle.
 // C'est un point de départ courant (programme ivoirien) — à ajuster/compléter ensuite,
 // notamment pour les matières de spécialité qui varient selon la série au lycée.
+// Détecte automatiquement quel(s) cycle(s) l'établissement utilise réellement,
+// à partir du niveau de ses classes — pour ne générer que les matières
+// pertinentes plutôt que tout le catalogue des deux cycles à chaque fois.
+function normaliserNiveau(texte) {
+  return (texte || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+const NIVEAUX_1ER_CYCLE = ["6eme", "5eme", "4eme", "3eme"];
+const NIVEAUX_2ND_CYCLE = ["2nde", "1ere", "terminale"];
+
 router.post("/generer-defaut", requireRole("direction", "super_admin"), async (req, res) => {
   const ecoleId = ecoleEffective(req);
   if (!ecoleId) return res.status(400).json({ error: "Choisis d'abord une école." });
+
+  const { rows: classesEcole } = await pool.query("SELECT DISTINCT niveau FROM classes WHERE ecole_id = $1", [ecoleId]);
+  const niveauxNormalises = classesEcole.map((c) => normaliserNiveau(c.niveau));
+  const a1erCycle = niveauxNormalises.some((n) => NIVEAUX_1ER_CYCLE.includes(n));
+  const a2ndCycle = niveauxNormalises.some((n) => NIVEAUX_2ND_CYCLE.includes(n));
+  if (!a1erCycle && !a2ndCycle) {
+    return res.status(400).json({ error: "Crée d'abord au moins une classe, pour que le cycle (collège ou lycée) puisse être détecté automatiquement." });
+  }
 
   const MATIERES_PAR_DEFAUT = [
     // Communes aux deux cycles
@@ -80,7 +97,7 @@ router.post("/generer-defaut", requireRole("direction", "super_admin"), async (r
     { nom: "Philosophie", cycle: "2nd_cycle" },
     { nom: "Économie", cycle: "2nd_cycle" },
     { nom: "Comptabilité", cycle: "2nd_cycle" },
-  ];
+  ].filter((m) => m.cycle === null || (m.cycle === "1er_cycle" && a1erCycle) || (m.cycle === "2nd_cycle" && a2ndCycle));
 
   const creees = [];
   for (const m of MATIERES_PAR_DEFAUT) {
@@ -91,7 +108,7 @@ router.post("/generer-defaut", requireRole("direction", "super_admin"), async (r
     );
     if (rows[0]) creees.push(rows[0]);
   }
-  res.status(201).json({ creees, total_demandees: MATIERES_PAR_DEFAUT.length });
+  res.status(201).json({ creees, total_demandees: MATIERES_PAR_DEFAUT.length, cycles_detectes: { a1erCycle, a2ndCycle } });
 });
 
 // PATCH /api/matieres/:id  { categorie?, duree_double? }
