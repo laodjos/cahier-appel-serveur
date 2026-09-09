@@ -95,6 +95,30 @@ router.get("/enfant/:id/bulletin", async (req, res) => {
   }
 });
 
+// GET /api/parent-portal/enfant/:id/notes-detail?periode_id= — chaque note
+// individuelle (pas seulement la moyenne), pour suivre l'évolution devoir par
+// devoir plutôt qu'un seul chiffre final.
+router.get("/enfant/:id/notes-detail", async (req, res) => {
+  const enfant = await verifierEnfantDuParent(req.parent.telephone, req.params.id);
+  if (!enfant) return res.status(403).json({ error: "Cet élève n'est pas rattaché à ton compte." });
+  const { periode_id } = req.query;
+  if (!periode_id) return res.status(400).json({ error: "periode_id est requis." });
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT n.id, n.valeur, n.note_sur, n.type_evaluation, n.est_moyenne_directe, n.created_at, m.nom AS matiere_nom
+       FROM notes n JOIN matieres m ON m.id = n.matiere_id
+       WHERE n.eleve_id = $1 AND n.periode_id = $2
+       ORDER BY m.nom, n.created_at`,
+      [enfant.id, periode_id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error("Erreur détail des notes espace parent :", err);
+    res.status(500).json({ error: "Impossible de charger le détail des notes pour le moment." });
+  }
+});
+
 // GET /api/parent-portal/enfant/:id/scolarite
 router.get("/enfant/:id/scolarite", async (req, res) => {
   const enfant = await verifierEnfantDuParent(req.parent.telephone, req.params.id);

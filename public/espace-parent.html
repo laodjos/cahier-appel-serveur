@@ -213,15 +213,30 @@
       const afficherPourPeriode = async (periodeId) => {
         const detail = document.getElementById("detail-bulletin");
         try {
-          const b = await appelApi(`/parent-portal/enfant/${enfant.id}/bulletin?periode_id=${periodeId}`);
+          const [b, notesDetail] = await Promise.all([
+            appelApi(`/parent-portal/enfant/${enfant.id}/bulletin?periode_id=${periodeId}`),
+            appelApi(`/parent-portal/enfant/${enfant.id}/notes-detail?periode_id=${periodeId}`),
+          ]);
           if (b.details.length === 0) {
             detail.innerHTML = `<div class="sous">Aucune note enregistrée pour cette période.</div>`;
             return;
           }
+          const notesParMatiere = {};
+          for (const n of notesDetail) {
+            (notesParMatiere[n.matiere_nom] = notesParMatiere[n.matiere_nom] || []).push(n);
+          }
           detail.innerHTML = `
             <div class="ligne" style="font-weight:700;"><span>Moyenne générale</span><span>${b.moyenne_generale != null ? b.moyenne_generale + " / 20" : "—"}</span></div>
             <div class="ligne"><span>Rang</span><span>${b.rang ? `${b.rang} / ${b.effectif_classe}` : "—"}</span></div>
-            ${b.details.map((d) => `<div class="ligne"><span>${d.matiere_nom} (coef. ${d.coefficient})</span><span>${d.moyenne} / 20</span></div>`).join("")}
+            ${b.details.map((d) => `
+              <div class="ligne"><span>${d.matiere_nom} (coef. ${d.coefficient})</span><span>${d.moyenne} / 20</span></div>
+              ${(notesParMatiere[d.matiere_nom] || []).map((n) => `
+                <div style="display:flex; justify-content:space-between; padding:3px 0 3px 14px; font-size:11.5px; color:rgba(246,242,231,0.55);">
+                  <span>${n.est_moyenne_directe ? "⭐ " : ""}${n.type_evaluation} — ${new Date(n.created_at).toLocaleDateString("fr-FR")}</span>
+                  <span>${n.valeur} / ${n.note_sur}</span>
+                </div>
+              `).join("")}
+            `).join("")}
           `;
         } catch (err) {
           detail.innerHTML = `<div class="erreur">${err.message}</div>`;

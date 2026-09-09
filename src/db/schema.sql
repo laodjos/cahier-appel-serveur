@@ -489,13 +489,21 @@ CREATE TABLE IF NOT EXISTS notes (
   matiere_id UUID REFERENCES matieres(id) ON DELETE CASCADE,
   periode_id UUID REFERENCES periodes_evaluation(id) ON DELETE CASCADE,
   classe_id UUID REFERENCES classes(id),
-  type_evaluation TEXT DEFAULT 'devoir', -- 'devoir' ou 'composition', informatif pour l'instant
+  type_evaluation TEXT DEFAULT 'devoir', -- libellé de la colonne (ex. "Devoir 1", "Composition")
   valeur NUMERIC NOT NULL,
   note_sur NUMERIC NOT NULL DEFAULT 20,
   saisi_par UUID REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_notes_eleve_periode ON notes(eleve_id, periode_id);
+-- Une colonne d'évaluation nommée librement par l'enseignant (ex. "Devoir 1",
+-- "Interro du 12/10", "Composition") — plusieurs colonnes peuvent coexister
+-- pour une même matière/période, pour suivre l'évolution de l'élève plutôt
+-- qu'une seule note. Si l'enseignant préfère saisir directement une moyenne
+-- déjà calculée par lui-même plutôt que plusieurs devoirs, il peut marquer une
+-- entrée comme "moyenne directe" : elle prime alors sur tous les devoirs de
+-- cette matière pour cette période, plutôt que d'être moyennée avec eux.
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS est_moyenne_directe BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_notes_matiere_periode ON notes(matiere_id, periode_id);
 
 -- ============================================================================

@@ -509,6 +509,7 @@ function App({ session, onLogout }) {
   const [nouveauCoefficient, setNouveauCoefficient] = useState({ matiere_id: "", niveau: "", serie: "", coefficient: "1" });
   const [saisieClasseId, setSaisieClasseId] = useState(null);
   const [matiereFicheActiveId, setMatiereFicheActiveId] = useState(null);
+  const [colonnesExtra, setColonnesExtra] = useState([]); // colonnes ajoutées mais sans aucune note pour l'instant
   const [saisiePeriodeId, setSaisiePeriodeId] = useState("");
   const [notesSaisie, setNotesSaisie] = useState([]);
   const [bulletinEleveId, setBulletinEleveId] = useState("");
@@ -1768,7 +1769,7 @@ function App({ session, onLogout }) {
     rechargerMoyennesGrille();
   }, [saisieClasseId, saisiePeriodeId, api]);
 
-  async function enregistrerNote(eleveId, matiereId, noteExistante, valeur) {
+  async function enregistrerNote(eleveId, matiereId, noteExistante, valeur, libelle, estMoyenneDirecte) {
     if (valeur === "" || valeur == null) return;
     try {
       if (noteExistante) {
@@ -1777,7 +1778,7 @@ function App({ session, onLogout }) {
       } else {
         const cree = await api("/notes", {
           method: "POST",
-          body: { eleve_id: eleveId, matiere_id: matiereId, periode_id: saisiePeriodeId, classe_id: saisieClasseId, valeur },
+          body: { eleve_id: eleveId, matiere_id: matiereId, periode_id: saisiePeriodeId, classe_id: saisieClasseId, valeur, type_evaluation: libelle, est_moyenne_directe: estMoyenneDirecte },
         });
         setNotesSaisie((liste) => [...liste, cree]);
       }
@@ -1792,6 +1793,13 @@ function App({ session, onLogout }) {
       setNotesSaisie((liste) => liste.filter((n) => n.id !== noteId));
       rechargerMoyennesGrille();
     } catch (e) { catchErr(e); }
+  }
+
+  function ajouterColonneNotes(matiereId) {
+    const libelle = window.prompt("Nom de cette colonne (ex. \"Devoir 2\", \"Interro du 12/10\") :");
+    if (!libelle || !libelle.trim()) return;
+    const estMoyenneDirecte = window.confirm("Cette colonne représente-t-elle une MOYENNE DÉJÀ CALCULÉE (à saisir directement, sans tenir compte d'autres devoirs) ?\n\nOK = Oui, c'est une moyenne directe\nAnnuler = Non, c'est un devoir parmi d'autres");
+    setColonnesExtra((liste) => [...liste, { matiere_id: matiereId, libelle: libelle.trim(), est_moyenne_directe: estMoyenneDirecte }]);
   }
 
   async function chargerBulletin() {
@@ -2929,6 +2937,21 @@ function App({ session, onLogout }) {
                       return <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucune matière à saisir pour toi sur cette classe — vérifie que tes matières sont bien renseignées dans ton profil.</div>;
                     }
                     const matiereActive = matieresGrille.find((m) => m.id === matiereFicheActiveId) || matieresGrille[0];
+
+                    // Les colonnes d'une matière = tous les libellés déjà utilisés dans ses
+                    // notes, plus celles ajoutées mais pas encore renseignées. Une colonne
+                    // "Devoir 1" apparaît par défaut tant qu'aucune colonne n'existe encore.
+                    const notesMatiere = notesSaisie.filter((n) => n.matiere_id === matiereActive.id);
+                    const colonnesVues = new Map();
+                    for (const n of notesMatiere) {
+                      if (!colonnesVues.has(n.type_evaluation)) colonnesVues.set(n.type_evaluation, !!n.est_moyenne_directe);
+                    }
+                    for (const c of colonnesExtra.filter((c) => c.matiere_id === matiereActive.id)) {
+                      if (!colonnesVues.has(c.libelle)) colonnesVues.set(c.libelle, c.est_moyenne_directe);
+                    }
+                    if (colonnesVues.size === 0) colonnesVues.set("Devoir 1", false);
+                    const colonnes = [...colonnesVues.entries()].map(([libelle, estMoyenneDirecte]) => ({ libelle, estMoyenneDirecte }));
+
                     return (
                       <React.Fragment>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "12px 18px 0 18px" }}>
@@ -2938,29 +2961,59 @@ function App({ session, onLogout }) {
                             </button>
                           ))}
                         </div>
-                        <div style={{ borderTop: `1px solid ${COLORS.line}` }}>
-                          {elevesGrille.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun élève dans cette classe.</div>}
-                          {elevesGrille.map((eleve, i) => {
-                            const notesCellule = notesSaisie.filter((n) => n.eleve_id === eleve.id && n.matiere_id === matiereActive.id);
-                            const derniereNote = notesCellule[notesCellule.length - 1];
-                            return (
-                              <div key={eleve.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
-                                <span style={{ fontSize: 13, flex: 1 }}>{nomCompletEleve(eleve)}</span>
-                                <input
-                                  type="number" min="0" max="20" step="0.5"
-                                  style={{ ...inputStyle, width: 70 }}
-                                  defaultValue={derniereNote?.valeur ?? ""}
-                                  placeholder="/ 20"
-                                  onBlur={(e) => e.target.value !== "" && enregistrerNote(eleve.id, matiereActive.id, derniereNote, e.target.value)}
-                                />
-                                {derniereNote && (
-                                  <button onClick={() => supprimerNote(derniereNote.id)} title="Supprimer cette note (mal saisie)" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim, padding: 4 }}>
-                                    <Icon path={P.trash} size={14} />
+                        <div style={{ padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, borderTop: `1px solid ${COLORS.line}` }}>
+                          Ajoute autant de colonnes que de devoirs — les parents pourront suivre l'évolution de leur enfant devoir par devoir, pas seulement la moyenne finale.
+                        </div>
+                        <div style={{ overflowX: "auto", borderTop: `1px solid ${COLORS.line}` }}>
+                          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
+                            <thead>
+                              <tr>
+                                <th style={{ position: "sticky", left: 0, background: COLORS.ardoiseDeep, textAlign: "left", padding: "9px 14px", borderBottom: `1px solid ${COLORS.line}`, whiteSpace: "nowrap" }}>Élève</th>
+                                {colonnes.map((c) => (
+                                  <th key={c.libelle} style={{ padding: "9px 10px", borderBottom: `1px solid ${COLORS.line}`, borderLeft: `1px solid ${COLORS.line}`, fontWeight: 600, color: c.estMoyenneDirecte ? COLORS.marker : COLORS.craieDim, whiteSpace: "nowrap", minWidth: 90 }}>
+                                    {c.estMoyenneDirecte ? "⭐ " : ""}{c.libelle}
+                                  </th>
+                                ))}
+                                <th style={{ padding: "9px 10px", borderBottom: `1px solid ${COLORS.line}`, borderLeft: `1px solid ${COLORS.line}` }}>
+                                  <button onClick={() => ajouterColonneNotes(matiereActive.id)} title="Ajouter une colonne (devoir ou moyenne directe)" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.marker, display: "flex", alignItems: "center" }}>
+                                    <Icon path={P.plus} size={14} />
                                   </button>
-                                )}
-                              </div>
-                            );
-                          })}
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {elevesGrille.length === 0 && (
+                                <tr><td colSpan={colonnes.length + 2} style={{ padding: 18, color: COLORS.craieDim }}>Aucun élève dans cette classe.</td></tr>
+                              )}
+                              {elevesGrille.map((eleve, i) => (
+                                <tr key={eleve.id}>
+                                  <td style={{ position: "sticky", left: 0, background: COLORS.ardoiseDeep, padding: "7px 14px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none", whiteSpace: "nowrap" }}>{nomCompletEleve(eleve)}</td>
+                                  {colonnes.map((c) => {
+                                    const noteCellule = notesMatiere.find((n) => n.eleve_id === eleve.id && n.type_evaluation === c.libelle);
+                                    return (
+                                      <td key={c.libelle} style={{ padding: "4px 6px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none", borderLeft: `1px solid ${COLORS.line}`, textAlign: "center" }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 2, justifyContent: "center" }}>
+                                          <input
+                                            type="number" min="0" max="20" step="0.5"
+                                            style={{ ...inputStyle, width: 62, padding: "6px 6px", textAlign: "center" }}
+                                            defaultValue={noteCellule?.valeur ?? ""}
+                                            placeholder="—"
+                                            onBlur={(e) => e.target.value !== "" && enregistrerNote(eleve.id, matiereActive.id, noteCellule, e.target.value, c.libelle, c.estMoyenneDirecte)}
+                                          />
+                                          {noteCellule && (
+                                            <button onClick={() => supprimerNote(noteCellule.id)} title="Supprimer cette note (mal saisie)" style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim, padding: 2 }}>
+                                              <Icon path={P.trash} size={12} />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </td>
+                                    );
+                                  })}
+                                  <td style={{ borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none", borderLeft: `1px solid ${COLORS.line}` }}></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       </React.Fragment>
                     );

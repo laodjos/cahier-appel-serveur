@@ -55,9 +55,9 @@ router.get("/", async (req, res) => {
   }
 });
 
-// POST /api/notes  { eleve_id, matiere_id, periode_id, classe_id, valeur, note_sur, type_evaluation }
+// POST /api/notes  { eleve_id, matiere_id, periode_id, classe_id, valeur, note_sur, type_evaluation, est_moyenne_directe }
 router.post("/", async (req, res) => {
-  const { eleve_id, matiere_id, periode_id, classe_id, valeur, note_sur, type_evaluation } = req.body;
+  const { eleve_id, matiere_id, periode_id, classe_id, valeur, note_sur, type_evaluation, est_moyenne_directe } = req.body;
   if (!eleve_id || !matiere_id || !periode_id || !classe_id || valeur == null) {
     return res.status(400).json({ error: "eleve_id, matiere_id, periode_id, classe_id et valeur sont requis." });
   }
@@ -72,16 +72,16 @@ router.post("/", async (req, res) => {
     return res.status(403).json({ error: "La saisie des notes est actuellement fermée pour cette période — contacte la Direction pour qu'elle l'ouvre." });
   }
   const { rows } = await pool.query(
-    `INSERT INTO notes (eleve_id, matiere_id, periode_id, classe_id, valeur, note_sur, type_evaluation, saisi_par)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [eleve_id, matiere_id, periode_id, classe_id, valeur, noteSur, type_evaluation || "devoir", req.user.sub]
+    `INSERT INTO notes (eleve_id, matiere_id, periode_id, classe_id, valeur, note_sur, type_evaluation, est_moyenne_directe, saisi_par)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    [eleve_id, matiere_id, periode_id, classe_id, valeur, noteSur, type_evaluation || "devoir", !!est_moyenne_directe, req.user.sub]
   );
   res.status(201).json(rows[0]);
 });
 
-// PATCH /api/notes/:id  { valeur }
+// PATCH /api/notes/:id  { valeur, est_moyenne_directe? }
 router.patch("/:id", async (req, res) => {
-  const { valeur } = req.body;
+  const { valeur, est_moyenne_directe } = req.body;
   const { rows: existante } = await pool.query("SELECT * FROM notes WHERE id = $1", [req.params.id]);
   if (!existante[0]) return res.status(404).json({ error: "Note introuvable." });
   if (req.user.role === "enseignant" && !(await enseignantAutorise(req.user.sub, existante[0].classe_id, existante[0].matiere_id))) {
@@ -93,7 +93,10 @@ router.patch("/:id", async (req, res) => {
   if (Number(valeur) < 0 || Number(valeur) > Number(existante[0].note_sur)) {
     return res.status(400).json({ error: `La note doit être comprise entre 0 et ${existante[0].note_sur}.` });
   }
-  const { rows } = await pool.query("UPDATE notes SET valeur = $1 WHERE id = $2 RETURNING *", [valeur, req.params.id]);
+  const { rows } = await pool.query(
+    "UPDATE notes SET valeur = $1, est_moyenne_directe = COALESCE($2, est_moyenne_directe) WHERE id = $3 RETURNING *",
+    [valeur, est_moyenne_directe !== undefined ? !!est_moyenne_directe : null, req.params.id]
+  );
   res.json(rows[0]);
 });
 

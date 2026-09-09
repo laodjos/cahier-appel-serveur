@@ -9,15 +9,26 @@ router.use(requireErpActif);
 
 // Moyenne d'un élève par matière, sur une période — normalisée sur 20 même si
 // une note a été saisie sur un barème différent (ex. devoir noté sur 10).
+// Si l'enseignant a saisi une "moyenne directe" pour cette matière, elle prime
+// sur tous les devoirs — sinon, on moyenne l'ensemble des devoirs saisis.
 function calculerMoyennesMatieres(notes) {
   const parMatiere = {};
   for (const n of notes) {
-    if (!parMatiere[n.matiere_id]) parMatiere[n.matiere_id] = [];
-    parMatiere[n.matiere_id].push((Number(n.valeur) / Number(n.note_sur)) * 20);
+    if (!parMatiere[n.matiere_id]) parMatiere[n.matiere_id] = { devoirs: [], moyenneDirecte: null };
+    const normalisee = (Number(n.valeur) / Number(n.note_sur)) * 20;
+    if (n.est_moyenne_directe) {
+      parMatiere[n.matiere_id].moyenneDirecte = normalisee;
+    } else {
+      parMatiere[n.matiere_id].devoirs.push(normalisee);
+    }
   }
   const moyennes = {};
-  for (const [matiereId, valeurs] of Object.entries(parMatiere)) {
-    moyennes[matiereId] = valeurs.reduce((a, b) => a + b, 0) / valeurs.length;
+  for (const [matiereId, data] of Object.entries(parMatiere)) {
+    if (data.moyenneDirecte != null) {
+      moyennes[matiereId] = data.moyenneDirecte;
+    } else if (data.devoirs.length > 0) {
+      moyennes[matiereId] = data.devoirs.reduce((a, b) => a + b, 0) / data.devoirs.length;
+    }
   }
   return moyennes;
 }
@@ -51,7 +62,7 @@ function calculerRangs(resultats) {
 // calculerBulletinsClasseBatch ci-dessous, bien plus rapide.
 async function calculerBulletinEleve(eleveId, periodeId, classeId, niveau, serie) {
   const { rows: notes } = await pool.query(
-    "SELECT matiere_id, valeur, note_sur FROM notes WHERE eleve_id = $1 AND periode_id = $2",
+    "SELECT matiere_id, valeur, note_sur, est_moyenne_directe FROM notes WHERE eleve_id = $1 AND periode_id = $2",
     [eleveId, periodeId]
   );
   const moyennesParMatiere = calculerMoyennesMatieres(notes);
@@ -83,7 +94,7 @@ async function calculerBulletinEleve(eleveId, periodeId, classeId, niveau, serie
 // --------------------------------------------------------------------------
 async function calculerBulletinsClasseBatch(classeId, periodeId, niveau, serie) {
   const { rows: notes } = await pool.query(
-    "SELECT eleve_id, matiere_id, valeur, note_sur FROM notes WHERE classe_id = $1 AND periode_id = $2",
+    "SELECT eleve_id, matiere_id, valeur, note_sur, est_moyenne_directe FROM notes WHERE classe_id = $1 AND periode_id = $2",
     [classeId, periodeId]
   );
   const matiereIds = [...new Set(notes.map((n) => n.matiere_id))];
