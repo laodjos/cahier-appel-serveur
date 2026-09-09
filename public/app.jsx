@@ -1751,9 +1751,20 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  const [moyennesGrille, setMoyennesGrille] = useState(null);
+
+  async function rechargerMoyennesGrille() {
+    if (!saisieClasseId || !saisiePeriodeId) { setMoyennesGrille(null); return; }
+    try {
+      const data = await api(`/bulletins/classe/${saisieClasseId}?periode_id=${saisiePeriodeId}`);
+      setMoyennesGrille(data);
+    } catch (e) { /* silencieux : la moyenne est un bonus d'affichage, pas bloquant pour la saisie */ }
+  }
+
   useEffect(() => {
-    if (!saisieClasseId || !saisiePeriodeId) { setNotesSaisie([]); return; }
+    if (!saisieClasseId || !saisiePeriodeId) { setNotesSaisie([]); setMoyennesGrille(null); return; }
     api(`/notes?classe_id=${saisieClasseId}&periode_id=${saisiePeriodeId}`).then(setNotesSaisie).catch(catchErr);
+    rechargerMoyennesGrille();
   }, [saisieClasseId, saisiePeriodeId, api]);
 
   async function enregistrerNote(eleveId, matiereId, noteExistante, valeur) {
@@ -1769,6 +1780,7 @@ function App({ session, onLogout }) {
         });
         setNotesSaisie((liste) => [...liste, cree]);
       }
+      rechargerMoyennesGrille();
     } catch (e) { catchErr(e); }
   }
 
@@ -2914,13 +2926,17 @@ function App({ session, onLogout }) {
                               {matieresGrille.map((m) => (
                                 <th key={m.id} style={{ padding: "9px 10px", borderBottom: `1px solid ${COLORS.line}`, borderLeft: `1px solid ${COLORS.line}`, fontWeight: 600, color: COLORS.craieDim, whiteSpace: "nowrap", minWidth: 76 }}>{m.nom}</th>
                               ))}
+                              <th style={{ padding: "9px 10px", borderBottom: `1px solid ${COLORS.line}`, borderLeft: `2px solid ${COLORS.line}`, fontWeight: 700, color: COLORS.marker, whiteSpace: "nowrap" }}>Moyenne</th>
+                              <th style={{ padding: "9px 10px", borderBottom: `1px solid ${COLORS.line}`, borderLeft: `1px solid ${COLORS.line}`, fontWeight: 600, color: COLORS.craieDim, whiteSpace: "nowrap" }}>Rang</th>
                             </tr>
                           </thead>
                           <tbody>
                             {elevesGrille.length === 0 && (
-                              <tr><td colSpan={matieresGrille.length + 1} style={{ padding: 18, color: COLORS.craieDim }}>Aucun élève dans cette classe.</td></tr>
+                              <tr><td colSpan={matieresGrille.length + 3} style={{ padding: 18, color: COLORS.craieDim }}>Aucun élève dans cette classe.</td></tr>
                             )}
-                            {elevesGrille.map((eleve, i) => (
+                            {elevesGrille.map((eleve, i) => {
+                              const resultatEleve = moyennesGrille?.eleves.find((r) => r.eleve.id === eleve.id);
+                              return (
                               <tr key={eleve.id}>
                                 <td style={{ position: "sticky", left: 0, background: COLORS.ardoiseDeep, padding: "7px 14px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none", whiteSpace: "nowrap" }}>{nomCompletEleve(eleve)}</td>
                                 {matieresGrille.map((m) => {
@@ -2938,10 +2954,18 @@ function App({ session, onLogout }) {
                                     </td>
                                   );
                                 })}
+                                <td style={{ padding: "7px 10px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none", borderLeft: `2px solid ${COLORS.line}`, textAlign: "center", fontWeight: 700, color: COLORS.marker, whiteSpace: "nowrap" }}>
+                                  {resultatEleve?.moyenne_generale != null ? `${resultatEleve.moyenne_generale} / 20` : "—"}
+                                </td>
+                                <td style={{ padding: "7px 10px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none", borderLeft: `1px solid ${COLORS.line}`, textAlign: "center", color: COLORS.craieDim, whiteSpace: "nowrap" }}>
+                                  {resultatEleve?.rang ? `${resultatEleve.rang} / ${moyennesGrille.effectif}` : "—"}
+                                </td>
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
+                        <div style={{ padding: "10px 14px", fontSize: 11, color: COLORS.craieDim }}>La moyenne tient compte de toutes les matières notées pour cette période (pas seulement celles affichées ci-dessus), avec leurs coefficients respectifs.</div>
                       </div>
                     );
                   })()}
