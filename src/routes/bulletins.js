@@ -125,3 +125,5 @@ router.get("/classe/:classeId", async (req, res) => {
 });
 
 module.exports = router;
+module.exports.calculerBulletinEleve = calculerBulletinEleve;
+module.exports.calculerRangs = calculerRangs;

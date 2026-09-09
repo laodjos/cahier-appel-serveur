@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>Espace Parent — Cahier d'Appel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #243B32; color: #F6F2E7;
+    font-family: -apple-system, "IBM Plex Sans", sans-serif; padding: 20px;
+  }
+  .carte {
+    width: 100%; max-width: 420px; margin: 0 auto; background: #182B24;
+    border: 1px solid rgba(246,242,231,0.12); border-radius: 16px; padding: 24px;
+  }
+  h1 { font-size: 19px; margin: 0 0 4px; font-weight: 700; }
+  .sous { font-size: 12.5px; color: rgba(246,242,231,0.6); margin-bottom: 18px; }
+  input, select {
+    width: 100%; padding: 12px; border-radius: 9px; border: 1px solid rgba(246,242,231,0.15);
+    background: #243B32; color: #F6F2E7; font-size: 16px; margin-bottom: 10px;
+  }
+  button {
+    width: 100%; padding: 13px; border-radius: 9px; border: none; background: #D9A441;
+    color: #182B24; font-weight: 700; font-size: 15px; cursor: pointer; margin-top: 4px;
+  }
+  button.secondaire { background: transparent; border: 1px solid rgba(246,242,231,0.2); color: #F6F2E7; font-weight: 600; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .erreur { color: #C4633F; font-size: 12.5px; margin-top: 8px; }
+  .onglets { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .onglet { padding: 7px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; border: 1px solid rgba(246,242,231,0.15); color: rgba(246,242,231,0.6); }
+  .onglet.actif { background: rgba(217,164,65,0.14); border-color: #D9A441; color: #D9A441; }
+  .ligne { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid rgba(246,242,231,0.08); font-size: 13.5px; }
+  .badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+  .badge.present { background: #263E33; color: #5E9C79; }
+  .badge.absent { background: #3E2A24; color: #C4633F; }
+  .badge.retard { background: #26313E; color: #8AA0C4; }
+  .enfant-select { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .enfant-bouton { padding: 8px 14px; border-radius: 9px; border: 1px solid rgba(246,242,231,0.15); background: transparent; color: #F6F2E7; font-size: 13px; cursor: pointer; width: auto; }
+  .enfant-bouton.actif { background: #D9A441; color: #182B24; border-color: #D9A441; }
+  .chargement { text-align: center; padding: 20px 0; color: rgba(246,242,231,0.6); font-size: 13px; }
+  .lien-deco { text-align: center; margin-top: 16px; font-size: 12px; color: rgba(246,242,231,0.5); cursor: pointer; text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="carte" id="carte"></div>
+
+<script>
+(function () {
+  const API = "/api";
+  let token = localStorage.getItem("espaceParentToken");
+  let enfants = [];
+  let enfantActifId = null;
+  let ongletActif = "presence";
+  let telephoneSaisi = "";
+
+  const carte = document.getElementById("carte");
+
+  async function appelApi(chemin, options = {}) {
+    const res = await fetch(`${API}${chemin}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {}),
+      },
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.error || "Une erreur est survenue.");
+    return data;
+  }
+
+  function deconnecter() {
+    localStorage.removeItem("espaceParentToken");
+    token = null;
+    enfants = [];
+    enfantActifId = null;
+    afficherEcranTelephone();
+  }
+
+  // --- Écran 1 : saisie du téléphone ---
+  function afficherEcranTelephone(erreur) {
+    carte.innerHTML = `
+      <h1>Espace Parent</h1>
+      <div class="sous">Suis la scolarité de ton enfant — présence, notes, frais de scolarité.</div>
+      <input type="tel" id="telephone" placeholder="Ton numéro de téléphone" value="${telephoneSaisi}" />
+      <button id="envoyer">Recevoir un code par SMS</button>
+      ${erreur ? `<div class="erreur">${erreur}</div>` : ""}
+    `;
+    document.getElementById("envoyer").addEventListener("click", async () => {
+      const telephone = document.getElementById("telephone").value.trim();
+      if (!telephone) return;
+      telephoneSaisi = telephone;
+      const bouton = document.getElementById("envoyer");
+      bouton.disabled = true;
+      bouton.textContent = "Envoi en cours…";
+      try {
+        await appelApi("/parent-auth/demander-code", { method: "POST", body: JSON.stringify({ telephone }) });
+        afficherEcranCode(telephone);
+      } catch (err) {
+        afficherEcranTelephone(err.message);
+      }
+    });
+  }
+
+  // --- Écran 2 : saisie du code reçu ---
+  function afficherEcranCode(telephone, erreur) {
+    carte.innerHTML = `
+      <h1>Code de vérification</h1>
+      <div class="sous">Un code a été envoyé par SMS au ${telephone}.</div>
+      <input type="text" inputmode="numeric" id="code" placeholder="Code à 6 chiffres" maxlength="6" />
+      <button id="verifier">Se connecter</button>
+      <button class="secondaire" id="retour">Changer de numéro</button>
+      ${erreur ? `<div class="erreur">${erreur}</div>` : ""}
+    `;
+    document.getElementById("retour").addEventListener("click", () => afficherEcranTelephone());
+    document.getElementById("verifier").addEventListener("click", async () => {
+      const code = document.getElementById("code").value.trim();
+      if (!code) return;
+      const bouton = document.getElementById("verifier");
+      bouton.disabled = true;
+      bouton.textContent = "Vérification…";
+      try {
+        const data = await appelApi("/parent-auth/verifier-code", { method: "POST", body: JSON.stringify({ telephone, code }) });
+        token = data.token;
+        localStorage.setItem("espaceParentToken", token);
+        chargerTableauDeBord();
+      } catch (err) {
+        afficherEcranCode(telephone, err.message);
+      }
+    });
+  }
+
+  // --- Tableau de bord ---
+  async function chargerTableauDeBord() {
+    carte.innerHTML = `<div class="chargement">Chargement…</div>`;
+    try {
+      enfants = await appelApi("/parent-portal/mes-enfants");
+    } catch (err) {
+      deconnecter();
+      return;
+    }
+    if (enfants.length === 0) {
+      carte.innerHTML = `<h1>Espace Parent</h1><div class="sous">Aucun élève n'est encore rattaché à ce numéro. Contacte l'établissement.</div><div class="lien-deco" id="deco">Se déconnecter</div>`;
+      document.getElementById("deco").addEventListener("click", deconnecter);
+      return;
+    }
+    enfantActifId = enfantActifId || enfants[0].id;
+    afficherTableauDeBord();
+  }
+
+  function nomComplet(e) {
+    return [e.nom, e.prenoms].filter(Boolean).join(" ");
+  }
+
+  function afficherTableauDeBord() {
+    const enfant = enfants.find((e) => e.id === enfantActifId);
+    carte.innerHTML = `
+      <h1>Espace Parent</h1>
+      <div class="enfant-select">
+        ${enfants.map((e) => `<button class="enfant-bouton ${e.id === enfantActifId ? "actif" : ""}" data-id="${e.id}">${nomComplet(e)}</button>`).join("")}
+      </div>
+      <div class="sous">${enfant.classe_nom}${enfant.serie ? ` (Série ${enfant.serie})` : ""} · Mat. ${enfant.matricule || "—"}</div>
+      <div class="onglets">
+        <div class="onglet ${ongletActif === "presence" ? "actif" : ""}" data-onglet="presence">Présence</div>
+        <div class="onglet ${ongletActif === "bulletin" ? "actif" : ""}" data-onglet="bulletin">Bulletin</div>
+        <div class="onglet ${ongletActif === "scolarite" ? "actif" : ""}" data-onglet="scolarite">Scolarité</div>
+      </div>
+      <div id="contenu-onglet"><div class="chargement">Chargement…</div></div>
+      <div class="lien-deco" id="deco">Se déconnecter</div>
+    `;
+    document.querySelectorAll(".enfant-bouton").forEach((b) => b.addEventListener("click", () => { enfantActifId = b.dataset.id; afficherTableauDeBord(); }));
+    document.querySelectorAll(".onglet").forEach((o) => o.addEventListener("click", () => { ongletActif = o.dataset.onglet; afficherTableauDeBord(); }));
+    document.getElementById("deco").addEventListener("click", deconnecter);
+
+    if (ongletActif === "presence") chargerPresence(enfant);
+    else if (ongletActif === "bulletin") chargerBulletin(enfant);
+    else chargerScolarite(enfant);
+  }
+
+  async function chargerPresence(enfant) {
+    const zone = document.getElementById("contenu-onglet");
+    try {
+      const evenements = await appelApi(`/parent-portal/enfant/${enfant.id}/presence`);
+      if (evenements.length === 0) {
+        zone.innerHTML = `<div class="sous" style="margin-top:10px;">Aucun pointage sur les 30 derniers jours.</div>`;
+        return;
+      }
+      const libelles = { present: "Présent", absent: "Absent", retard: "Retard" };
+      zone.innerHTML = evenements.slice(0, 30).map((ev) => `
+        <div class="ligne">
+          <span>${new Date(ev.horodatage).toLocaleString("fr-FR")}</span>
+          <span class="badge ${ev.statut}">${libelles[ev.statut] || ev.statut}</span>
+        </div>
+      `).join("");
+    } catch (err) {
+      zone.innerHTML = `<div class="erreur">${err.message}</div>`;
+    }
+  }
+
+  async function chargerBulletin(enfant) {
+    const zone = document.getElementById("contenu-onglet");
+    try {
+      const periodes = await appelApi(`/parent-portal/enfant/${enfant.id}/periodes`);
+      if (periodes.length === 0) {
+        zone.innerHTML = `<div class="sous" style="margin-top:10px;">Aucune période d'évaluation disponible pour l'instant.</div>`;
+        return;
+      }
+      zone.innerHTML = `
+        <select id="select-periode">${periodes.map((p) => `<option value="${p.id}">${p.nom}</option>`).join("")}</select>
+        <div id="detail-bulletin"><div class="chargement">Chargement…</div></div>
+      `;
+      const afficherPourPeriode = async (periodeId) => {
+        const detail = document.getElementById("detail-bulletin");
+        try {
+          const b = await appelApi(`/parent-portal/enfant/${enfant.id}/bulletin?periode_id=${periodeId}`);
+          if (b.details.length === 0) {
+            detail.innerHTML = `<div class="sous">Aucune note enregistrée pour cette période.</div>`;
+            return;
+          }
+          detail.innerHTML = `
+            <div class="ligne" style="font-weight:700;"><span>Moyenne générale</span><span>${b.moyenne_generale != null ? b.moyenne_generale + " / 20" : "—"}</span></div>
+            <div class="ligne"><span>Rang</span><span>${b.rang ? `${b.rang} / ${b.effectif_classe}` : "—"}</span></div>
+            ${b.details.map((d) => `<div class="ligne"><span>${d.matiere_nom} (coef. ${d.coefficient})</span><span>${d.moyenne} / 20</span></div>`).join("")}
+          `;
+        } catch (err) {
+          detail.innerHTML = `<div class="erreur">${err.message}</div>`;
+        }
+      };
+      document.getElementById("select-periode").addEventListener("change", (e) => afficherPourPeriode(e.target.value));
+      afficherPourPeriode(periodes[0].id);
+    } catch (err) {
+      zone.innerHTML = `<div class="erreur">${err.message}</div>`;
+    }
+  }
+
+  async function chargerScolarite(enfant) {
+    const zone = document.getElementById("contenu-onglet");
+    try {
+      const solde = await appelApi(`/parent-portal/enfant/${enfant.id}/scolarite`);
+      if (solde.montant_total == null) {
+        zone.innerHTML = `<div class="sous" style="margin-top:10px;">Aucun montant de scolarité défini pour l'instant.</div>`;
+        return;
+      }
+      const formatMontant = (n) => Number(n).toLocaleString("fr-FR") + " F";
+      zone.innerHTML = `
+        <div class="ligne"><span>Total scolarité</span><span>${formatMontant(solde.montant_total)}</span></div>
+        <div class="ligne"><span>Déjà payé</span><span>${formatMontant(solde.montant_paye)}</span></div>
+        <div class="ligne" style="font-weight:700;"><span>Reste à payer</span><span>${formatMontant(Math.max(0, solde.solde))}</span></div>
+        ${!solde.a_jour ? `
+          <input type="number" id="montant-payer" value="${solde.solde}" min="1" max="${solde.solde}" placeholder="Montant à payer" style="margin-top:12px;" />
+          <button id="payer-maintenant">Payer maintenant</button>
+        ` : `<div class="sous" style="margin-top:10px;">✔ Scolarité à jour.</div>`}
+      `;
+      const boutonPayer = document.getElementById("payer-maintenant");
+      if (boutonPayer) {
+        boutonPayer.addEventListener("click", async () => {
+          const montant = document.getElementById("montant-payer").value;
+          boutonPayer.disabled = true;
+          boutonPayer.textContent = "Un instant…";
+          try {
+            const res = await appelApi(`/parent-portal/enfant/${enfant.id}/payer`, { method: "POST", body: JSON.stringify({ montant }) });
+            window.location.href = res.payment_url;
+          } catch (err) {
+            zone.insertAdjacentHTML("beforeend", `<div class="erreur">${err.message}</div>`);
+            boutonPayer.disabled = false;
+            boutonPayer.textContent = "Payer maintenant";
+          }
+        });
+      }
+    } catch (err) {
+      zone.innerHTML = `<div class="erreur">${err.message}</div>`;
+    }
+  }
+
+  // --- Point d'entrée ---
+  if (token) chargerTableauDeBord();
+  else afficherEcranTelephone();
+})();
+</script>
+</body>
+</html>

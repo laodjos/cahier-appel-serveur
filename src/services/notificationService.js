@@ -165,4 +165,6 @@ module.exports = {
   programmerNotificationPresence,
   programmerEnvoiRapport,
   envoyerNotification,
+  envoyerViaOrangeSms,
+  normaliserNumeroCi,
 };

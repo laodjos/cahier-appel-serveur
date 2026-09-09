@@ -14,6 +14,22 @@ function authRequired(req, res, next) {
   }
 }
 
+// Authentification d'un parent (Espace Parent) — jeton distinct de celui du
+// personnel (typ: "parent"), obtenu après vérification du code SMS.
+function authRequiredParent(req, res, next) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: "Authentification requise." });
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    if (payload.typ !== "parent") return res.status(401).json({ error: "Jeton invalide pour l'espace parent." });
+    req.parent = payload;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Session expirée — reconnecte-toi." });
+  }
+}
+
 // Restreint l'accès à certains rôles, ex. requireRole("direction", "surveillant")
 function requireRole(...roles) {
   return (req, res, next) => {
@@ -53,4 +69,4 @@ async function authAgent(req, res, next) {
   next();
 }
 
-module.exports = { authRequired, requireRole, requireErpActif, authAgent };
+module.exports = { authRequired, authRequiredParent, requireRole, requireErpActif, authAgent };

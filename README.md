@@ -120,7 +120,22 @@ Si un lecteur devient injoignable, il passe automatiquement `en_ligne = false` (
 - Un job toutes les minutes (`src/jobs/scheduler.js`) envoie tout ce qui est dû, via Expo Push ou Firebase Cloud Messaging selon `NOTIFICATION_PROVIDER`.
 - Le `push_token` de chaque parent est enregistré depuis l'application mobile (à connecter côté app : `PATCH /api/parents/:id/push-token` — à ajouter selon votre besoin exact).
 
-## 11. Prochaines étapes suggérées
+## 11. Espace Parent
+
+Une page dédiée (`public/espace-parent.html`, accessible sur `/espace-parent.html`)
+permet à un parent de se connecter avec son numéro de téléphone — un code à 6
+chiffres lui est envoyé par SMS (réutilise la même intégration Orange que les
+notifications de présence), sans mot de passe à retenir.
+
+Une fois connecté, il retrouve tous ses enfants rattachés à ce numéro et peut
+consulter, pour chacun : sa présence des 30 derniers jours, ses bulletins par
+période, et le solde de sa scolarité — avec un paiement en ligne direct
+(CinetPay) si un solde reste dû.
+
+Aucune configuration supplémentaire n'est nécessaire — les mêmes variables
+d'environnement que pour les notifications SMS et les paiements suffisent.
+
+## 12. Prochaines étapes suggérées
 
 - Connecter le frontend web (dashboard) et l'application mobile parents à cette API
 - Ajouter l'authentification des enseignants sur l'appli tablette

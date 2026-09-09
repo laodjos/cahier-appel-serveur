@@ -1877,6 +1877,9 @@ function App({ session, onLogout }) {
               <div>Code élève (caisse)</div>
             </div>
           </div>
+          <div style="text-align:center; font-size:10.5px; color:#666; margin-top:4px;">
+            Suivre la présence, les notes et la scolarité au quotidien : Espace Parent — ${session.baseUrl.replace(/\/api$/, "")}/espace-parent.html
+          </div>
           <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:8px;">
             <div style="font-size:9.5px; color:#888;">${ecoleReferencesBas}</div>
             ${ecoleCachetUrl ? `<img src="${ecoleCachetUrl}" style="height:20mm;" />` : ""}

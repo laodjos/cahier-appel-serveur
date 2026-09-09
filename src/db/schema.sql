@@ -561,3 +561,18 @@ CREATE TABLE IF NOT EXISTS mouvements_caisse (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- --------------------------------------------------------------------------
+-- Espace Parent — connexion par numéro de téléphone + code à usage unique
+-- envoyé par SMS (comme WhatsApp), sans mot de passe à retenir. Un code
+-- expire au bout de 10 minutes et ne peut servir qu'une seule fois.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS parent_otp (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  telephone TEXT NOT NULL,
+  code TEXT NOT NULL,
+  expire_a TIMESTAMPTZ NOT NULL,
+  utilise BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_parent_otp_telephone ON parent_otp(telephone);
+
