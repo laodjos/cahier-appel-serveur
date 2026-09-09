@@ -74,8 +74,13 @@ function useApi(baseUrl, token, ecoleActiveId, onAuthError) {
     if (ecoleActiveId) {
       if (!estFormData && (!options.method || options.method === "GET")) {
         pathFinal += (path.includes("?") ? "&" : "?") + `ecole_id=${ecoleActiveId}`;
-      } else if (!estFormData && options.body && typeof options.body === "object") {
-        bodyFinal = { ...options.body, ecole_id: options.body.ecole_id ?? ecoleActiveId };
+      } else if (!estFormData) {
+        // Fonctionne aussi pour un POST/PATCH sans corps du tout (ex. "Générer
+        // automatiquement" sans paramètres) — sans ce cas, ecole_id n'était
+        // jamais transmis et le Super-administrateur en consultation d'une
+        // école recevait "Choisis d'abord une école" à tort.
+        const corpsExistant = (options.body && typeof options.body === "object") ? options.body : {};
+        bodyFinal = { ...corpsExistant, ecole_id: corpsExistant.ecole_id ?? ecoleActiveId };
       }
     }
     const res = await fetch(`${baseUrl}${pathFinal}`, {
