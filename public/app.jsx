@@ -508,6 +508,7 @@ function App({ session, onLogout }) {
   const [nouvellePeriode, setNouvellePeriode] = useState({ nom: "", date_debut: "", date_fin: "" });
   const [nouveauCoefficient, setNouveauCoefficient] = useState({ matiere_id: "", niveau: "", serie: "", coefficient: "1" });
   const [saisieClasseId, setSaisieClasseId] = useState(null);
+  const [matiereFicheActiveId, setMatiereFicheActiveId] = useState(null);
   const [saisiePeriodeId, setSaisiePeriodeId] = useState("");
   const [notesSaisie, setNotesSaisie] = useState([]);
   const [bulletinEleveId, setBulletinEleveId] = useState("");
@@ -2917,44 +2918,36 @@ function App({ session, onLogout }) {
                     if (matieresGrille.length === 0) {
                       return <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucune matière à saisir pour toi sur cette classe — vérifie que tes matières sont bien renseignées dans ton profil.</div>;
                     }
+                    const matiereActive = matieresGrille.find((m) => m.id === matiereFicheActiveId) || matieresGrille[0];
                     return (
-                      <div style={{ overflowX: "auto" }}>
-                        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
-                          <thead>
-                            <tr>
-                              <th style={{ position: "sticky", left: 0, background: COLORS.ardoiseDeep, textAlign: "left", padding: "9px 14px", borderBottom: `1px solid ${COLORS.line}`, whiteSpace: "nowrap" }}>Élève</th>
-                              {matieresGrille.map((m) => (
-                                <th key={m.id} style={{ padding: "9px 10px", borderBottom: `1px solid ${COLORS.line}`, borderLeft: `1px solid ${COLORS.line}`, fontWeight: 600, color: COLORS.craieDim, whiteSpace: "nowrap", minWidth: 76 }}>{m.nom}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {elevesGrille.length === 0 && (
-                              <tr><td colSpan={matieresGrille.length + 1} style={{ padding: 18, color: COLORS.craieDim }}>Aucun élève dans cette classe.</td></tr>
-                            )}
-                            {elevesGrille.map((eleve, i) => (
-                              <tr key={eleve.id}>
-                                <td style={{ position: "sticky", left: 0, background: COLORS.ardoiseDeep, padding: "7px 14px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none", whiteSpace: "nowrap" }}>{nomCompletEleve(eleve)}</td>
-                                {matieresGrille.map((m) => {
-                                  const notesCellule = notesSaisie.filter((n) => n.eleve_id === eleve.id && n.matiere_id === m.id);
-                                  const derniereNote = notesCellule[notesCellule.length - 1];
-                                  return (
-                                    <td key={m.id} style={{ padding: "4px 6px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none", borderLeft: `1px solid ${COLORS.line}`, textAlign: "center" }}>
-                                      <input
-                                        type="number" min="0" max="20" step="0.5"
-                                        style={{ ...inputStyle, width: 62, padding: "6px 6px", textAlign: "center" }}
-                                        defaultValue={derniereNote?.valeur ?? ""}
-                                        placeholder="—"
-                                        onBlur={(e) => e.target.value !== "" && enregistrerNote(eleve.id, m.id, derniereNote, e.target.value)}
-                                      />
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      <React.Fragment>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "12px 18px 0 18px" }}>
+                          {matieresGrille.map((m) => (
+                            <button key={m.id} onClick={() => setMatiereFicheActiveId(m.id)} style={{ padding: "7px 14px", borderRadius: "9px 9px 0 0", border: `1px solid ${COLORS.line}`, borderBottom: m.id === matiereActive.id ? "none" : `1px solid ${COLORS.line}`, background: m.id === matiereActive.id ? COLORS.ardoise : "transparent", color: m.id === matiereActive.id ? COLORS.marker : COLORS.craieDim, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+                              {m.nom}
+                            </button>
+                          ))}
+                        </div>
+                        <div style={{ borderTop: `1px solid ${COLORS.line}` }}>
+                          {elevesGrille.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun élève dans cette classe.</div>}
+                          {elevesGrille.map((eleve, i) => {
+                            const notesCellule = notesSaisie.filter((n) => n.eleve_id === eleve.id && n.matiere_id === matiereActive.id);
+                            const derniereNote = notesCellule[notesCellule.length - 1];
+                            return (
+                              <div key={eleve.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < elevesGrille.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                                <span style={{ fontSize: 13, flex: 1 }}>{nomCompletEleve(eleve)}</span>
+                                <input
+                                  type="number" min="0" max="20" step="0.5"
+                                  style={{ ...inputStyle, width: 70 }}
+                                  defaultValue={derniereNote?.valeur ?? ""}
+                                  placeholder="/ 20"
+                                  onBlur={(e) => e.target.value !== "" && enregistrerNote(eleve.id, matiereActive.id, derniereNote, e.target.value)}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </React.Fragment>
                     );
                   })()}
                 </Card>
