@@ -231,25 +231,30 @@ router.post("/valider-appel", async (req, res) => {
   }
 
   const { rows: eleves } = await pool.query("SELECT id FROM students WHERE classe_id = $1", [classe_id]);
+  const eleveIds = eleves.map((e) => e.id);
 
-  let completes = 0;
-  for (const eleve of eleves) {
-    const { rows: existant } = await pool.query(
-      `SELECT 1 FROM attendance_events
-       WHERE student_id = $1 AND horodatage::date = CURRENT_DATE
-         AND creneau_id ${creneau_id ? "= $2" : "IS NULL"}`,
-      creneau_id ? [eleve.id, creneau_id] : [eleve.id]
+  // Version optimisée : une seule requête pour savoir qui a déjà un pointage
+  // aujourd'hui (au lieu d'une par élève), puis une seule insertion groupée
+  // pour tous les élèves restants — même correction de fond que pour les
+  // bulletins de classe, qui pouvait ralentir "Valider l'appel" jusqu'à
+  // provoquer une erreur 502 sur une classe chargée.
+  const { rows: existants } = await pool.query(
+    `SELECT student_id FROM attendance_events
+     WHERE student_id = ANY($1::uuid[]) AND horodatage::date = CURRENT_DATE
+       AND creneau_id ${creneau_id ? "= $2" : "IS NULL"}`,
+    creneau_id ? [eleveIds, creneau_id] : [eleveIds]
+  );
+  const idsAvecPointage = new Set(existants.map((r) => r.student_id));
+  const idsAMarquer = eleveIds.filter((id) => !idsAvecPointage.has(id));
+
+  if (idsAMarquer.length > 0) {
+    await pool.query(
+      `INSERT INTO attendance_events (student_id, creneau_id, source, statut, saisi_par)
+       SELECT unnest($1::uuid[]), $2, 'manuel', 'present', $3`,
+      [idsAMarquer, creneau_id || null, req.user.sub]
     );
-    if (existant.length === 0) {
-      await pool.query(
-        `INSERT INTO attendance_events (student_id, creneau_id, source, statut, saisi_par)
-         VALUES ($1, $2, 'manuel', 'present', $3)`,
-        [eleve.id, creneau_id || null, req.user.sub]
-      );
-      completes++;
-    }
   }
-  res.status(201).json({ total_eleves: eleves.length, marques_presents: completes });
+  res.status(201).json({ total_eleves: eleves.length, marques_presents: idsAMarquer.length });
 });
 
 // --------------------------------------------------------------------------
