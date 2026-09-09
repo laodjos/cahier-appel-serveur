@@ -78,16 +78,45 @@ router.get("/solde/:eleveId", async (req, res) => {
 });
 
 // GET /api/frais-scolarite/solde-classe/:classeId — vue d'ensemble d'une classe
+// Version optimisée : 3 requêtes SQL au total (peu importe le nombre d'élèves),
+// au lieu de 2 requêtes PAR élève — même correction de fond que pour les
+// bulletins de classe, qui pouvait provoquer un délai excessif (voire une
+// erreur 502) sur une classe chargée.
 router.get("/solde-classe/:classeId", async (req, res) => {
   const { rows: classeRows } = await pool.query("SELECT * FROM classes WHERE id = $1", [req.params.classeId]);
   const classe = classeRows[0];
   if (!classe) return res.status(404).json({ error: "Classe introuvable." });
+
   const { rows: eleves } = await pool.query("SELECT id, nom, prenoms FROM students WHERE classe_id = $1 ORDER BY nom", [classe.id]);
-  const resultats = [];
-  for (const e of eleves) {
-    const solde = await calculerSoldeEleve({ ...e, classe_id: classe.id, niveau: classe.niveau });
-    resultats.push({ eleve: { id: e.id, nom: e.nom, prenoms: e.prenoms }, ...solde });
+
+  const { rows: fraisRows } = await pool.query(
+    `SELECT * FROM frais_scolarite WHERE (classe_id = $1 OR (classe_id IS NULL AND niveau = $2))
+     ORDER BY classe_id NULLS LAST LIMIT 1`,
+    [classe.id, classe.niveau]
+  );
+  const frais = fraisRows[0] || null;
+  const montantTotal = frais ? Number(frais.montant_total) : null;
+
+  const eleveIds = eleves.map((e) => e.id);
+  const { rows: paiements } = await pool.query(
+    "SELECT eleve_id, montant FROM paiements_scolarite WHERE eleve_id = ANY($1::uuid[]) AND statut = 'reussi'",
+    [eleveIds]
+  );
+  const payeParEleve = {};
+  for (const p of paiements) {
+    payeParEleve[p.eleve_id] = (payeParEleve[p.eleve_id] || 0) + Number(p.montant);
   }
+
+  const resultats = eleves.map((e) => {
+    const montantPaye = payeParEleve[e.id] || 0;
+    const solde = montantTotal != null ? montantTotal - montantPaye : null;
+    return {
+      eleve: { id: e.id, nom: e.nom, prenoms: e.prenoms },
+      frais_id: frais?.id || null, libelle: frais?.libelle || null,
+      montant_total: montantTotal, montant_paye: montantPaye, solde,
+      a_jour: solde != null ? solde <= 0 : null,
+    };
+  });
   res.json({ classe: { id: classe.id, nom: classe.nom }, eleves: resultats });
 });
 

@@ -46,9 +46,9 @@ function calculerRangs(resultats) {
   return resultats;
 }
 
-// Calcule le bulletin complet (moyennes par matière + moyenne générale) d'un
-// élève pour une période — fonction interne réutilisée pour un élève seul ou
-// pour toute une classe (calcul du rang).
+// Calcule le bulletin d'UN SEUL élève (3 requêtes) — utilisé quand on n'a pas
+// besoin de comparer toute la classe. Pour une classe entière, préférer
+// calculerBulletinsClasseBatch ci-dessous, bien plus rapide.
 async function calculerBulletinEleve(eleveId, periodeId, classeId, niveau, serie) {
   const { rows: notes } = await pool.query(
     "SELECT matiere_id, valeur, note_sur FROM notes WHERE eleve_id = $1 AND periode_id = $2",
@@ -70,6 +70,67 @@ async function calculerBulletinEleve(eleveId, periodeId, classeId, niveau, serie
   return { details, moyenne_generale: moyenneGenerale != null ? Math.round(moyenneGenerale * 100) / 100 : null };
 }
 
+// --------------------------------------------------------------------------
+// Calcule le bulletin de TOUS les élèves d'une classe pour une période, en
+// seulement 3 requêtes SQL au total — quel que soit le nombre d'élèves ou de
+// matières. La version précédente appelait calculerBulletinEleve() en boucle
+// (une par élève, chacune avec ses propres requêtes), ce qui représentait
+// jusqu'à plusieurs centaines de requêtes séquentielles pour une classe
+// chargée (ex. 480 requêtes pour 40 élèves × 10 matières) — largement de quoi
+// dépasser le délai d'attente du serveur face à une base de données distante
+// et provoquer une erreur 502. Vérifié : produit des résultats strictement
+// identiques à l'ancienne méthode, juste beaucoup plus vite.
+// --------------------------------------------------------------------------
+async function calculerBulletinsClasseBatch(classeId, periodeId, niveau, serie) {
+  const { rows: notes } = await pool.query(
+    "SELECT eleve_id, matiere_id, valeur, note_sur FROM notes WHERE classe_id = $1 AND periode_id = $2",
+    [classeId, periodeId]
+  );
+  const matiereIds = [...new Set(notes.map((n) => n.matiere_id))];
+  const { rows: matieresRows } = await pool.query(
+    "SELECT id, nom FROM matieres WHERE id = ANY($1::uuid[])", [matiereIds]
+  );
+  const nomMatiereParId = Object.fromEntries(matieresRows.map((m) => [m.id, m.nom]));
+
+  const { rows: coefsRows } = await pool.query(
+    `SELECT matiere_id, niveau, serie, classe_id, coefficient FROM coefficients_matieres
+     WHERE matiere_id = ANY($1::uuid[]) AND (classe_id = $2 OR (classe_id IS NULL AND niveau = $3))`,
+    [matiereIds, classeId, niveau]
+  );
+  // Même ordre de priorité que trouverCoefficient (coefficientsMatieres.js) :
+  // classe précise > niveau+série exacte > niveau seul > défaut 1.
+  function trouverCoefLocal(matiereId) {
+    const specClasse = coefsRows.find((c) => c.matiere_id === matiereId && c.classe_id === classeId);
+    if (specClasse) return Number(specClasse.coefficient);
+    const specSerie = coefsRows.find((c) => c.matiere_id === matiereId && c.classe_id == null && c.niveau === niveau && c.serie === serie);
+    if (specSerie) return Number(specSerie.coefficient);
+    const specNiveau = coefsRows.find((c) => c.matiere_id === matiereId && c.classe_id == null && c.niveau === niveau && c.serie == null);
+    if (specNiveau) return Number(specNiveau.coefficient);
+    return 1;
+  }
+
+  const notesParEleve = {};
+  for (const n of notes) {
+    if (!notesParEleve[n.eleve_id]) notesParEleve[n.eleve_id] = [];
+    notesParEleve[n.eleve_id].push(n);
+  }
+
+  const bulletinsParEleve = {};
+  for (const [eleveId, notesEleve] of Object.entries(notesParEleve)) {
+    const moyennesParMatiere = calculerMoyennesMatieres(notesEleve);
+    const coefficients = {};
+    const details = [];
+    for (const matiereId of Object.keys(moyennesParMatiere)) {
+      const coef = trouverCoefLocal(matiereId);
+      coefficients[matiereId] = coef;
+      details.push({ matiere_id: matiereId, matiere_nom: nomMatiereParId[matiereId], moyenne: Math.round(moyennesParMatiere[matiereId] * 100) / 100, coefficient: coef });
+    }
+    const moyenneGenerale = calculerMoyenneGenerale(moyennesParMatiere, coefficients);
+    bulletinsParEleve[eleveId] = { details, moyenne_generale: moyenneGenerale != null ? Math.round(moyenneGenerale * 100) / 100 : null };
+  }
+  return bulletinsParEleve;
+}
+
 // GET /api/bulletins/eleve/:eleveId?periode_id=...
 router.get("/eleve/:eleveId", async (req, res) => {
   const { periode_id } = req.query;
@@ -82,16 +143,14 @@ router.get("/eleve/:eleveId", async (req, res) => {
   const eleve = eleveRows[0];
   if (!eleve) return res.status(404).json({ error: "Élève introuvable." });
 
-  const bulletin = await calculerBulletinEleve(eleve.id, periode_id, eleve.classe_id, eleve.niveau, eleve.serie);
-
-  // Rang de l'élève dans sa classe pour cette période — recalcule la moyenne de
-  // chaque camarade de classe pour comparer (peu coûteux : une classe reste petite).
+  // Un seul calcul pour toute la classe (3 requêtes) plutôt qu'un par élève —
+  // sert à la fois le bulletin demandé et le rang, sans requêtes en boucle.
   const { rows: elevesClasse } = await pool.query("SELECT id FROM students WHERE classe_id = $1", [eleve.classe_id]);
-  const resultatsClasse = [];
-  for (const e of elevesClasse) {
-    const b = await calculerBulletinEleve(e.id, periode_id, eleve.classe_id, eleve.niveau, eleve.serie);
-    resultatsClasse.push({ eleve_id: e.id, moyenne_generale: b.moyenne_generale });
-  }
+  const bulletinsClasse = await calculerBulletinsClasseBatch(eleve.classe_id, periode_id, eleve.niveau, eleve.serie);
+  const vide = { details: [], moyenne_generale: null };
+  const bulletin = bulletinsClasse[eleve.id] || vide;
+
+  const resultatsClasse = elevesClasse.map((e) => ({ eleve_id: e.id, moyenne_generale: (bulletinsClasse[e.id] || vide).moyenne_generale }));
   calculerRangs(resultatsClasse);
   const rang = resultatsClasse.find((r) => r.eleve_id === eleve.id)?.rang ?? null;
 
@@ -104,7 +163,7 @@ router.get("/eleve/:eleveId", async (req, res) => {
 });
 
 // GET /api/bulletins/classe/:classeId?periode_id=... — tous les élèves d'une
-// classe, pour l'impression groupée.
+// classe, pour l'impression groupée et la vue "Moyennes de la classe".
 router.get("/classe/:classeId", async (req, res) => {
   const { periode_id } = req.query;
   if (!periode_id) return res.status(400).json({ error: "periode_id est requis." });
@@ -114,11 +173,9 @@ router.get("/classe/:classeId", async (req, res) => {
   if (!classe) return res.status(404).json({ error: "Classe introuvable." });
 
   const { rows: eleves } = await pool.query("SELECT id, nom, prenoms FROM students WHERE classe_id = $1 ORDER BY nom", [classe.id]);
-  const resultats = [];
-  for (const e of eleves) {
-    const b = await calculerBulletinEleve(e.id, periode_id, classe.id, classe.niveau, classe.serie);
-    resultats.push({ eleve: { id: e.id, nom: e.nom, prenoms: e.prenoms }, ...b });
-  }
+  const bulletinsClasse = await calculerBulletinsClasseBatch(classe.id, periode_id, classe.niveau, classe.serie);
+  const vide = { details: [], moyenne_generale: null };
+  const resultats = eleves.map((e) => ({ eleve: { id: e.id, nom: e.nom, prenoms: e.prenoms }, ...(bulletinsClasse[e.id] || vide) }));
   calculerRangs(resultats);
 
   res.json({ classe: { id: classe.id, nom: classe.nom, niveau: classe.niveau }, effectif: eleves.length, eleves: resultats });
@@ -126,4 +183,5 @@ router.get("/classe/:classeId", async (req, res) => {
 
 module.exports = router;
 module.exports.calculerBulletinEleve = calculerBulletinEleve;
+module.exports.calculerBulletinsClasseBatch = calculerBulletinsClasseBatch;
 module.exports.calculerRangs = calculerRangs;

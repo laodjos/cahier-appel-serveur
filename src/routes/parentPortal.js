@@ -2,7 +2,7 @@ const express = require("express");
 const { pool } = require("../config/db");
 const { authRequiredParent } = require("../middleware/auth");
 const { normaliserNumeroCi } = require("../services/notificationService");
-const { calculerBulletinEleve, calculerRangs } = require("./bulletins");
+const { calculerBulletinsClasseBatch, calculerRangs } = require("./bulletins");
 const { calculerSoldeEleve } = require("./fraisScolarite");
 const { creerLienPaiement } = require("../services/paymentService");
 const crypto = require("crypto");
@@ -78,14 +78,12 @@ router.get("/enfant/:id/bulletin", async (req, res) => {
   const { periode_id } = req.query;
   if (!periode_id) return res.status(400).json({ error: "periode_id est requis." });
 
-  const bulletin = await calculerBulletinEleve(enfant.id, periode_id, enfant.classe_id, enfant.niveau, enfant.serie);
+  const bulletinsClasse = await calculerBulletinsClasseBatch(enfant.classe_id, periode_id, enfant.niveau, enfant.serie);
+  const vide = { details: [], moyenne_generale: null };
+  const bulletin = bulletinsClasse[enfant.id] || vide;
 
   const { rows: elevesClasse } = await pool.query("SELECT id FROM students WHERE classe_id = $1", [enfant.classe_id]);
-  const resultatsClasse = [];
-  for (const e of elevesClasse) {
-    const b = await calculerBulletinEleve(e.id, periode_id, enfant.classe_id, enfant.niveau, enfant.serie);
-    resultatsClasse.push({ eleve_id: e.id, moyenne_generale: b.moyenne_generale });
-  }
+  const resultatsClasse = elevesClasse.map((e) => ({ eleve_id: e.id, moyenne_generale: (bulletinsClasse[e.id] || vide).moyenne_generale }));
   calculerRangs(resultatsClasse);
   const rang = resultatsClasse.find((r) => r.eleve_id === enfant.id)?.rang ?? null;
 

@@ -1,6 +1,13 @@
 -- ============================================================================
 -- Schéma de base de données — Cahier d'Appel numérique
 -- ============================================================================
+-- ⚠ NOTE : au fil des nombreuses sessions de développement, quelques ALTER
+-- TABLE référencent une table définie plus loin dans ce fichier (ordre
+-- historique, jamais un problème sur la base réelle qui existe déjà en
+-- production). Si tu appliques ce script sur une base ENTIÈREMENT VIERGE
+-- (nouvel environnement, restauration après sinistre), relance simplement
+-- `npm run migrate` deux ou trois fois de suite — chaque passage supplémentaire
+-- résout les références qui manquaient encore à la table pas encore créée.
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto"; -- pour gen_random_uuid()
 
