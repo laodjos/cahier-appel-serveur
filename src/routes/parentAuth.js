@@ -70,8 +70,10 @@ router.post("/generer-code-assiste", authRequired, requireRole("direction", "sur
   );
 
   const baseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get("host")}`;
-  const lienPortail = `${baseUrl}/espace-parent.html`;
-  const message = `Bonjour, voici ton code de connexion à l'Espace Parent Cahier d'Appel : ${code} (valable 10 minutes).\n\nOuvre ce lien puis saisis ton numéro et ce code : ${lienPortail}`;
+  // "via=whatsapp" indique à la page de sauter l'étape "Recevoir un code par
+  // SMS" — le parent a déjà son code, pas besoin d'en redemander un autre.
+  const lienPortail = `${baseUrl}/espace-parent.html?tel=${encodeURIComponent(telephoneNorm)}&via=whatsapp`;
+  const message = `Bonjour, voici ton code de connexion à l'Espace Parent Cahier d'Appel : ${code} (valable 10 minutes).\n\nOuvre ce lien, ton numéro et le code seront déjà prêts : ${lienPortail}`;
   // wa.me attend le numéro complet sans "+" ni espaces.
   const lienWhatsapp = `https://wa.me/${telephoneNorm}?text=${encodeURIComponent(message)}`;
   res.status(201).json({ code, message, lien_portail: lienPortail, lien_whatsapp: lienWhatsapp });

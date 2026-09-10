@@ -110,10 +110,10 @@
   }
 
   // --- Écran 2 : saisie du code reçu ---
-  function afficherEcranCode(telephone, erreur) {
+  function afficherEcranCode(telephone, erreur, viaWhatsapp) {
     carte.innerHTML = `
       <h1>Code de vérification</h1>
-      <div class="sous">Un code a été envoyé par SMS au ${telephone}.</div>
+      <div class="sous">${viaWhatsapp ? `Un code t'a été envoyé par WhatsApp au ${telephone}.` : `Un code a été envoyé par SMS au ${telephone}.`}</div>
       <input type="text" inputmode="numeric" id="code" placeholder="Code à 6 chiffres" maxlength="6" />
       <button id="verifier">Se connecter</button>
       <button class="secondaire" id="retour">Changer de numéro</button>
@@ -334,8 +334,22 @@
   }
 
   // --- Point d'entrée ---
-  if (token) chargerTableauDeBord();
-  else afficherEcranTelephone();
+  if (token) {
+    chargerTableauDeBord();
+  } else {
+    // Arrivée depuis le lien WhatsApp envoyé par l'établissement : le code a
+    // déjà été généré et transmis, inutile de repasser par "Recevoir un code
+    // par SMS" — direction l'écran de saisie du code, numéro déjà rempli.
+    const params = new URLSearchParams(window.location.search);
+    const telParam = params.get("tel");
+    const viaWhatsapp = params.get("via") === "whatsapp";
+    if (telParam && viaWhatsapp) {
+      telephoneSaisi = telParam;
+      afficherEcranCode(telParam, null, true);
+    } else {
+      afficherEcranTelephone();
+    }
+  }
 })();
 </script>
 </body>
