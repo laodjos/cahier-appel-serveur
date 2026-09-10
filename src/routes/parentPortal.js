@@ -19,7 +19,7 @@ async function trouverEnfantsDuParent(telephone) {
   if (idsParent.length === 0) return [];
 
   const { rows } = await pool.query(
-    `SELECT DISTINCT s.id, s.nom, s.prenoms, s.matricule, s.classe_id, c.nom AS classe_nom, c.niveau, c.serie
+    `SELECT DISTINCT s.id, s.nom, s.prenoms, s.matricule, s.classe_id, c.nom AS classe_nom, c.niveau, c.serie, c.ecole_id
      FROM students s
      JOIN student_parents sp ON sp.student_id = s.id
      JOIN classes c ON c.id = s.classe_id

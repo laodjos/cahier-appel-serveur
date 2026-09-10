@@ -18,7 +18,7 @@ const router = express.Router();
 // GET /api/public/scolarite/:eleveId
 router.get("/scolarite/:eleveId", async (req, res) => {
   const { rows } = await pool.query(
-    "SELECT s.*, c.nom AS classe_nom, c.niveau FROM students s JOIN classes c ON c.id = s.classe_id WHERE s.id = $1",
+    "SELECT s.*, c.nom AS classe_nom, c.niveau, c.ecole_id FROM students s JOIN classes c ON c.id = s.classe_id WHERE s.id = $1",
     [req.params.eleveId]
   );
   const eleve = rows[0];
