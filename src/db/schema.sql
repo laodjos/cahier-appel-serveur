@@ -366,10 +366,11 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS ecole_id UUID REFERENCES ecoles(id)
 -- C'est le SEUL rôle qui voit et gère l'ensemble des écoles. Un compte
 -- "direction" doit toujours être rattaché à une école précise (ecole_id NOT NULL
 -- appliqué au niveau applicatif, pas en base, pour rester souple à la migration).
+-- (La contrainte sur les rôles autorisés, incluant "caissier", est redéfinie
+-- plus bas dans ce fichier — une ancienne version en double a été retirée ici :
+-- elle ne listait pas encore "caissier" et faisait donc échouer toute la
+-- migration dès qu'un compte caissier existait déjà en base.)
 -- --------------------------------------------------------------------------
-ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-ALTER TABLE users ADD CONSTRAINT users_role_check
-  CHECK (role IN ('super_admin', 'direction', 'enseignant', 'surveillant'));
 
 -- --------------------------------------------------------------------------
 -- Années scolaires — liste gérée par le Super-administrateur (ex. "2025-2026",
