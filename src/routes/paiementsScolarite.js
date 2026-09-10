@@ -11,7 +11,12 @@ router.get("/", authRequired, requireErpActif, async (req, res) => {
   const { eleve_id } = req.query;
   if (!eleve_id) return res.status(400).json({ error: "eleve_id est requis." });
   const { rows } = await pool.query(
-    "SELECT * FROM paiements_scolarite WHERE eleve_id = $1 ORDER BY created_at DESC", [eleve_id]
+    `SELECT ps.*, COALESCE(fs.libelle, fi.libelle) AS frais_libelle, c.nom AS caisse_nom
+     FROM paiements_scolarite ps
+     LEFT JOIN frais_scolarite fs ON fs.id = ps.frais_scolarite_id
+     LEFT JOIN frais_individuels fi ON fi.id = ps.frais_individuel_id
+     LEFT JOIN caisses c ON c.id = ps.caisse_id
+     WHERE ps.eleve_id = $1 ORDER BY ps.created_at DESC`, [eleve_id]
   );
   res.json(rows);
 });

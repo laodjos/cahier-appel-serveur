@@ -553,6 +553,7 @@ function App({ session, onLogout }) {
   const [soldeData, setSoldeData] = useState(null);
   const [montantPaiement, setMontantPaiement] = useState("");
   const [fraisChoisiPourPaiement, setFraisChoisiPourPaiement] = useState(null);
+  const [historiquePaiementsEleve, setHistoriquePaiementsEleve] = useState(null);
   const [nouveauFraisIndividuel, setNouveauFraisIndividuel] = useState({ libelle: "", montant: "", est_reliquat: false });
   const [soldeClasseId, setSoldeClasseId] = useState(null);
   const [soldeClasseData, setSoldeClasseData] = useState(null);
@@ -1885,6 +1886,8 @@ function App({ session, onLogout }) {
     try {
       const data = await api(`/frais-scolarite/solde/${soldeEleveId}`);
       setSoldeData(data);
+      const historique = await api(`/paiements-scolarite?eleve_id=${soldeEleveId}`);
+      setHistoriquePaiementsEleve(historique);
     } catch (e) { catchErr(e); }
   }
   async function changerAffecteEleve(id, valeur) {
@@ -3601,7 +3604,7 @@ function App({ session, onLogout }) {
 
                 <Card title="Solde d'un élève" style={{ marginBottom: 20 }}>
                   <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
-                    <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={soldeEleveId} onChange={(e) => { setSoldeEleveId(e.target.value); setSoldeData(null); setFraisChoisiPourPaiement(null); }}>
+                    <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={soldeEleveId} onChange={(e) => { setSoldeEleveId(e.target.value); setSoldeData(null); setFraisChoisiPourPaiement(null); setHistoriquePaiementsEleve(null); }}>
                       <option value="">— Choisir un élève —</option>
                       {students.map((s) => <option key={s.id} value={s.id}>{nomCompletEleve(s)} ({s.classe_nom})</option>)}
                     </select>
@@ -3670,6 +3673,24 @@ function App({ session, onLogout }) {
                                 C'est un reliquat (impayé de l'année précédente)
                               </label>
                               <Button small variant="ghost" icon={P.plus} onClick={ajouterFraisIndividuel}>Ajouter à cet élève</Button>
+                            </div>
+                          )}
+                          {historiquePaiementsEleve?.length > 0 && (
+                            <div style={{ paddingTop: 14, marginTop: 14, borderTop: `1px solid ${COLORS.line}` }}>
+                              <div style={{ fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", marginBottom: 8 }}>Historique des paiements</div>
+                              {historiquePaiementsEleve.map((p) => (
+                                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", fontSize: 12.5, borderBottom: `1px solid ${COLORS.line}` }}>
+                                  <div>
+                                    <div>{new Date(p.confirme_at || p.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+                                    <div style={{ fontSize: 11, color: COLORS.craieDim }}>
+                                      {p.frais_libelle || "Paiement générique"} · {p.methode === "especes" ? "Espèces" : p.methode === "cinetpay" ? "En ligne" : p.methode}
+                                      {p.caisse_nom ? ` · ${p.caisse_nom}` : ""}
+                                      {p.statut !== "reussi" ? ` · ${p.statut}` : ""}
+                                    </div>
+                                  </div>
+                                  <span style={{ fontWeight: 700, color: p.statut === "reussi" ? COLORS.success : COLORS.craieDim }}>{Number(p.montant).toLocaleString("fr-FR")} F</span>
+                                </div>
+                              ))}
                             </div>
                           )}
                         </React.Fragment>
