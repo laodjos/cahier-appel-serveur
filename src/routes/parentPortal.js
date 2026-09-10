@@ -131,14 +131,14 @@ router.get("/enfant/:id/scolarite", async (req, res) => {
 router.post("/enfant/:id/payer", async (req, res) => {
   const enfant = await verifierEnfantDuParent(req.parent.telephone, req.params.id);
   if (!enfant) return res.status(403).json({ error: "Cet élève n'est pas rattaché à ton compte." });
-  const { montant } = req.body;
+  const { montant, frais_scolarite_id, frais_individuel_id } = req.body;
   if (!montant || Number(montant) <= 0) return res.status(400).json({ error: "Montant invalide." });
 
   const referenceExterne = crypto.randomUUID();
   await pool.query(
-    `INSERT INTO paiements_scolarite (eleve_id, montant, methode, statut, reference_externe)
-     VALUES ($1, $2, 'cinetpay', 'en_attente', $3)`,
-    [enfant.id, montant, referenceExterne]
+    `INSERT INTO paiements_scolarite (eleve_id, montant, methode, statut, reference_externe, frais_scolarite_id, frais_individuel_id)
+     VALUES ($1, $2, 'cinetpay', 'en_attente', $3, $4, $5)`,
+    [enfant.id, montant, referenceExterne, frais_scolarite_id || null, frais_individuel_id || null]
   );
 
   const baseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get("host")}`;

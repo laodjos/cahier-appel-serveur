@@ -23,6 +23,12 @@
   .statut.ok { background: #263E33; color: #5E9C79; }
   .statut.du { background: #3E2A24; color: #C4633F; }
   .centre { text-align: center; }
+  .alerte { background: #3E2A24; color: #C4633F; padding: 10px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; margin-bottom: 14px; }
+  .frais-ligne { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; margin-bottom: 4px; border-radius: 8px; cursor: pointer; font-size: 12.5px; }
+  .frais-ligne.choisi { background: rgba(217,164,65,0.16); }
+  .frais-ligne .reste { font-weight: 700; }
+  .frais-ligne .reglee { color: #5E9C79; }
+  .frais-choix-note { font-size: 11px; color: rgba(246,242,231,0.5); margin-bottom: 8px; }
   input {
     width: 100%; padding: 12px; border-radius: 9px; border: 1px solid rgba(246,242,231,0.15);
     background: #243B32; color: #F6F2E7; font-size: 16px; margin-bottom: 12px;
@@ -46,70 +52,107 @@
   const params = new URLSearchParams(window.location.search);
   const eleveId = params.get("eleve");
   const carte = document.getElementById("carte");
+  let fraisChoisi = null; // { id, individuel, libelle, reste } ou null = paiement générique
 
   if (!eleveId) {
     carte.innerHTML = '<div class="erreur">Lien invalide — identifiant d\'élève manquant.</div>';
     return;
   }
 
-  fetch(`/api/public/scolarite/${eleveId}`)
-    .then((r) => { if (!r.ok) throw new Error("Introuvable"); return r.json(); })
-    .then((data) => {
-      const formatMontant = (n) => Number(n).toLocaleString("fr-FR") + " F";
+  const formatMontant = (n) => Number(n).toLocaleString("fr-FR") + " F";
 
-      if (data.montant_total == null) {
-        carte.innerHTML = `
-          <h1>${[data.eleve.nom, data.eleve.prenoms].filter(Boolean).join(" ")}</h1>
-          <div class="sous">${data.eleve.classe_nom}</div>
-          <div class="centre" style="padding:20px 0; color:rgba(246,242,231,0.6);">Aucun montant de scolarité n'a encore été défini pour cette classe.</div>
-        `;
-        return;
-      }
-
-      const aJour = data.a_jour;
+  function afficher(data) {
+    if (data.montant_total == null) {
       carte.innerHTML = `
         <h1>${[data.eleve.nom, data.eleve.prenoms].filter(Boolean).join(" ")}</h1>
         <div class="sous">${data.eleve.classe_nom}</div>
-        <div class="ligne"><span>Total scolarité</span><strong>${formatMontant(data.montant_total)}</strong></div>
-        <div class="ligne"><span>Déjà payé</span><strong>${formatMontant(data.montant_paye)}</strong></div>
-        <div class="solde">${formatMontant(Math.max(0, data.solde))}</div>
-        <div class="centre"><span class="statut ${aJour ? "ok" : "du"}">${aJour ? "✔ À jour" : "Reste à payer"}</span></div>
-        ${!aJour ? `
-          <div style="margin-top:14px;">
-            <input type="number" id="montant" value="${data.solde}" min="1" max="${data.solde}" placeholder="Montant à payer (F CFA)" />
-            <button id="payer">Payer maintenant</button>
-            <div class="erreur" id="erreur" style="display:none;"></div>
-          </div>
-        ` : ""}
+        <div class="centre" style="padding:20px 0; color:rgba(246,242,231,0.6);">Aucun montant de scolarité n'a encore été défini pour cette classe.</div>
       `;
+      return;
+    }
 
-      const boutonPayer = document.getElementById("payer");
-      if (boutonPayer) {
-        boutonPayer.addEventListener("click", function () {
-          const montant = document.getElementById("montant").value;
-          const erreurEl = document.getElementById("erreur");
-          erreurEl.style.display = "none";
-          boutonPayer.disabled = true;
-          boutonPayer.textContent = "Un instant…";
-          fetch(`/api/public/scolarite/${eleveId}/payer`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ montant }),
+    const aJour = data.a_jour;
+    const detail = data.detail || [];
+    carte.innerHTML = `
+      <h1>${[data.eleve.nom, data.eleve.prenoms].filter(Boolean).join(" ")}</h1>
+      <div class="sous">${data.eleve.classe_nom}</div>
+      ${data.reliquat_impaye ? `<div class="alerte">⚠ Reliquat impayé de l'année précédente — à régler en priorité.</div>` : ""}
+      ${detail.length > 0 ? `
+        <div class="frais-choix-note">Touche un frais pour le régler en priorité :</div>
+        <div id="liste-frais">
+          ${detail.map((f) => `
+            <div class="frais-ligne" data-id="${f.id}" data-individuel="${f.individuel ? "1" : "0"}" data-libelle="${f.libelle}" data-reste="${f.reste}">
+              <span>${f.est_reliquat ? "⚠ " : ""}${f.libelle}</span>
+              <span class="${f.reste > 0 ? "reste" : "reglee"}">${f.reste > 0 ? formatMontant(f.reste) : "Réglé"}</span>
+            </div>
+          `).join("")}
+        </div>
+      ` : ""}
+      <div class="ligne" style="margin-top:12px;"><span>Total scolarité</span><strong>${formatMontant(data.montant_total)}</strong></div>
+      <div class="ligne"><span>Déjà payé</span><strong>${formatMontant(data.montant_paye)}</strong></div>
+      <div class="solde">${formatMontant(Math.max(0, data.solde))}</div>
+      <div class="centre"><span class="statut ${aJour ? "ok" : "du"}">${aJour ? "✔ À jour" : "Reste à payer"}</span></div>
+      ${!aJour ? `
+        <div style="margin-top:14px;" id="zone-note-choix"></div>
+        <div style="margin-top:6px;">
+          <input type="number" id="montant" value="${data.solde}" min="1" max="${data.solde}" placeholder="Montant à payer (F CFA)" />
+          <button id="payer">Payer maintenant</button>
+          <div class="erreur" id="erreur" style="display:none;"></div>
+        </div>
+      ` : ""}
+    `;
+
+    document.querySelectorAll(".frais-ligne").forEach((el) => {
+      el.addEventListener("click", () => {
+        const reste = Number(el.dataset.reste);
+        if (reste <= 0) return; // déjà réglée, rien à choisir ici
+        fraisChoisi = { id: el.dataset.id, individuel: el.dataset.individuel === "1", libelle: el.dataset.libelle, reste };
+        document.querySelectorAll(".frais-ligne").forEach((x) => x.classList.remove("choisi"));
+        el.classList.add("choisi");
+        const inputMontant = document.getElementById("montant");
+        if (inputMontant) inputMontant.value = reste;
+        const zoneNote = document.getElementById("zone-note-choix");
+        if (zoneNote) zoneNote.innerHTML = `<div class="frais-choix-note">Paiement pour : <strong>${fraisChoisi.libelle}</strong> — <a href="#" id="retirer-choix" style="color:#D9A441;">retirer</a></div>`;
+        const retirer = document.getElementById("retirer-choix");
+        if (retirer) retirer.addEventListener("click", (e) => { e.preventDefault(); fraisChoisi = null; el.classList.remove("choisi"); zoneNote.innerHTML = ""; });
+      });
+    });
+
+    const boutonPayer = document.getElementById("payer");
+    if (boutonPayer) {
+      boutonPayer.addEventListener("click", function () {
+        const montant = document.getElementById("montant").value;
+        const erreurEl = document.getElementById("erreur");
+        erreurEl.style.display = "none";
+        boutonPayer.disabled = true;
+        boutonPayer.textContent = "Un instant…";
+        fetch(`/api/public/scolarite/${eleveId}/payer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            montant,
+            frais_scolarite_id: fraisChoisi && !fraisChoisi.individuel ? fraisChoisi.id : undefined,
+            frais_individuel_id: fraisChoisi?.individuel ? fraisChoisi.id : undefined,
+          }),
+        })
+          .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+          .then(({ ok, d }) => {
+            if (!ok) throw new Error(d.error || "Erreur inconnue");
+            window.location.href = d.payment_url;
           })
-            .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
-            .then(({ ok, d }) => {
-              if (!ok) throw new Error(d.error || "Erreur inconnue");
-              window.location.href = d.payment_url;
-            })
-            .catch((err) => {
-              erreurEl.textContent = err.message;
-              erreurEl.style.display = "block";
-              boutonPayer.disabled = false;
-              boutonPayer.textContent = "Payer maintenant";
-            });
-        });
-      }
-    })
+          .catch((err) => {
+            erreurEl.textContent = err.message;
+            erreurEl.style.display = "block";
+            boutonPayer.disabled = false;
+            boutonPayer.textContent = "Payer maintenant";
+          });
+      });
+    }
+  }
+
+  fetch(`/api/public/scolarite/${eleveId}`)
+    .then((r) => { if (!r.ok) throw new Error("Introuvable"); return r.json(); })
+    .then(afficher)
     .catch(() => {
       carte.innerHTML = '<div class="erreur">Élève introuvable, ou lien expiré.</div>';
     });

@@ -32,7 +32,7 @@ router.get("/scolarite/:eleveId", async (req, res) => {
 // qu'une fois que le parent confirme lui-même sur la page CinetPay avec son
 // propre moyen de paiement (Mobile Money ou carte).
 router.post("/scolarite/:eleveId/payer", async (req, res) => {
-  const { montant } = req.body;
+  const { montant, frais_scolarite_id, frais_individuel_id } = req.body;
   if (!montant || Number(montant) <= 0) return res.status(400).json({ error: "Montant invalide." });
 
   const { rows } = await pool.query("SELECT nom, prenoms FROM students WHERE id = $1", [req.params.eleveId]);
@@ -40,9 +40,9 @@ router.post("/scolarite/:eleveId/payer", async (req, res) => {
 
   const referenceExterne = crypto.randomUUID();
   await pool.query(
-    `INSERT INTO paiements_scolarite (eleve_id, montant, methode, statut, reference_externe)
-     VALUES ($1, $2, 'cinetpay', 'en_attente', $3)`,
-    [req.params.eleveId, montant, referenceExterne]
+    `INSERT INTO paiements_scolarite (eleve_id, montant, methode, statut, reference_externe, frais_scolarite_id, frais_individuel_id)
+     VALUES ($1, $2, 'cinetpay', 'en_attente', $3, $4, $5)`,
+    [req.params.eleveId, montant, referenceExterne, frais_scolarite_id || null, frais_individuel_id || null]
   );
 
   const baseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get("host")}`;

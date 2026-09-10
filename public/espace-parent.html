@@ -40,6 +40,12 @@
   .enfant-bouton.actif { background: #D9A441; color: #182B24; border-color: #D9A441; }
   .chargement { text-align: center; padding: 20px 0; color: rgba(246,242,231,0.6); font-size: 13px; }
   .lien-deco { text-align: center; margin-top: 16px; font-size: 12px; color: rgba(246,242,231,0.5); cursor: pointer; text-decoration: underline; }
+  .alerte-reliquat { background: #3E2A24; color: #C4633F; padding: 10px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; margin-bottom: 12px; }
+  .frais-ligne { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; margin-bottom: 3px; border-radius: 8px; cursor: pointer; font-size: 12.5px; }
+  .frais-ligne.choisi { background: rgba(217,164,65,0.16); }
+  .frais-ligne .reste { font-weight: 700; color: #C4633F; }
+  .frais-ligne .reglee { color: #5E9C79; font-weight: 700; }
+  .frais-choix-note { font-size: 11px; color: rgba(246,242,231,0.5); margin: 8px 0; }
 </style>
 </head>
 <body>
@@ -251,6 +257,7 @@
 
   async function chargerScolarite(enfant) {
     const zone = document.getElementById("contenu-onglet");
+    let fraisChoisiScolarite = null;
     try {
       const solde = await appelApi(`/parent-portal/enfant/${enfant.id}/scolarite`);
       if (solde.montant_total == null) {
@@ -258,15 +265,46 @@
         return;
       }
       const formatMontant = (n) => Number(n).toLocaleString("fr-FR") + " F";
+      const detail = solde.detail || [];
       zone.innerHTML = `
-        <div class="ligne"><span>Total scolarité</span><span>${formatMontant(solde.montant_total)}</span></div>
+        ${solde.reliquat_impaye ? `<div class="alerte-reliquat">⚠ Reliquat impayé de l'année précédente — à régler en priorité.</div>` : ""}
+        ${detail.length > 0 ? `
+          <div class="frais-choix-note">Touche un frais pour le régler en priorité :</div>
+          <div id="liste-frais-parent">
+            ${detail.map((f) => `
+              <div class="frais-ligne" data-id="${f.id}" data-individuel="${f.individuel ? "1" : "0"}" data-libelle="${f.libelle}" data-reste="${f.reste}">
+                <span>${f.est_reliquat ? "⚠ " : ""}${f.libelle}</span>
+                <span class="${f.reste > 0 ? "reste" : "reglee"}">${f.reste > 0 ? formatMontant(f.reste) : "Réglé"}</span>
+              </div>
+            `).join("")}
+          </div>
+        ` : ""}
+        <div class="ligne" style="margin-top:10px;"><span>Total scolarité</span><span>${formatMontant(solde.montant_total)}</span></div>
         <div class="ligne"><span>Déjà payé</span><span>${formatMontant(solde.montant_paye)}</span></div>
         <div class="ligne" style="font-weight:700;"><span>Reste à payer</span><span>${formatMontant(Math.max(0, solde.solde))}</span></div>
         ${!solde.a_jour ? `
+          <div id="zone-note-choix-parent"></div>
           <input type="number" id="montant-payer" value="${solde.solde}" min="1" max="${solde.solde}" placeholder="Montant à payer" style="margin-top:12px;" />
           <button id="payer-maintenant">Payer maintenant</button>
         ` : `<div class="sous" style="margin-top:10px;">✔ Scolarité à jour.</div>`}
       `;
+
+      zone.querySelectorAll(".frais-ligne").forEach((el) => {
+        el.addEventListener("click", () => {
+          const reste = Number(el.dataset.reste);
+          if (reste <= 0) return;
+          fraisChoisiScolarite = { id: el.dataset.id, individuel: el.dataset.individuel === "1", libelle: el.dataset.libelle, reste };
+          zone.querySelectorAll(".frais-ligne").forEach((x) => x.classList.remove("choisi"));
+          el.classList.add("choisi");
+          const inputMontant = document.getElementById("montant-payer");
+          if (inputMontant) inputMontant.value = reste;
+          const zoneNote = document.getElementById("zone-note-choix-parent");
+          if (zoneNote) zoneNote.innerHTML = `<div class="frais-choix-note">Paiement pour : <strong>${fraisChoisiScolarite.libelle}</strong> — <a href="#" id="retirer-choix-parent" style="color:#D9A441;">retirer</a></div>`;
+          const retirer = document.getElementById("retirer-choix-parent");
+          if (retirer) retirer.addEventListener("click", (e) => { e.preventDefault(); fraisChoisiScolarite = null; el.classList.remove("choisi"); zoneNote.innerHTML = ""; });
+        });
+      });
+
       const boutonPayer = document.getElementById("payer-maintenant");
       if (boutonPayer) {
         boutonPayer.addEventListener("click", async () => {
@@ -274,7 +312,14 @@
           boutonPayer.disabled = true;
           boutonPayer.textContent = "Un instant…";
           try {
-            const res = await appelApi(`/parent-portal/enfant/${enfant.id}/payer`, { method: "POST", body: JSON.stringify({ montant }) });
+            const res = await appelApi(`/parent-portal/enfant/${enfant.id}/payer`, {
+              method: "POST",
+              body: JSON.stringify({
+                montant,
+                frais_scolarite_id: fraisChoisiScolarite && !fraisChoisiScolarite.individuel ? fraisChoisiScolarite.id : undefined,
+                frais_individuel_id: fraisChoisiScolarite?.individuel ? fraisChoisiScolarite.id : undefined,
+              }),
+            });
             window.location.href = res.payment_url;
           } catch (err) {
             zone.insertAdjacentHTML("beforeend", `<div class="erreur">${err.message}</div>`);
