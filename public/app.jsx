@@ -1860,6 +1860,13 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function changerAffecteEleve(id, valeur) {
+    try {
+      const updated = await api(`/students/${id}`, { method: "PATCH", body: { affecte: valeur } });
+      setStudents((liste) => liste.map((s) => s.id === id ? { ...s, affecte: updated.affecte } : s));
+    } catch (e) { catchErr(e); }
+  }
+
   async function creerCaisse() {
     if (!nouvelleCaisse.nom.trim()) return;
     try {
@@ -2649,6 +2656,10 @@ function App({ session, onLogout }) {
                   <Field label="Nom (de famille)"><input style={inputStyle} value={newEleve.nom} onChange={(e) => setNewEleve((v) => ({ ...v, nom: e.target.value }))} placeholder="ex. Kouassi" /></Field>
                   <Field label="Prénoms"><input style={inputStyle} value={newEleve.prenoms} onChange={(e) => setNewEleve((v) => ({ ...v, prenoms: e.target.value }))} placeholder="ex. Aïcha Fatou" /></Field>
                 </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, cursor: "pointer", padding: "8px 10px", background: "rgba(217,164,65,0.08)", borderRadius: 8, marginBottom: 4 }}>
+                  <input type="checkbox" checked={newEleve.affecte} onChange={(e) => setNewEleve((v) => ({ ...v, affecte: e.target.checked }))} />
+                  Élève affecté (orientation officielle) — détermine les frais d'inscription applicables
+                </label>
                 <div style={{ display: "flex", gap: 12 }}>
                   <Field label="Date de naissance"><input type="date" style={inputStyle} value={newEleve.date_naissance} onChange={(e) => setNewEleve((v) => ({ ...v, date_naissance: e.target.value }))} /></Field>
                   <Field label="Lieu de naissance"><input style={inputStyle} value={newEleve.lieu_naissance} onChange={(e) => setNewEleve((v) => ({ ...v, lieu_naissance: e.target.value }))} placeholder="ex. Abidjan" /></Field>
@@ -2679,10 +2690,6 @@ function App({ session, onLogout }) {
                       <Field label="Nom et prénoms du Père"><input style={inputStyle} value={newEleve.nom_pere} onChange={(e) => setNewEleve((v) => ({ ...v, nom_pere: e.target.value }))} /></Field>
                       <Field label="Nom et prénoms de la Mère"><input style={inputStyle} value={newEleve.nom_mere} onChange={(e) => setNewEleve((v) => ({ ...v, nom_mere: e.target.value }))} /></Field>
                     </div>
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, cursor: "pointer" }}>
-                      <input type="checkbox" checked={newEleve.affecte} onChange={(e) => setNewEleve((v) => ({ ...v, affecte: e.target.checked }))} />
-                      Élève affecté (orientation officielle DOB) — modifie les frais d'inscription applicables
-                    </label>
                   </React.Fragment>
                 )}
                 <div style={{ fontSize: 11, color: COLORS.craieDim }}>Utilise de préférence le matricule national de l'élève — c'est aussi celui à saisir sur le lecteur ZKTeco/Hikvision lors de l'enrôlement, pour que les pointages se relient au bon élève. Le bouton "Générer" ne sert qu'en dépannage, pour un élève sans matricule national.</div>
@@ -3365,6 +3372,33 @@ function App({ session, onLogout }) {
                     </div>
                   </Card>
                 )}
+
+                <Card title="Statut d'affectation des élèves" style={{ marginBottom: 20 }}>
+                  <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                    Les élèves déjà enregistrés n'ont pas encore de statut d'affectation renseigné — coche ceux qui sont affectés (orientation officielle) pour que les bons frais d'inscription s'appliquent à chacun.
+                  </div>
+                  {Object.entries(
+                    students.reduce((groupes, s) => {
+                      const cle = s.classe_nom || "Sans classe";
+                      (groupes[cle] = groupes[cle] || []).push(s);
+                      return groupes;
+                    }, {})
+                  ).sort(([a], [b]) => a.localeCompare(b)).map(([classeNom, eleves], gi, tousGroupes) => (
+                    <div key={classeNom} style={{ borderBottom: gi < tousGroupes.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
+                      <div style={{ padding: "8px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", letterSpacing: 0.4, background: "rgba(255,255,255,0.02)" }}>{classeNom} — {eleves.length} élève(s)</div>
+                      {eleves.map((s, i) => (
+                        <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "7px 18px", borderBottom: i < eleves.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
+                          <span style={{ flex: 1 }}>{nomCompletEleve(s)}</span>
+                          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: COLORS.craieDim, cursor: "pointer" }}>
+                            <input type="checkbox" checked={!!s.affecte} onChange={() => changerAffecteEleve(s.id, !s.affecte)} />
+                            Affecté
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  {students.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun élève enregistré pour l'instant.</div>}
+                </Card>
 
                 <Card title="Solde d'un élève" style={{ marginBottom: 20 }}>
                   <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
