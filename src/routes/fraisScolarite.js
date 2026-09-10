@@ -45,6 +45,27 @@ async function calculerSoldeEleve(eleve) {
   const { rows: paiements } = await pool.query(
     "SELECT montant, frais_scolarite_id, frais_individuel_id FROM paiements_scolarite WHERE eleve_id = $1 AND statut = 'reussi'", [eleve.id]
   );
+  // Échéancier éventuel (paramétré par frais) — permet de savoir si l'élève
+  // est en retard sur SA tranche du moment, pas seulement sur le total.
+  const idsFraisApplicables = fraisApplicablesNiveau.map((f) => f.id);
+  const { rows: echeancesRows } = idsFraisApplicables.length > 0
+    ? await pool.query("SELECT * FROM echeances_frais WHERE frais_scolarite_id = ANY($1::uuid[]) ORDER BY date_echeance", [idsFraisApplicables])
+    : { rows: [] };
+  function statutEcheancier(fraisId, montantPayeLigne) {
+    const echeances = echeancesRows.filter((e) => e.frais_scolarite_id === fraisId);
+    if (echeances.length === 0) return null;
+    const aujourdhui = new Date();
+    const echeancesDues = echeances.filter((e) => new Date(e.date_echeance) <= aujourdhui);
+    const montantDuACeJour = echeancesDues.reduce((s, e) => s + Number(e.montant), 0);
+    const montantRetard = Math.max(0, montantDuACeJour - montantPayeLigne);
+    const prochaine = echeances.find((e) => new Date(e.date_echeance) > aujourdhui);
+    return {
+      montant_du_a_ce_jour: montantDuACeJour,
+      en_retard: montantRetard > 0,
+      montant_retard: montantRetard,
+      prochaine_echeance: prochaine ? { libelle: prochaine.libelle, montant: Number(prochaine.montant), date_echeance: prochaine.date_echeance } : null,
+    };
+  }
   // Le reliquat passe systématiquement en tête du détail — il doit se
   // régler en priorité, avant même les frais de la nouvelle inscription.
   const detailReliquat = fraisIndivRows.filter((f) => f.est_reliquat).map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant), individuel: true, est_reliquat: true }));
@@ -59,7 +80,10 @@ async function calculerSoldeEleve(eleve) {
   function avecReste(ligne) {
     const paiementsLigne = paiements.filter((p) => ligne.individuel ? p.frais_individuel_id === ligne.id : p.frais_scolarite_id === ligne.id);
     const montantPayeLigne = paiementsLigne.reduce((s, p) => s + Number(p.montant), 0);
-    return { ...ligne, montant_paye: montantPayeLigne, reste: Math.max(0, ligne.montant - montantPayeLigne) };
+    return {
+      ...ligne, montant_paye: montantPayeLigne, reste: Math.max(0, ligne.montant - montantPayeLigne),
+      echeancier: ligne.individuel ? null : statutEcheancier(ligne.id, montantPayeLigne),
+    };
   }
   const detail = [...detailReliquat, ...detailAutres].map(avecReste);
   const montantPaye = paiements.reduce((s, p) => s + Number(p.montant), 0);
@@ -228,6 +252,33 @@ router.post("/individuels", requireRole("direction", "super_admin"), async (req,
 // DELETE /api/frais-scolarite/individuels/:id
 router.delete("/individuels/:id", requireRole("direction", "super_admin"), async (req, res) => {
   await pool.query("DELETE FROM frais_individuels WHERE id = $1", [req.params.id]);
+  res.status(204).send();
+});
+
+// GET /api/frais-scolarite/:id/echeances
+router.get("/:id/echeances", async (req, res) => {
+  const { rows } = await pool.query(
+    "SELECT * FROM echeances_frais WHERE frais_scolarite_id = $1 ORDER BY date_echeance", [req.params.id]
+  );
+  res.json(rows);
+});
+
+// POST /api/frais-scolarite/:id/echeances  { libelle, montant, date_echeance }
+router.post("/:id/echeances", requireRole("direction", "super_admin"), async (req, res) => {
+  const { libelle, montant, date_echeance } = req.body;
+  if (!libelle || !libelle.trim() || !montant || Number(montant) <= 0 || !date_echeance) {
+    return res.status(400).json({ error: "libelle, montant (positif) et date_echeance sont requis." });
+  }
+  const { rows } = await pool.query(
+    "INSERT INTO echeances_frais (frais_scolarite_id, libelle, montant, date_echeance) VALUES ($1, $2, $3, $4) RETURNING *",
+    [req.params.id, libelle.trim(), montant, date_echeance]
+  );
+  res.status(201).json(rows[0]);
+});
+
+// DELETE /api/frais-scolarite/echeances/:echeanceId
+router.delete("/echeances/:echeanceId", requireRole("direction", "super_admin"), async (req, res) => {
+  await pool.query("DELETE FROM echeances_frais WHERE id = $1", [req.params.echeanceId]);
   res.status(204).send();
 });
 

@@ -439,6 +439,9 @@ function App({ session, onLogout }) {
   const [affectationCycle, setAffectationCycle] = useState("");
   const [affectationNiveau, setAffectationNiveau] = useState("");
   const [detailJourOuvert, setDetailJourOuvert] = useState(false);
+  const [echeancierOuvertPourFraisId, setEcheancierOuvertPourFraisId] = useState(null);
+  const [echeancesParFrais, setEcheancesParFrais] = useState({});
+  const [nouvelleEcheance, setNouvelleEcheance] = useState({ libelle: "", montant: "", date_echeance: "" });
   const [devices, setDevices] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [search, setSearch] = useState("");
@@ -1938,6 +1941,33 @@ function App({ session, onLogout }) {
     try {
       await api(`/frais-scolarite/${id}`, { method: "DELETE" });
       setFraisScolarite((liste) => liste.filter((f) => f.id !== id));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ouvrirEcheancierFrais(fraisId) {
+    if (echeancierOuvertPourFraisId === fraisId) { setEcheancierOuvertPourFraisId(null); return; }
+    setEcheancierOuvertPourFraisId(fraisId);
+    if (!echeancesParFrais[fraisId]) {
+      try {
+        const liste = await api(`/frais-scolarite/${fraisId}/echeances`);
+        setEcheancesParFrais((v) => ({ ...v, [fraisId]: liste }));
+      } catch (e) { catchErr(e); }
+    }
+  }
+
+  async function ajouterEcheance(fraisId) {
+    if (!nouvelleEcheance.libelle.trim() || !nouvelleEcheance.montant || !nouvelleEcheance.date_echeance) return;
+    try {
+      const cree = await api(`/frais-scolarite/${fraisId}/echeances`, { method: "POST", body: nouvelleEcheance });
+      setEcheancesParFrais((v) => ({ ...v, [fraisId]: [...(v[fraisId] || []), cree].sort((a, b) => new Date(a.date_echeance) - new Date(b.date_echeance)) }));
+      setNouvelleEcheance({ libelle: "", montant: "", date_echeance: "" });
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerEcheance(fraisId, echeanceId) {
+    try {
+      await api(`/frais-scolarite/echeances/${echeanceId}`, { method: "DELETE" });
+      setEcheancesParFrais((v) => ({ ...v, [fraisId]: (v[fraisId] || []).filter((e) => e.id !== echeanceId) }));
     } catch (e) { catchErr(e); }
   }
 
@@ -3740,18 +3770,41 @@ function App({ session, onLogout }) {
                       <div key={groupe} style={{ borderBottom: gi < tousGroupes.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
                         <div style={{ padding: "8px 18px 0 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", letterSpacing: 0.4 }}>{groupe}</div>
                         {items.map((f, i) => (
-                          <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "7px 18px", fontSize: 13 }}>
-                            <span style={{ flex: 1 }}>
-                              {f.libelle}
-                              {f.applicable_a !== "tous" && (
-                                <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: COLORS.marker, background: "rgba(217,164,65,0.14)", borderRadius: 999, padding: "2px 8px" }}>
-                                  {f.applicable_a === "affecte" ? "Affectés uniquement" : "Non affectés uniquement"}
-                                </span>
-                              )}
-                            </span>
-                            <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.marker, width: 110, textAlign: "right" }}>{Number(f.montant_total).toLocaleString("fr-FR")} F</span>
-                            <button onClick={() => supprimerFraisScolarite(f.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
-                          </div>
+                          <React.Fragment key={f.id}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "7px 18px", fontSize: 13 }}>
+                              <span style={{ flex: 1 }}>
+                                {f.libelle}
+                                {f.applicable_a !== "tous" && (
+                                  <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: COLORS.marker, background: "rgba(217,164,65,0.14)", borderRadius: 999, padding: "2px 8px" }}>
+                                    {f.applicable_a === "affecte" ? "Affectés uniquement" : "Non affectés uniquement"}
+                                  </span>
+                                )}
+                              </span>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.marker, width: 110, textAlign: "right" }}>{Number(f.montant_total).toLocaleString("fr-FR")} F</span>
+                              <button onClick={() => ouvrirEcheancierFrais(f.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim, fontSize: 11, textDecoration: "underline" }}>Échéancier</button>
+                              <button onClick={() => supprimerFraisScolarite(f.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                            </div>
+                            {echeancierOuvertPourFraisId === f.id && (
+                              <div style={{ padding: "10px 18px 14px 18px", background: "rgba(255,255,255,0.02)" }}>
+                                {(echeancesParFrais[f.id] || []).map((e) => (
+                                  <div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", fontSize: 12 }}>
+                                    <span>{e.libelle} — {new Date(e.date_echeance).toLocaleDateString("fr-FR")}</span>
+                                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                      <span style={{ fontWeight: 600 }}>{Number(e.montant).toLocaleString("fr-FR")} F</span>
+                                      <button onClick={() => supprimerEcheance(f.id, e.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={11} /></button>
+                                    </span>
+                                  </div>
+                                ))}
+                                {(echeancesParFrais[f.id] || []).length === 0 && <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginBottom: 6 }}>Aucune tranche définie — le frais est dû en une seule fois.</div>}
+                                <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                                  <Field label="Libellé"><input style={{ ...inputStyle, width: 130 }} value={nouvelleEcheance.libelle} onChange={(e) => setNouvelleEcheance((v) => ({ ...v, libelle: e.target.value }))} placeholder="1ère tranche" /></Field>
+                                  <Field label="Montant"><input type="number" style={{ ...inputStyle, width: 100 }} value={nouvelleEcheance.montant} onChange={(e) => setNouvelleEcheance((v) => ({ ...v, montant: e.target.value }))} /></Field>
+                                  <Field label="Date limite"><input type="date" style={{ ...inputStyle, width: 140 }} value={nouvelleEcheance.date_echeance} onChange={(e) => setNouvelleEcheance((v) => ({ ...v, date_echeance: e.target.value }))} /></Field>
+                                  <Button small variant="ghost" onClick={() => ajouterEcheance(f.id)}>Ajouter</Button>
+                                </div>
+                              </div>
+                            )}
+                          </React.Fragment>
                         ))}
                         <div style={{ display: "flex", padding: "4px 18px 10px 18px", fontSize: 11.5, color: COLORS.craieDim, fontWeight: 600 }}>
                           <span style={{ flex: 1 }}>Total {groupe}</span>
@@ -3806,14 +3859,22 @@ function App({ session, onLogout }) {
                                 <div
                                   key={f.id}
                                   onClick={() => choisirFraisPourPaiement(f)}
-                                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 8px", marginBottom: 2, borderRadius: 6, cursor: "pointer", background: fraisChoisiPourPaiement?.id === f.id ? "rgba(217,164,65,0.14)" : "transparent", fontSize: 12, color: f.est_reliquat ? COLORS.alert : COLORS.craieDim, fontWeight: f.est_reliquat ? 700 : 400 }}
+                                  style={{ padding: "6px 8px", marginBottom: 2, borderRadius: 6, cursor: "pointer", background: fraisChoisiPourPaiement?.id === f.id ? "rgba(217,164,65,0.14)" : "transparent" }}
                                 >
-                                  <span>{f.est_reliquat ? "⚠ " : ""}{f.libelle}</span>
-                                  <span style={{ textAlign: "right" }}>
-                                    <span style={{ color: COLORS.craieDim }}>{f.montant_paye.toLocaleString("fr-FR")} / {f.montant.toLocaleString("fr-FR")} F</span>
-                                    {" · "}
-                                    <span style={{ fontWeight: 700, color: f.reste > 0 ? COLORS.alert : COLORS.success }}>{f.reste > 0 ? `${f.reste.toLocaleString("fr-FR")} F restant` : "Réglé"}</span>
-                                  </span>
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: f.est_reliquat ? COLORS.alert : COLORS.craieDim, fontWeight: f.est_reliquat ? 700 : 400 }}>
+                                    <span>{f.est_reliquat ? "⚠ " : ""}{f.libelle}</span>
+                                    <span style={{ textAlign: "right" }}>
+                                      <span style={{ color: COLORS.craieDim }}>{f.montant_paye.toLocaleString("fr-FR")} / {f.montant.toLocaleString("fr-FR")} F</span>
+                                      {" · "}
+                                      <span style={{ fontWeight: 700, color: f.reste > 0 ? COLORS.alert : COLORS.success }}>{f.reste > 0 ? `${f.reste.toLocaleString("fr-FR")} F restant` : "Réglé"}</span>
+                                    </span>
+                                  </div>
+                                  {f.echeancier?.en_retard && (
+                                    <div style={{ fontSize: 10.5, color: COLORS.alert, marginTop: 2 }}>⚠ En retard de {f.echeancier.montant_retard.toLocaleString("fr-FR")} F sur l'échéancier</div>
+                                  )}
+                                  {!f.echeancier?.en_retard && f.echeancier?.prochaine_echeance && (
+                                    <div style={{ fontSize: 10.5, color: COLORS.craieDim, marginTop: 2 }}>Prochaine échéance : {f.echeancier.prochaine_echeance.libelle} — {f.echeancier.prochaine_echeance.montant.toLocaleString("fr-FR")} F le {new Date(f.echeancier.prochaine_echeance.date_echeance).toLocaleDateString("fr-FR")}</div>
+                                  )}
                                 </div>
                               ))}
                             </div>

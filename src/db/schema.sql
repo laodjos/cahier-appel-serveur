@@ -686,3 +686,19 @@ ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
 -- Une caisse fermée ne doit plus pouvoir encaisser tant qu'elle n'est pas
 -- rouverte — évite qu'un paiement soit enregistré après la clôture du jour.
 ALTER TABLE caisses ADD COLUMN IF NOT EXISTS fermee BOOLEAN NOT NULL DEFAULT false;
+-- --------------------------------------------------------------------------
+-- Échéancier — permet de découper un frais (scolarité, cantine...) en
+-- plusieurs tranches avec une date limite chacune, pour savoir qui est en
+-- retard sur SON échéance du moment, pas seulement sur le total de l'année.
+-- Paramétré par frais, pas par élève — s'applique à tous ceux concernés par
+-- ce frais.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS echeances_frais (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  frais_scolarite_id UUID REFERENCES frais_scolarite(id) ON DELETE CASCADE,
+  libelle TEXT NOT NULL, -- ex. "1ère tranche"
+  montant NUMERIC NOT NULL,
+  date_echeance DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_echeances_frais_scolarite ON echeances_frais(frais_scolarite_id);
