@@ -1,6 +1,7 @@
 const express = require("express");
 const { pool } = require("../config/db");
 const { authRequired, requireRole, requireErpActif } = require("../middleware/auth");
+const { normaliserNumeroCi } = require("../services/notificationService");
 
 const router = express.Router();
 router.use(authRequired);
@@ -111,6 +112,52 @@ router.get("/:id/solde", async (req, res) => {
   } catch (err) {
     console.error("Erreur solde caisse :", err);
     res.status(500).json({ error: "Impossible de calculer le solde de cette caisse pour le moment." });
+  }
+});
+
+// POST /api/caisses/:id/rapport-whatsapp  { type: 'ouverture'|'fermeture', telephone }
+// Construit le rapport d'ouverture ou de fermeture de caisse et renvoie un
+// lien WhatsApp prêt à envoyer (au responsable de l'établissement, ou à qui
+// le caissier veut) — même principe que le reste de l'envoi WhatsApp manuel.
+router.post("/:id/rapport-whatsapp", async (req, res) => {
+  const { type, telephone } = req.body;
+  if (!["ouverture", "fermeture"].includes(type)) return res.status(400).json({ error: "type doit être 'ouverture' ou 'fermeture'." });
+  if (!telephone) return res.status(400).json({ error: "Numéro de téléphone du destinataire requis." });
+
+  try {
+    const { rows: caisseRows } = await pool.query("SELECT nom FROM caisses WHERE id = $1", [req.params.id]);
+    if (!caisseRows[0]) return res.status(404).json({ error: "Caisse introuvable." });
+
+    const { rows: mouvementsAvant } = await pool.query(
+      "SELECT type, montant FROM mouvements_caisse WHERE caisse_id = $1 AND created_at::date < CURRENT_DATE", [req.params.id]
+    );
+    const { rows: mouvementsAujourdhui } = await pool.query(
+      "SELECT type, montant FROM mouvements_caisse WHERE caisse_id = $1 AND created_at::date = CURRENT_DATE", [req.params.id]
+    );
+    const { rows: paiementsAvant } = await pool.query(
+      "SELECT montant FROM paiements_scolarite WHERE caisse_id = $1 AND statut = 'reussi' AND confirme_at::date < CURRENT_DATE", [req.params.id]
+    );
+    const { rows: paiementsAujourdhui } = await pool.query(
+      "SELECT montant FROM paiements_scolarite WHERE caisse_id = $1 AND statut = 'reussi' AND confirme_at::date = CURRENT_DATE", [req.params.id]
+    );
+    const soldeOuverture = solderMouvements(mouvementsAvant) + paiementsAvant.reduce((s, p) => s + Number(p.montant), 0);
+    const variationJour = solderMouvements(mouvementsAujourdhui) + paiementsAujourdhui.reduce((s, p) => s + Number(p.montant), 0);
+    const soldeActuel = soldeOuverture + variationJour;
+
+    const formatMontant = (n) => Number(n).toLocaleString("fr-FR") + " F";
+    const maintenant = new Date().toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short" });
+    const nomCaisse = caisseRows[0].nom;
+    const nomUtilisateur = req.user.nom || "Un caissier";
+
+    const message = type === "ouverture"
+      ? `Ouverture de caisse — ${nomCaisse}\nPar : ${nomUtilisateur}\nLe : ${maintenant}\n\nSolde d'ouverture : ${formatMontant(soldeOuverture)}`
+      : `Clôture de caisse — ${nomCaisse}\nPar : ${nomUtilisateur}\nLe : ${maintenant}\n\nSolde d'ouverture (ce matin) : ${formatMontant(soldeOuverture)}\nMouvements du jour : ${variationJour >= 0 ? "+" : ""}${formatMontant(variationJour)}\nSolde de clôture : ${formatMontant(soldeActuel)}`;
+
+    const lienWhatsapp = `https://wa.me/${normaliserNumeroCi(telephone)}?text=${encodeURIComponent(message)}`;
+    res.json({ message, lien_whatsapp: lienWhatsapp });
+  } catch (err) {
+    console.error("Erreur rapport WhatsApp caisse :", err);
+    res.status(500).json({ error: "Impossible de générer le rapport pour le moment." });
   }
 });
 

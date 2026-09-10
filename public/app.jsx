@@ -434,6 +434,8 @@ function App({ session, onLogout }) {
   const [nouveauNumeroParent, setNouveauNumeroParent] = useState("");
   const [fileEnvoiWhatsapp, setFileEnvoiWhatsapp] = useState(null); // { classeNom, notifs: [...], index }
   const [fileCodesWhatsapp, setFileCodesWhatsapp] = useState(null); // { classeNom, eleves: [...], index, chargement }
+  const [rapportCaisseType, setRapportCaisseType] = useState(null); // 'ouverture' | 'fermeture' | null
+  const [rapportCaisseTelephone, setRapportCaisseTelephone] = useState("");
   const [devices, setDevices] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [search, setSearch] = useState("");
@@ -1328,6 +1330,16 @@ function App({ session, onLogout }) {
       catchErr(e);
       setFileCodesWhatsapp((f) => ({ ...f, chargement: false }));
     }
+  }
+
+  async function envoyerRapportCaisseWhatsapp() {
+    if (!caisseSelectionneeId || !rapportCaisseTelephone.trim()) return;
+    try {
+      const res = await api(`/caisses/${caisseSelectionneeId}/rapport-whatsapp`, { method: "POST", body: { type: rapportCaisseType, telephone: rapportCaisseTelephone.trim() } });
+      window.open(res.lien_whatsapp, "_blank");
+      setRapportCaisseType(null);
+      setRapportCaisseTelephone("");
+    } catch (e) { catchErr(e); }
   }
 
   async function corrigerNumeroParent(parentId) {
@@ -3435,7 +3447,7 @@ function App({ session, onLogout }) {
               right={<Button small icon={P.plus} onClick={() => setShowEncaisserEleve(true)}>Encaisser un élève</Button>}
             >
               <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
-                <select style={inputStyle} value={caisseSelectionneeId || ""} onChange={(e) => setCaisseSelectionneeId(e.target.value)}>
+                <select style={inputStyle} value={caisseSelectionneeId || ""} onChange={(e) => { setCaisseSelectionneeId(e.target.value); setRapportCaisseType(null); setRapportCaisseTelephone(""); }}>
                   <option value="">— Choisir une caisse —</option>
                   {caissesListe.map((c) => <option key={c.id} value={c.id}>{c.nom}{c.est_principale ? " (Principale)" : ""}</option>)}
                 </select>
@@ -3457,6 +3469,25 @@ function App({ session, onLogout }) {
                     <div style={{ fontSize: 11, color: COLORS.craieDim }}>Solde actuel</div>
                     <div style={{ fontSize: 18, fontWeight: 700, color: COLORS.marker }}>{soldeCaisseActuelle.solde_actuel.toLocaleString("fr-FR")} F</div>
                   </div>
+                </div>
+              )}
+
+              {caisseSelectionneeId && soldeCaisseActuelle && (
+                <div style={{ padding: "12px 18px", borderBottom: `1px solid ${COLORS.line}` }}>
+                  {rapportCaisseType ? (
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                      <Field label={`Numéro du destinataire (${rapportCaisseType === "ouverture" ? "ouverture" : "clôture"} de caisse)`}>
+                        <input style={{ ...inputStyle, width: 220 }} value={rapportCaisseTelephone} onChange={(e) => setRapportCaisseTelephone(e.target.value)} placeholder="+225 07 00 00 00 00" autoFocus />
+                      </Field>
+                      <Button small onClick={envoyerRapportCaisseWhatsapp}>Envoyer par WhatsApp</Button>
+                      <Button small variant="ghost" onClick={() => { setRapportCaisseType(null); setRapportCaisseTelephone(""); }}>Annuler</Button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Button small variant="ghost" onClick={() => setRapportCaisseType("ouverture")}>Ouvrir la caisse</Button>
+                      <Button small variant="ghost" onClick={() => setRapportCaisseType("fermeture")}>Fermer la caisse</Button>
+                    </div>
+                  )}
                 </div>
               )}
 
