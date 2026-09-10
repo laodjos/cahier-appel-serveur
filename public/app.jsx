@@ -555,6 +555,9 @@ function App({ session, onLogout }) {
   const [fraisChoisiPourPaiement, setFraisChoisiPourPaiement] = useState(null);
   const [historiquePaiementsEleve, setHistoriquePaiementsEleve] = useState(null);
   const [dernierPaiementRecu, setDernierPaiementRecu] = useState(null);
+  const [tousLesPaiements, setTousLesPaiements] = useState(null);
+  const [filtrePaiementsDebut, setFiltrePaiementsDebut] = useState("");
+  const [filtrePaiementsFin, setFiltrePaiementsFin] = useState("");
   const [nouveauFraisIndividuel, setNouveauFraisIndividuel] = useState({ libelle: "", montant: "", est_reliquat: false });
   const [soldeClasseId, setSoldeClasseId] = useState(null);
   const [soldeClasseData, setSoldeClasseData] = useState(null);
@@ -669,6 +672,7 @@ function App({ session, onLogout }) {
       }
       if (view === "caisse") {
         api("/frais-scolarite").then(siEcoleInchangee(setFraisScolarite)).catch(catchErr);
+        api("/paiements-scolarite").then(siEcoleInchangee(setTousLesPaiements)).catch(catchErr);
         // Réservé à la Direction — un caissier n'a pas le droit de lister les
         // comptes ni de gérer les caisses, et n'a donc pas besoin de cet appel
         // (qui échouerait pour lui avec "Accès non autorisé").
@@ -1891,6 +1895,24 @@ function App({ session, onLogout }) {
       setHistoriquePaiementsEleve(historique);
     } catch (e) { catchErr(e); }
   }
+
+  async function chargerTousLesPaiements() {
+    try {
+      const params = [];
+      if (filtrePaiementsDebut) params.push(`debut=${filtrePaiementsDebut}`);
+      if (filtrePaiementsFin) params.push(`fin=${filtrePaiementsFin}`);
+      const data = await api(`/paiements-scolarite${params.length ? "?" + params.join("&") : ""}`);
+      setTousLesPaiements(data);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function reimprimerRecu(p) {
+    try {
+      const soldeAJour = await api(`/frais-scolarite/solde/${p.eleve_id}`);
+      imprimerRecuScolarite(p.eleve_id, soldeAJour, { montant: p.montant, libelle: p.frais_libelle });
+    } catch (e) { catchErr(e); }
+  }
+
   async function changerAffecteEleve(id, valeur) {
     try {
       const updated = await api(`/students/${id}`, { method: "PATCH", body: { affecte: valeur } });
@@ -3620,6 +3642,32 @@ function App({ session, onLogout }) {
                     </div>
                   ))}
                   {students.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun élève enregistré pour l'instant.</div>}
+                </Card>
+
+                <Card title="Tous les paiements" style={{ marginBottom: 20 }}>
+                  <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", borderBottom: `1px solid ${COLORS.line}` }}>
+                    <Field label="Du"><input type="date" style={inputStyle} value={filtrePaiementsDebut} onChange={(e) => setFiltrePaiementsDebut(e.target.value)} /></Field>
+                    <Field label="Au"><input type="date" style={inputStyle} value={filtrePaiementsFin} onChange={(e) => setFiltrePaiementsFin(e.target.value)} /></Field>
+                    <Button small variant="ghost" onClick={chargerTousLesPaiements}>Filtrer</Button>
+                  </div>
+                  {tousLesPaiements == null && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Chargement…</div>}
+                  {tousLesPaiements?.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun paiement enregistré pour l'instant.</div>}
+                  {tousLesPaiements?.map((p, i) => (
+                    <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < tousLesPaiements.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 12.5 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 500 }}>{[p.eleve_nom, p.eleve_prenoms].filter(Boolean).join(" ") || "Élève"} <span style={{ color: COLORS.craieDim, fontWeight: 400 }}>({p.classe_nom || "—"})</span></div>
+                        <div style={{ fontSize: 11, color: COLORS.craieDim }}>
+                          {new Date(p.confirme_at || p.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          {" · "}{p.frais_libelle || "Paiement générique"}
+                          {" · "}{p.methode === "especes" ? "Espèces" : p.methode === "cinetpay" ? "En ligne" : p.methode}
+                          {p.caisse_nom ? ` · ${p.caisse_nom}` : ""}
+                          {p.statut !== "reussi" ? ` · ${p.statut}` : ""}
+                        </div>
+                      </div>
+                      <span style={{ fontWeight: 700, color: p.statut === "reussi" ? COLORS.success : COLORS.craieDim, width: 90, textAlign: "right" }}>{Number(p.montant).toLocaleString("fr-FR")} F</span>
+                      <Button small variant="ghost" icon={P.scan} onClick={() => reimprimerRecu(p)}>Reçu</Button>
+                    </div>
+                  ))}
                 </Card>
 
                 <Card title="Solde d'un élève" style={{ marginBottom: 20 }}>

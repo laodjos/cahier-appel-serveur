@@ -6,17 +6,41 @@ const { creerLienPaiement, verifierTransaction } = require("../services/paymentS
 
 const router = express.Router();
 
-// GET /api/paiements-scolarite?eleve_id=... — historique des paiements d'un élève
+function ecoleEffective(req) {
+  if (req.user.ecole_id) return req.user.ecole_id;
+  return req.query?.ecole_id || req.body?.ecole_id || null;
+}
+
+// GET /api/paiements-scolarite?eleve_id=... — historique d'un élève précis
+// GET /api/paiements-scolarite?debut=&fin=&classe_id= — TOUS les paiements de
+// l'école (pour la vue d'ensemble et la réimpression de reçus), avec filtres
+// optionnels de période et de classe.
 router.get("/", authRequired, requireErpActif, async (req, res) => {
-  const { eleve_id } = req.query;
-  if (!eleve_id) return res.status(400).json({ error: "eleve_id est requis." });
+  const { eleve_id, debut, fin, classe_id } = req.query;
+  const params = [];
+  let filtre = "TRUE";
+
+  if (eleve_id) {
+    params.push(eleve_id); filtre += ` AND ps.eleve_id = $${params.length}`;
+  } else {
+    const ecoleId = ecoleEffective(req);
+    if (!ecoleId) return res.status(400).json({ error: "Choisis d'abord une école." });
+    params.push(ecoleId); filtre += ` AND c.ecole_id = $${params.length}`;
+  }
+  if (classe_id) { params.push(classe_id); filtre += ` AND s.classe_id = $${params.length}`; }
+  if (debut) { params.push(debut); filtre += ` AND ps.created_at::date >= $${params.length}`; }
+  if (fin) { params.push(fin); filtre += ` AND ps.created_at::date <= $${params.length}`; }
+
   const { rows } = await pool.query(
-    `SELECT ps.*, COALESCE(fs.libelle, fi.libelle) AS frais_libelle, c.nom AS caisse_nom
+    `SELECT ps.*, COALESCE(fs.libelle, fi.libelle) AS frais_libelle, ca.nom AS caisse_nom,
+            s.nom AS eleve_nom, s.prenoms AS eleve_prenoms, c.nom AS classe_nom
      FROM paiements_scolarite ps
      LEFT JOIN frais_scolarite fs ON fs.id = ps.frais_scolarite_id
      LEFT JOIN frais_individuels fi ON fi.id = ps.frais_individuel_id
-     LEFT JOIN caisses c ON c.id = ps.caisse_id
-     WHERE ps.eleve_id = $1 ORDER BY ps.created_at DESC`, [eleve_id]
+     LEFT JOIN caisses ca ON ca.id = ps.caisse_id
+     LEFT JOIN students s ON s.id = ps.eleve_id
+     LEFT JOIN classes c ON c.id = s.classe_id
+     WHERE ${filtre} ORDER BY ps.created_at DESC LIMIT 300`, params
   );
   res.json(rows);
 });
