@@ -69,10 +69,12 @@ router.post("/generer-code-assiste", authRequired, requireRole("direction", "sur
     [telephoneNorm, code, expireA]
   );
 
-  const message = `Bonjour, voici ton code de connexion à l'Espace Parent Cahier d'Appel : ${code} (valable 10 minutes). Saisis-le sur la page de connexion.`;
+  const baseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get("host")}`;
+  const lienPortail = `${baseUrl}/espace-parent.html`;
+  const message = `Bonjour, voici ton code de connexion à l'Espace Parent Cahier d'Appel : ${code} (valable 10 minutes).\n\nOuvre ce lien puis saisis ton numéro et ce code : ${lienPortail}`;
   // wa.me attend le numéro complet sans "+" ni espaces.
   const lienWhatsapp = `https://wa.me/${telephoneNorm}?text=${encodeURIComponent(message)}`;
-  res.status(201).json({ code, message, lien_whatsapp: lienWhatsapp });
+  res.status(201).json({ code, message, lien_portail: lienPortail, lien_whatsapp: lienWhatsapp });
 });
 
 // POST /api/parent-auth/verifier-code  { telephone, code }
