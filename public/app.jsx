@@ -442,6 +442,7 @@ function App({ session, onLogout }) {
   const [echeancierOuvertPourFraisId, setEcheancierOuvertPourFraisId] = useState(null);
   const [echeancesParFrais, setEcheancesParFrais] = useState({});
   const [nouvelleEcheance, setNouvelleEcheance] = useState({ libelle: "", montant: "", date_echeance: "" });
+  const [classeRelanceId, setClasseRelanceId] = useState("");
   const [devices, setDevices] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [search, setSearch] = useState("");
@@ -2211,6 +2212,55 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function genererFichesRelance() {
+    if (!classeRelanceId) return;
+    try {
+      const relances = await api(`/frais-scolarite/classe/${classeRelanceId}/relances`);
+      if (relances.length === 0) {
+        setGlobalInfo("Aucun élève en retard sur une échéance dans cette classe.");
+        setTimeout(() => setGlobalInfo(""), 4000);
+        return;
+      }
+      const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
+      const ecoleNom = ecoleActive.nom || "";
+      const w = window.open("", "_blank");
+      w.document.write(`
+        <html><head><title>Fiches de relance</title>
+        <style>
+          @page { size: A5 portrait; margin: 10mm; }
+          body { font-family: Arial, sans-serif; color: #222; font-size: 13px; margin: 0; }
+          .fiche { page-break-after: always; padding: 6mm; border: 1px dashed #999; border-radius: 6px; margin-bottom: 10mm; }
+          .fiche:last-child { page-break-after: auto; }
+          h1 { font-size: 15px; margin: 0 0 2px; }
+          .sous-titre { font-size: 11px; color: #555; margin-bottom: 10px; }
+          .titre-relance { font-size: 13px; font-weight: bold; color: #b33; margin-bottom: 8px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+          td { padding: 5px 0; border-bottom: 1px solid #eee; font-size: 12px; }
+          .montant { text-align: right; font-weight: bold; color: #b33; }
+          .note { font-size: 11px; color: #555; margin-top: 10px; }
+        </style></head>
+        <body onload="window.print()">
+          ${relances.map((r) => `
+            <div class="fiche">
+              <h1>${ecoleNom}</h1>
+              <div class="sous-titre">Fiche de relance — ${new Date().toLocaleDateString("fr-FR")}</div>
+              <div class="titre-relance">⚠ Échéance(s) dépassée(s)</div>
+              <table>
+                <tr><td><strong>Élève</strong></td><td class="montant">${[r.eleve.nom, r.eleve.prenoms].filter(Boolean).join(" ")}</td></tr>
+                <tr><td><strong>Classe</strong></td><td class="montant">${r.eleve.classe_nom || ""}</td></tr>
+              </table>
+              <table>
+                ${r.lignes.map((l) => `<tr><td>${l.libelle}</td><td class="montant">${Number(l.montant_retard).toLocaleString("fr-FR")} F</td></tr>`).join("")}
+              </table>
+              <div class="note">Merci de régulariser cette situation dans les meilleurs délais auprès de la caisse de l'établissement.</div>
+            </div>
+          `).join("")}
+        </body></html>
+      `);
+      w.document.close();
+    } catch (e) { catchErr(e); }
+  }
+
   useEffect(() => {
     if (!soldeClasseId) { setSoldeClasseData(null); return; }
     api(`/frais-scolarite/solde-classe/${soldeClasseId}`).then(setSoldeClasseData).catch(catchErr);
@@ -3832,6 +3882,21 @@ function App({ session, onLogout }) {
                     </div>
                   </Card>
                 )}
+
+                <Card title="Fiches de relance" style={{ marginBottom: 20 }}>
+                  <div style={{ padding: 14, fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
+                    Génère une fiche imprimable pour chaque élève d'une classe en retard sur au moins une échéance — à distribuer pour rappeler la date limite dépassée.
+                  </div>
+                  <div style={{ padding: 14, display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+                    <Field label="Classe">
+                      <select style={inputStyle} value={classeRelanceId} onChange={(e) => setClasseRelanceId(e.target.value)}>
+                        <option value="">— Choisir une classe —</option>
+                        {classes.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                      </select>
+                    </Field>
+                    <Button small icon={P.scan} onClick={genererFichesRelance} disabled={!classeRelanceId}>Générer les fiches</Button>
+                  </div>
+                </Card>
 
                 <Card title="Solde d'un élève" style={{ marginBottom: 20 }}>
                   <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>

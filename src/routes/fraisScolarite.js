@@ -255,6 +255,34 @@ router.delete("/individuels/:id", requireRole("direction", "super_admin"), async
   res.status(204).send();
 });
 
+// GET /api/frais-scolarite/classe/:classeId/relances — pour chaque élève de
+// la classe en retard sur au moins une échéance, le détail nécessaire pour
+// imprimer sa fiche de relance (frais concerné, tranche, montant en retard).
+router.get("/classe/:classeId/relances", async (req, res) => {
+  try {
+    const { rows: eleves } = await pool.query(
+      `SELECT s.*, c.niveau, c.ecole_id, c.nom AS classe_nom FROM students s
+       JOIN classes c ON c.id = s.classe_id WHERE s.classe_id = $1 ORDER BY s.nom`,
+      [req.params.classeId]
+    );
+    const relances = [];
+    for (const eleve of eleves) {
+      const solde = await calculerSoldeEleve(eleve);
+      const lignesEnRetard = (solde.detail || []).filter((f) => f.echeancier?.en_retard);
+      if (lignesEnRetard.length > 0) {
+        relances.push({
+          eleve: { id: eleve.id, nom: eleve.nom, prenoms: eleve.prenoms, classe_nom: eleve.classe_nom },
+          lignes: lignesEnRetard.map((f) => ({ libelle: f.libelle, montant_retard: f.echeancier.montant_retard })),
+        });
+      }
+    }
+    res.json(relances);
+  } catch (err) {
+    console.error("Erreur fiches de relance :", err);
+    res.status(500).json({ error: "Impossible de générer les fiches de relance pour le moment." });
+  }
+});
+
 // GET /api/frais-scolarite/:id/echeances
 router.get("/:id/echeances", async (req, res) => {
   const { rows } = await pool.query(
