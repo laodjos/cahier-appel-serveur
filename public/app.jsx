@@ -3649,7 +3649,38 @@ function App({ session, onLogout }) {
                     <Field label="Du"><input type="date" style={inputStyle} value={filtrePaiementsDebut} onChange={(e) => setFiltrePaiementsDebut(e.target.value)} /></Field>
                     <Field label="Au"><input type="date" style={inputStyle} value={filtrePaiementsFin} onChange={(e) => setFiltrePaiementsFin(e.target.value)} /></Field>
                     <Button small variant="ghost" onClick={chargerTousLesPaiements}>Filtrer</Button>
+                    <Button small variant="ghost" onClick={() => { const auj = new Date().toISOString().slice(0, 10); setFiltrePaiementsDebut(auj); setFiltrePaiementsFin(auj); setTimeout(chargerTousLesPaiements, 0); }}>Aujourd'hui</Button>
                   </div>
+                  {(() => {
+                    const paiementsReussis = (tousLesPaiements || []).filter((p) => p.statut === "reussi");
+                    const groupes = {};
+                    for (const p of paiementsReussis) {
+                      const cle = p.frais_libelle || "Paiement générique";
+                      if (!groupes[cle]) groupes[cle] = { libelle: cle, nombre: 0, total: 0 };
+                      groupes[cle].nombre++;
+                      groupes[cle].total += Number(p.montant);
+                    }
+                    const synthese = Object.values(groupes).sort((a, b) => b.total - a.total);
+                    const totalGeneral = synthese.reduce((s, g) => s + g.total, 0);
+                    if (synthese.length === 0) return null;
+                    return (
+                      <div style={{ padding: "14px 18px", borderBottom: `1px solid ${COLORS.line}` }}>
+                        <div style={{ fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", marginBottom: 8 }}>
+                          Synthèse par rubrique {filtrePaiementsDebut || filtrePaiementsFin ? `(${filtrePaiementsDebut || "…"} → ${filtrePaiementsFin || "…"})` : "(tout l'historique affiché)"}
+                        </div>
+                        {synthese.map((g) => (
+                          <div key={g.libelle} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13 }}>
+                            <span>{g.libelle} <span style={{ color: COLORS.craieDim, fontSize: 11.5 }}>({g.nombre} paiement{g.nombre > 1 ? "s" : ""})</span></span>
+                            <span style={{ fontWeight: 600 }}>{g.total.toLocaleString("fr-FR")} F</span>
+                          </div>
+                        ))}
+                        <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 0 0", marginTop: 4, borderTop: `1px solid ${COLORS.line}`, fontSize: 13.5, fontWeight: 700, color: COLORS.marker }}>
+                          <span>Total général</span>
+                          <span>{totalGeneral.toLocaleString("fr-FR")} F</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {tousLesPaiements == null && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Chargement…</div>}
                   {tousLesPaiements?.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun paiement enregistré pour l'instant.</div>}
                   {tousLesPaiements?.map((p, i) => (
