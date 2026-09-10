@@ -554,6 +554,7 @@ function App({ session, onLogout }) {
   const [montantPaiement, setMontantPaiement] = useState("");
   const [fraisChoisiPourPaiement, setFraisChoisiPourPaiement] = useState(null);
   const [historiquePaiementsEleve, setHistoriquePaiementsEleve] = useState(null);
+  const [dernierPaiementRecu, setDernierPaiementRecu] = useState(null);
   const [nouveauFraisIndividuel, setNouveauFraisIndividuel] = useState({ libelle: "", montant: "", est_reliquat: false });
   const [soldeClasseId, setSoldeClasseId] = useState(null);
   const [soldeClasseData, setSoldeClasseData] = useState(null);
@@ -1955,6 +1956,11 @@ function App({ session, onLogout }) {
           frais_individuel_id: encaisserFraisChoisi?.individuel ? encaisserFraisChoisi.id : undefined,
         },
       });
+      // Imprime directement le reçu de cet encaissement, avant de tout
+      // réinitialiser — comme une vraie caisse, qui délivre son ticket
+      // immédiatement après le paiement.
+      const soldeAJour = await api(`/frais-scolarite/solde/${encaisserEleveId}`);
+      imprimerRecuScolarite(encaisserEleveId, soldeAJour, { montant: encaisserMontant, libelle: encaisserFraisChoisi?.libelle || null });
       setShowEncaisserEleve(false);
       setEncaisserCycle("");
       setEncaisserNiveau("");
@@ -1997,6 +2003,7 @@ function App({ session, onLogout }) {
           frais_individuel_id: fraisChoisiPourPaiement?.individuel ? fraisChoisiPourPaiement.id : undefined,
         },
       });
+      setDernierPaiementRecu({ montant: montantPaiement, libelle: fraisChoisiPourPaiement?.libelle || null });
       setMontantPaiement("");
       setFraisChoisiPourPaiement(null);
       chargerSoldeEleve();
@@ -2013,7 +2020,7 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
-  async function imprimerRecuScolarite(eleveId, data) {
+  async function imprimerRecuScolarite(eleveId, data, dernierPaiement) {
     try {
       const eleve = students.find((s) => s.id === eleveId);
       const [{ image: imageQr }, { image: imageBarcode }] = await Promise.all([
@@ -2056,11 +2063,24 @@ function App({ session, onLogout }) {
               <div class="sous-titre">${new Date().toLocaleDateString("fr-FR")}</div>
             </div>
           </div>
+          ${dernierPaiement ? `
+            <div style="background:#eafaf1; border:1px solid #27ae60; color:#1e8449; padding:10px 12px; border-radius:6px; margin-bottom:14px; text-align:center;">
+              <div style="font-size:11px;">Montant réglé ce jour${dernierPaiement.libelle ? ` — ${dernierPaiement.libelle}` : ""}</div>
+              <div style="font-size:20px; font-weight:bold;">${Number(dernierPaiement.montant).toLocaleString("fr-FR")} F</div>
+            </div>
+          ` : ""}
           <table>
+            ${(data.detail || []).map((f) => `
+              <tr>
+                <td>${f.est_reliquat ? "⚠ " : ""}${f.libelle}${f.reste === 0 ? " (réglé)" : ""}</td>
+                <td style="text-align:right">${f.montant.toLocaleString("fr-FR")} F</td>
+              </tr>
+            `).join("")}
             <tr><td>Total scolarité</td><td style="text-align:right">${data.montant_total != null ? data.montant_total.toLocaleString("fr-FR") + " F" : "—"}</td></tr>
             <tr><td>Déjà payé</td><td style="text-align:right">${data.montant_paye.toLocaleString("fr-FR")} F</td></tr>
             <tr><td class="solde-restant">Reste à payer</td><td style="text-align:right" class="solde-restant">${data.solde != null ? data.solde.toLocaleString("fr-FR") + " F" : "—"}</td></tr>
           </table>
+          ${data.reliquat_impaye ? `<div style="background:#fdecea; color:#c0392b; padding:8px 10px; border-radius:6px; font-size:11.5px; font-weight:bold; margin-bottom:14px;">⚠ Reliquat impayé de l'année précédente — à régler en priorité.</div>` : ""}
           <div class="codes">
             <div>
               <img class="qr" src="${imageQr}" />
@@ -3604,7 +3624,7 @@ function App({ session, onLogout }) {
 
                 <Card title="Solde d'un élève" style={{ marginBottom: 20 }}>
                   <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
-                    <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={soldeEleveId} onChange={(e) => { setSoldeEleveId(e.target.value); setSoldeData(null); setFraisChoisiPourPaiement(null); setHistoriquePaiementsEleve(null); }}>
+                    <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={soldeEleveId} onChange={(e) => { setSoldeEleveId(e.target.value); setSoldeData(null); setFraisChoisiPourPaiement(null); setHistoriquePaiementsEleve(null); setDernierPaiementRecu(null); }}>
                       <option value="">— Choisir un élève —</option>
                       {students.map((s) => <option key={s.id} value={s.id}>{nomCompletEleve(s)} ({s.classe_nom})</option>)}
                     </select>
@@ -3660,7 +3680,7 @@ function App({ session, onLogout }) {
                                 <Field label="Montant (F CFA)"><input type="number" style={{ ...inputStyle, width: 130 }} value={montantPaiement} onChange={(e) => setMontantPaiement(e.target.value)} /></Field>
                                 <Button small variant="ghost" onClick={enregistrerPaiementManuel}>Encaisser en espèces</Button>
                                 <Button small icon={P.check} onClick={genererLienPaiementScolarite}>Générer un lien de paiement</Button>
-                                <Button small variant="ghost" icon={P.scan} onClick={() => imprimerRecuScolarite(soldeEleveId, soldeData)}>Imprimer le reçu</Button>
+                                <Button small variant="ghost" icon={P.scan} onClick={() => imprimerRecuScolarite(soldeEleveId, soldeData, dernierPaiementRecu)}>Imprimer le reçu</Button>
                               </div>
                             </div>
                           )}
