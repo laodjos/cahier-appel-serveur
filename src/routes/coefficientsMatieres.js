@@ -14,18 +14,27 @@ function ecoleEffective(req) {
 // Retrouve le coefficient applicable à une matière pour un élève donné :
 // classe précise > (niveau + série, pour le 2nd cycle) > niveau seul > valeur
 // par défaut 1. Utilisé aussi par le calcul de bulletin.
+// Compare deux niveaux en ignorant les accents, la casse et les espaces — le
+// niveau d'une classe est un champ texte libre, alors que les coefficients
+// sont configurés via une liste figée ("6ème" avec accent) ; sans cette
+// tolérance, une classe notée "6eme" (sans accent) retombait silencieusement
+// sur le coefficient par défaut (1), faussant les moyennes sans le signaler.
+function normaliserNiveauCoef(t) {
+  return (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
 async function trouverCoefficient(matiereId, niveau, classeId, serie) {
   const { rows } = await pool.query(
-    `SELECT coefficient FROM coefficients_matieres
-     WHERE matiere_id = $1 AND (
-       classe_id = $2
-       OR (classe_id IS NULL AND niveau = $3 AND serie IS NOT DISTINCT FROM $4)
-       OR (classe_id IS NULL AND niveau = $3 AND serie IS NULL)
-     )
-     ORDER BY classe_id NULLS LAST, serie NULLS LAST LIMIT 1`,
-    [matiereId, classeId, niveau, serie || null]
+    "SELECT * FROM coefficients_matieres WHERE matiere_id = $1 AND (classe_id = $2 OR classe_id IS NULL)",
+    [matiereId, classeId]
   );
-  return rows[0]?.coefficient != null ? Number(rows[0].coefficient) : 1;
+  const specClasse = rows.find((c) => c.classe_id === classeId);
+  if (specClasse) return Number(specClasse.coefficient);
+  const specSerie = rows.find((c) => c.classe_id == null && normaliserNiveauCoef(c.niveau) === normaliserNiveauCoef(niveau) && c.serie === serie);
+  if (specSerie) return Number(specSerie.coefficient);
+  const specNiveau = rows.find((c) => c.classe_id == null && normaliserNiveauCoef(c.niveau) === normaliserNiveauCoef(niveau) && c.serie == null);
+  if (specNiveau) return Number(specNiveau.coefficient);
+  return 1;
 }
 
 // GET /api/coefficients-matieres

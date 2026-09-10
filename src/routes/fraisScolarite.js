@@ -21,14 +21,24 @@ function ecoleEffective(req) {
 // avec ses éventuels frais individuels (ex. un reliquat impayé de l'année
 // précédente) — chacun suivi séparément dans le détail, réglés contre un
 // solde total unique.
+// Compare deux niveaux en ignorant les accents, la casse et les espaces — le
+// niveau d'une classe est un champ texte libre, une école peut avoir tapé
+// "6eme" sans accent alors que le formulaire de frais utilise "6ème" par
+// défaut. Sans cette tolérance, aucun frais ne se retrouvait jamais pour ces
+// élèves, qui semblaient à tort n'avoir aucun montant de scolarité défini.
+function normaliserNiveau(t) {
+  return (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
 async function calculerSoldeEleve(eleve) {
   const { rows: fraisRows } = await pool.query(
     `SELECT * FROM frais_scolarite
-     WHERE (classe_id = $1 OR (classe_id IS NULL AND niveau = $2))
+     WHERE (classe_id = $1 OR (classe_id IS NULL AND ecole_id = $2))
        AND (applicable_a = 'tous' OR applicable_a = $3)
      ORDER BY libelle`,
-    [eleve.classe_id, eleve.niveau, eleve.affecte ? "affecte" : "non_affecte"]
+    [eleve.classe_id, eleve.ecole_id, eleve.affecte ? "affecte" : "non_affecte"]
   );
+  const fraisApplicablesNiveau = fraisRows.filter((f) => f.classe_id === eleve.classe_id || normaliserNiveau(f.niveau) === normaliserNiveau(eleve.niveau));
   const { rows: fraisIndivRows } = await pool.query(
     "SELECT * FROM frais_individuels WHERE eleve_id = $1 ORDER BY est_reliquat DESC, created_at", [eleve.id]
   );
@@ -39,7 +49,7 @@ async function calculerSoldeEleve(eleve) {
   // régler en priorité, avant même les frais de la nouvelle inscription.
   const detailReliquat = fraisIndivRows.filter((f) => f.est_reliquat).map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant), individuel: true, est_reliquat: true }));
   const detailAutres = [
-    ...fraisRows.map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant_total) })),
+    ...fraisApplicablesNiveau.map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant_total) })),
     ...fraisIndivRows.filter((f) => !f.est_reliquat).map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant), individuel: true })),
   ];
   // Pour chaque ligne, calcule ce qui a été payé SPÉCIFIQUEMENT contre elle
@@ -105,7 +115,7 @@ router.delete("/:id", requireRole("direction", "super_admin"), async (req, res) 
 // GET /api/frais-scolarite/solde/:eleveId
 router.get("/solde/:eleveId", async (req, res) => {
   const { rows } = await pool.query(
-    "SELECT s.*, c.niveau FROM students s JOIN classes c ON c.id = s.classe_id WHERE s.id = $1", [req.params.eleveId]
+    "SELECT s.*, c.niveau, c.ecole_id FROM students s JOIN classes c ON c.id = s.classe_id WHERE s.id = $1", [req.params.eleveId]
   );
   const eleve = rows[0];
   if (!eleve) return res.status(404).json({ error: "Élève introuvable." });
@@ -133,9 +143,10 @@ router.get("/solde-classe/:classeId", async (req, res) => {
   // élève ensuite), tous les frais individuels de la classe, et tous les
   // paiements — en 3 requêtes fixes, peu importe l'effectif.
   const { rows: fraisRows } = await pool.query(
-    "SELECT * FROM frais_scolarite WHERE classe_id = $1 OR (classe_id IS NULL AND niveau = $2) ORDER BY libelle",
-    [classe.id, classe.niveau]
+    "SELECT * FROM frais_scolarite WHERE classe_id = $1 OR (classe_id IS NULL AND ecole_id = $2) ORDER BY libelle",
+    [classe.id, classe.ecole_id]
   );
+  const fraisDuNiveau = fraisRows.filter((f) => f.classe_id === classe.id || normaliserNiveau(f.niveau) === normaliserNiveau(classe.niveau));
   const { rows: fraisIndivRows } = await pool.query(
     "SELECT * FROM frais_individuels WHERE eleve_id = ANY($1::uuid[]) ORDER BY created_at", [eleveIds]
   );
@@ -153,7 +164,7 @@ router.get("/solde-classe/:classeId", async (req, res) => {
   }
 
   const resultats = eleves.map((e) => {
-    const fraisApplicables = fraisRows.filter((f) => f.applicable_a === "tous" || f.applicable_a === (e.affecte ? "affecte" : "non_affecte"));
+    const fraisApplicables = fraisDuNiveau.filter((f) => f.applicable_a === "tous" || f.applicable_a === (e.affecte ? "affecte" : "non_affecte"));
     const individuelsEleve = indivParEleve[e.id] || [];
     const detailReliquat = individuelsEleve.filter((f) => f.est_reliquat).map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant), individuel: true, est_reliquat: true }));
     const detailAutres = [
