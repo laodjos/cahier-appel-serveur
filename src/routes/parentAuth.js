@@ -2,6 +2,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const { pool } = require("../config/db");
 const { envoyerViaOrangeSms, normaliserNumeroCi } = require("../services/notificationService");
+const { authRequired, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -48,6 +49,30 @@ router.post("/demander-code", async (req, res) => {
     return res.status(502).json({ error: "Impossible d'envoyer le SMS pour le moment. Réessaie dans un instant." });
   }
   res.status(201).json({ ok: true });
+});
+
+// POST /api/parent-auth/generer-code-assiste  { telephone }
+// Pour le personnel (Direction/Surveillant) : génère un code SANS passer par
+// le SMS automatique (peu fiable tant que le nom d'expéditeur Orange n'est
+// pas validé) — à envoyer soi-même au parent via WhatsApp, en un clic, depuis
+// son propre téléphone. Ne remplace pas une vraie intégration WhatsApp
+// Business (qui demande un compte API dédié), mais fonctionne dès maintenant.
+router.post("/generer-code-assiste", authRequired, requireRole("direction", "surveillant", "super_admin"), async (req, res) => {
+  const { telephone } = req.body;
+  if (!telephone) return res.status(400).json({ error: "Numéro de téléphone requis." });
+  const telephoneNorm = normaliserNumeroCi(telephone);
+
+  const code = genererCode();
+  const expireA = new Date(Date.now() + 10 * 60000);
+  await pool.query(
+    "INSERT INTO parent_otp (telephone, code, expire_a) VALUES ($1, $2, $3)",
+    [telephoneNorm, code, expireA]
+  );
+
+  const message = `Bonjour, voici ton code de connexion à l'Espace Parent Cahier d'Appel : ${code} (valable 10 minutes). Saisis-le sur la page de connexion.`;
+  // wa.me attend le numéro complet sans "+" ni espaces.
+  const lienWhatsapp = `https://wa.me/${telephoneNorm}?text=${encodeURIComponent(message)}`;
+  res.status(201).json({ code, message, lien_whatsapp: lienWhatsapp });
 });
 
 // POST /api/parent-auth/verifier-code  { telephone, code }

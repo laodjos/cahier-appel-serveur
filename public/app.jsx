@@ -1301,6 +1301,13 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function envoyerCodeViaWhatsapp(telephone) {
+    try {
+      const res = await api("/parent-auth/generer-code-assiste", { method: "POST", body: { telephone } });
+      window.open(res.lien_whatsapp, "_blank");
+    } catch (e) { catchErr(e); }
+  }
+
   async function envoyerRapports() {
     setEnvoiResult(null);
     try {
@@ -2873,8 +2880,8 @@ function App({ session, onLogout }) {
           <div>
             <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Rattachement des parents</h1>
             <Card title="Rattachement élève ↔ parent" style={{ marginBottom: 20 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1.4fr 1.4fr 0.9fr auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
-                <span>Élève</span><span>Nom du parent</span><span>Téléphone</span><span>Genre</span><span></span>
+              <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1.3fr 1.3fr 0.8fr auto auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
+                <span>Élève</span><span>Nom du parent</span><span>Téléphone</span><span>Genre</span><span></span><span></span>
               </div>
               {students.map((s, i, arr) => {
                 const edit = parentEdits[s.id] || {};
@@ -2882,7 +2889,7 @@ function App({ session, onLogout }) {
                 const parentNomAffiche = edit.parentNom ?? s.parent_nom ?? "";
                 const parentTelAffiche = edit.parentTel ?? s.parent_telephone ?? "";
                 return (
-                  <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1.6fr 1.4fr 1.4fr 0.9fr auto", alignItems: "center", padding: "10px 18px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none", gap: 8 }}>
+                  <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1.3fr 1.3fr 0.8fr auto auto", alignItems: "center", padding: "10px 18px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none", gap: 8 }}>
                     <div><div style={{ fontSize: 13, fontWeight: 500 }}>{nomCompletEleve(s)}</div><div style={{ fontSize: 11, color: COLORS.craieDim }}>{s.classe_nom}</div></div>
                     <input style={{ ...inputStyle, width: "100%" }} value={parentNomAffiche} onChange={(e) => updateParentEdit(s.id, "parentNom", e.target.value)} placeholder="Nom du parent/tuteur" />
                     <input style={{ ...inputStyle, width: "100%" }} value={parentTelAffiche} onChange={(e) => updateParentEdit(s.id, "parentTel", e.target.value)} placeholder="+225 07 00 00 00 00" />
@@ -2892,6 +2899,11 @@ function App({ session, onLogout }) {
                       <option value="M">Masculin</option>
                     </select>
                     <Button small variant="ghost" icon={P.save} onClick={() => saveParentInfo(s.id)}>Enregistrer</Button>
+                    {parentTelAffiche && (role === "direction" || role === "surveillant" || role === "super_admin") && (
+                      <Button small variant="ghost" onClick={() => envoyerCodeViaWhatsapp(parentTelAffiche)} title="Générer un code de connexion et l'envoyer via ton propre WhatsApp">
+                        Code WhatsApp
+                      </Button>
+                    )}
                   </div>
                 );
               })}
