@@ -96,11 +96,14 @@ async function obtenirJetonOrange() {
 // Nettoie un numéro de téléphone ivoirien saisi sous toutes les formes courantes
 // ("07 00 00 00 00", "0700000000", "+2250700000000", "225 07 00 00 00 00")
 // vers le format attendu par Orange : indicatif + numéro, sans "+" ni "00" ni espace.
+// La Côte d'Ivoire (depuis la réforme numérique de 2021) GARDE le zéro
+// initial même en format international — contrairement à beaucoup d'autres
+// pays. Le bon format est +225 07 00 00 00 00, PAS +225 7 00 00 00 00 (qui
+// n'existe pas et fait échouer aussi bien les SMS que WhatsApp).
 function normaliserNumeroCi(numero) {
   let n = (numero || "").replace(/[^\d]/g, ""); // ne garde que les chiffres
   if (n.startsWith("00225")) n = n.slice(2); // "00225..." -> "225..."
-  if (n.startsWith("225")) n = `225${n.slice(3).replace(/^0/, "")}`; // retire un éventuel 0 après l'indicatif
-  else n = `225${n.replace(/^0/, "")}`; // pas d'indicatif du tout -> l'ajoute
+  if (!n.startsWith("225")) n = `225${n}`; // pas d'indicatif du tout -> l'ajoute, sans jamais retirer le 0
   return n;
 }
 
