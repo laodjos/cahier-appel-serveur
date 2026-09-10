@@ -671,3 +671,10 @@ ALTER TABLE parents ADD COLUMN IF NOT EXISTS genre TEXT CHECK (genre IN ('M', 'F
 -- de savoir qui opère quelle caisse, et de la sélectionner automatiquement
 -- quand ce responsable se connecte, plutôt que de la choisir à chaque fois.
 ALTER TABLE caisses ADD COLUMN IF NOT EXISTS responsable_id UUID REFERENCES users(id);
+-- Permet de savoir à QUEL frais précis un paiement a été affecté (scolarité,
+-- inscription, cantine... ou un frais individuel comme un reliquat) — pour
+-- pouvoir afficher le reste à payer PAR FRAIS, pas seulement un total global,
+-- et laisser le parent choisir lequel régler en priorité. Un paiement sans
+-- l'un ni l'autre reste un règlement générique contre le total (comme avant).
+ALTER TABLE paiements_scolarite ADD COLUMN IF NOT EXISTS frais_scolarite_id UUID REFERENCES frais_scolarite(id);
+ALTER TABLE paiements_scolarite ADD COLUMN IF NOT EXISTS frais_individuel_id UUID REFERENCES frais_individuels(id);

@@ -33,7 +33,7 @@ async function calculerSoldeEleve(eleve) {
     "SELECT * FROM frais_individuels WHERE eleve_id = $1 ORDER BY est_reliquat DESC, created_at", [eleve.id]
   );
   const { rows: paiements } = await pool.query(
-    "SELECT montant FROM paiements_scolarite WHERE eleve_id = $1 AND statut = 'reussi'", [eleve.id]
+    "SELECT montant, frais_scolarite_id, frais_individuel_id FROM paiements_scolarite WHERE eleve_id = $1 AND statut = 'reussi'", [eleve.id]
   );
   // Le reliquat passe systématiquement en tête du détail — il doit se
   // régler en priorité, avant même les frais de la nouvelle inscription.
@@ -42,7 +42,16 @@ async function calculerSoldeEleve(eleve) {
     ...fraisRows.map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant_total) })),
     ...fraisIndivRows.filter((f) => !f.est_reliquat).map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant), individuel: true })),
   ];
-  const detail = [...detailReliquat, ...detailAutres];
+  // Pour chaque ligne, calcule ce qui a été payé SPÉCIFIQUEMENT contre elle
+  // (paiements affectés à ce frais précis) — un paiement générique, non
+  // affecté à une ligne, compte dans le total global mais pas dans le détail
+  // par ligne, pour rester honnête sur ce qui a réellement été réglé où.
+  function avecReste(ligne) {
+    const paiementsLigne = paiements.filter((p) => ligne.individuel ? p.frais_individuel_id === ligne.id : p.frais_scolarite_id === ligne.id);
+    const montantPayeLigne = paiementsLigne.reduce((s, p) => s + Number(p.montant), 0);
+    return { ...ligne, montant_paye: montantPayeLigne, reste: Math.max(0, ligne.montant - montantPayeLigne) };
+  }
+  const detail = [...detailReliquat, ...detailAutres].map(avecReste);
   const montantPaye = paiements.reduce((s, p) => s + Number(p.montant), 0);
   const montantTotal = detail.length > 0 ? detail.reduce((s, f) => s + Number(f.montant), 0) : null;
   const solde = montantTotal != null ? montantTotal - montantPaye : null;

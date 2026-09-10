@@ -526,8 +526,16 @@ function App({ session, onLogout }) {
   const [encaisserCycle, setEncaisserCycle] = useState("");
   const [encaisserNiveau, setEncaisserNiveau] = useState("");
   const [encaisserClasseId, setEncaisserClasseId] = useState("");
+  const [encaisserSolde, setEncaisserSolde] = useState(null);
+  const [encaisserFraisChoisi, setEncaisserFraisChoisi] = useState(null);
+  const [encaisserMatricule, setEncaisserMatricule] = useState("");
   const [encaisserEleveId, setEncaisserEleveId] = useState("");
   const [encaisserMontant, setEncaisserMontant] = useState("");
+
+  useEffect(() => {
+    if (!encaisserEleveId) { setEncaisserSolde(null); setEncaisserFraisChoisi(null); return; }
+    api(`/frais-scolarite/solde/${encaisserEleveId}`).then(setEncaisserSolde).catch(catchErr);
+  }, [encaisserEleveId, api]);
 
   useEffect(() => {
     if (!caisseSelectionneeId) { setSoldeCaisseActuelle(null); return; }
@@ -544,6 +552,7 @@ function App({ session, onLogout }) {
   const [soldeEleveId, setSoldeEleveId] = useState("");
   const [soldeData, setSoldeData] = useState(null);
   const [montantPaiement, setMontantPaiement] = useState("");
+  const [fraisChoisiPourPaiement, setFraisChoisiPourPaiement] = useState(null);
   const [nouveauFraisIndividuel, setNouveauFraisIndividuel] = useState({ libelle: "", montant: "", est_reliquat: false });
   const [soldeClasseId, setSoldeClasseId] = useState(null);
   const [soldeClasseData, setSoldeClasseData] = useState(null);
@@ -1873,7 +1882,6 @@ function App({ session, onLogout }) {
       setSoldeData(data);
     } catch (e) { catchErr(e); }
   }
-
   async function changerAffecteEleve(id, valeur) {
     try {
       const updated = await api(`/students/${id}`, { method: "PATCH", body: { affecte: valeur } });
@@ -1931,13 +1939,22 @@ function App({ session, onLogout }) {
   async function encaisserEleveRapide() {
     if (!encaisserEleveId || !encaisserMontant) return;
     try {
-      await api("/paiements-scolarite/manuel", { method: "POST", body: { eleve_id: encaisserEleveId, montant: encaisserMontant, caisse_id: caisseSelectionneeId } });
+      await api("/paiements-scolarite/manuel", {
+        method: "POST",
+        body: {
+          eleve_id: encaisserEleveId, montant: encaisserMontant, caisse_id: caisseSelectionneeId,
+          frais_scolarite_id: encaisserFraisChoisi && !encaisserFraisChoisi.individuel ? encaisserFraisChoisi.id : undefined,
+          frais_individuel_id: encaisserFraisChoisi?.individuel ? encaisserFraisChoisi.id : undefined,
+        },
+      });
       setShowEncaisserEleve(false);
       setEncaisserCycle("");
       setEncaisserNiveau("");
       setEncaisserClasseId("");
       setEncaisserEleveId("");
       setEncaisserMontant("");
+      setEncaisserFraisChoisi(null);
+      setEncaisserMatricule("");
       if (caisseSelectionneeId) { const data = await api(`/caisses/${caisseSelectionneeId}/solde`); setSoldeCaisseActuelle(data); }
       setGlobalInfo("Paiement encaissé avec succès.");
       setTimeout(() => setGlobalInfo(""), 4000);
@@ -1956,11 +1973,24 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  function choisirFraisPourPaiement(f) {
+    setFraisChoisiPourPaiement(f);
+    setMontantPaiement(f.reste > 0 ? String(f.reste) : "");
+  }
+
   async function enregistrerPaiementManuel() {
     if (!soldeEleveId || !montantPaiement) return;
     try {
-      await api("/paiements-scolarite/manuel", { method: "POST", body: { eleve_id: soldeEleveId, montant: montantPaiement } });
+      await api("/paiements-scolarite/manuel", {
+        method: "POST",
+        body: {
+          eleve_id: soldeEleveId, montant: montantPaiement,
+          frais_scolarite_id: fraisChoisiPourPaiement && !fraisChoisiPourPaiement.individuel ? fraisChoisiPourPaiement.id : undefined,
+          frais_individuel_id: fraisChoisiPourPaiement?.individuel ? fraisChoisiPourPaiement.id : undefined,
+        },
+      });
       setMontantPaiement("");
+      setFraisChoisiPourPaiement(null);
       chargerSoldeEleve();
     } catch (e) { catchErr(e); }
   }
@@ -3341,6 +3371,31 @@ function App({ session, onLogout }) {
               <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setShowEncaisserEleve(false)}>
                 <div style={{ background: COLORS.ardoiseDeep, borderRadius: 12, padding: 22, width: 420, maxWidth: "92vw", maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
                   <div style={{ fontFamily: "'Fraunces', serif", fontSize: 17, marginBottom: 14 }}>Encaisser un élève</div>
+                  <Field label="Matricule (scanner le code-barres d'un ancien reçu pour aller vite)">
+                    <input
+                      style={{ ...inputStyle, width: "100%" }}
+                      value={encaisserMatricule}
+                      onChange={(e) => setEncaisserMatricule(e.target.value)}
+                      placeholder="Scanner ou saisir le matricule"
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        const trouve = students.find((s) => s.matricule === encaisserMatricule.trim());
+                        if (trouve) {
+                          const classeTrouvee = classes.find((c) => c.id === trouve.classe_id);
+                          const NIVEAUX_2ND_CYCLE_SCAN = ["2nde", "1ère", "Terminale"];
+                          setEncaisserCycle(NIVEAUX_2ND_CYCLE_SCAN.includes(classeTrouvee?.niveau) ? "2nd" : "1er");
+                          setEncaisserNiveau(classeTrouvee?.niveau || "");
+                          setEncaisserClasseId(trouve.classe_id);
+                          setEncaisserEleveId(trouve.id);
+                          setEncaisserMatricule("");
+                        } else {
+                          setGlobalInfo("Aucun élève trouvé avec ce matricule.");
+                          setTimeout(() => setGlobalInfo(""), 4000);
+                        }
+                      }}
+                    />
+                  </Field>
+                  <div style={{ textAlign: "center", fontSize: 11, color: COLORS.craieDim, margin: "10px 0" }}>— ou repère l'élève par sa classe —</div>
                   {(() => {
                     const NIVEAUX_1ER_CYCLE = ["6ème", "5ème", "4ème", "3ème"];
                     const NIVEAUX_2ND_CYCLE = ["2nde", "1ère", "Terminale"];
@@ -3388,8 +3443,29 @@ function App({ session, onLogout }) {
                           </div>
                         )}
 
-                        {encaisserEleveId && (
-                          <Field label="Montant (F CFA)"><input type="number" autoFocus style={{ ...inputStyle, width: "100%" }} value={encaisserMontant} onChange={(e) => setEncaisserMontant(e.target.value)} /></Field>
+                        {encaisserEleveId && encaisserSolde && (
+                          <React.Fragment>
+                            {encaisserSolde.reliquat_impaye && (
+                              <div style={{ padding: "8px 10px", marginBottom: 10, borderRadius: 8, background: COLORS.alertBg, color: COLORS.alert, fontSize: 11.5, fontWeight: 600 }}>
+                                ⚠ Reliquat impayé — à régler en priorité.
+                              </div>
+                            )}
+                            {encaisserSolde.detail?.length > 0 && (
+                              <div style={{ marginBottom: 10 }}>
+                                {encaisserSolde.detail.map((f) => (
+                                  <div
+                                    key={f.id}
+                                    onClick={() => { setEncaisserFraisChoisi(f); setEncaisserMontant(f.reste > 0 ? String(f.reste) : ""); }}
+                                    style={{ display: "flex", justifyContent: "space-between", padding: "6px 8px", marginBottom: 2, borderRadius: 6, cursor: "pointer", background: encaisserFraisChoisi?.id === f.id ? "rgba(217,164,65,0.14)" : "transparent", fontSize: 12, color: f.est_reliquat ? COLORS.alert : COLORS.craieDim, fontWeight: f.est_reliquat ? 700 : 400 }}
+                                  >
+                                    <span>{f.est_reliquat ? "⚠ " : ""}{f.libelle}</span>
+                                    <span style={{ fontWeight: 700, color: f.reste > 0 ? COLORS.alert : COLORS.success }}>{f.reste > 0 ? `${f.reste.toLocaleString("fr-FR")} F` : "Réglé"}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <Field label="Montant (F CFA)"><input type="number" autoFocus style={{ ...inputStyle, width: "100%" }} value={encaisserMontant} onChange={(e) => setEncaisserMontant(e.target.value)} /></Field>
+                          </React.Fragment>
                         )}
                       </React.Fragment>
                     );
@@ -3487,7 +3563,7 @@ function App({ session, onLogout }) {
 
                 <Card title="Solde d'un élève" style={{ marginBottom: 20 }}>
                   <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
-                    <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={soldeEleveId} onChange={(e) => { setSoldeEleveId(e.target.value); setSoldeData(null); }}>
+                    <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={soldeEleveId} onChange={(e) => { setSoldeEleveId(e.target.value); setSoldeData(null); setFraisChoisiPourPaiement(null); }}>
                       <option value="">— Choisir un élève —</option>
                       {students.map((s) => <option key={s.id} value={s.id}>{nomCompletEleve(s)} ({s.classe_nom})</option>)}
                     </select>
@@ -3506,9 +3582,19 @@ function App({ session, onLogout }) {
                           )}
                           {soldeData.detail?.length > 0 && (
                             <div style={{ marginBottom: 14 }}>
+                              <div style={{ fontSize: 11, color: COLORS.craieDim, marginBottom: 6 }}>Clique sur un frais pour l'encaisser en priorité :</div>
                               {soldeData.detail.map((f) => (
-                                <div key={f.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, color: f.est_reliquat ? COLORS.alert : COLORS.craieDim, fontWeight: f.est_reliquat ? 700 : 400 }}>
-                                  <span>{f.est_reliquat ? "⚠ " : ""}{f.libelle}</span><span>{f.montant.toLocaleString("fr-FR")} F</span>
+                                <div
+                                  key={f.id}
+                                  onClick={() => choisirFraisPourPaiement(f)}
+                                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 8px", marginBottom: 2, borderRadius: 6, cursor: "pointer", background: fraisChoisiPourPaiement?.id === f.id ? "rgba(217,164,65,0.14)" : "transparent", fontSize: 12, color: f.est_reliquat ? COLORS.alert : COLORS.craieDim, fontWeight: f.est_reliquat ? 700 : 400 }}
+                                >
+                                  <span>{f.est_reliquat ? "⚠ " : ""}{f.libelle}</span>
+                                  <span style={{ textAlign: "right" }}>
+                                    <span style={{ color: COLORS.craieDim }}>{f.montant_paye.toLocaleString("fr-FR")} / {f.montant.toLocaleString("fr-FR")} F</span>
+                                    {" · "}
+                                    <span style={{ fontWeight: 700, color: f.reste > 0 ? COLORS.alert : COLORS.success }}>{f.reste > 0 ? `${f.reste.toLocaleString("fr-FR")} F restant` : "Réglé"}</span>
+                                  </span>
                                 </div>
                               ))}
                             </div>
@@ -3522,11 +3608,19 @@ function App({ session, onLogout }) {
                             </span>
                           </div>
                           {(role === "direction" || role === "super_admin") && (
-                            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", paddingTop: 14, borderTop: `1px solid ${COLORS.line}` }}>
-                              <Field label="Montant (F CFA)"><input type="number" style={{ ...inputStyle, width: 130 }} value={montantPaiement} onChange={(e) => setMontantPaiement(e.target.value)} /></Field>
-                              <Button small variant="ghost" onClick={enregistrerPaiementManuel}>Encaisser en espèces</Button>
-                              <Button small icon={P.check} onClick={genererLienPaiementScolarite}>Générer un lien de paiement</Button>
-                              <Button small variant="ghost" icon={P.scan} onClick={() => imprimerRecuScolarite(soldeEleveId, soldeData)}>Imprimer le reçu</Button>
+                            <div style={{ paddingTop: 14, borderTop: `1px solid ${COLORS.line}` }}>
+                              {fraisChoisiPourPaiement && (
+                                <div style={{ fontSize: 11.5, color: COLORS.marker, marginBottom: 8 }}>
+                                  Paiement affecté à : <strong>{fraisChoisiPourPaiement.libelle}</strong>{" "}
+                                  <button onClick={() => { setFraisChoisiPourPaiement(null); setMontantPaiement(""); }} style={{ background: "transparent", border: "none", color: COLORS.craieDim, cursor: "pointer", textDecoration: "underline", fontSize: 11 }}>(retirer)</button>
+                                </div>
+                              )}
+                              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                                <Field label="Montant (F CFA)"><input type="number" style={{ ...inputStyle, width: 130 }} value={montantPaiement} onChange={(e) => setMontantPaiement(e.target.value)} /></Field>
+                                <Button small variant="ghost" onClick={enregistrerPaiementManuel}>Encaisser en espèces</Button>
+                                <Button small icon={P.check} onClick={genererLienPaiementScolarite}>Générer un lien de paiement</Button>
+                                <Button small variant="ghost" icon={P.scan} onClick={() => imprimerRecuScolarite(soldeEleveId, soldeData)}>Imprimer le reçu</Button>
+                              </div>
                             </div>
                           )}
                           {(role === "direction" || role === "super_admin") && (
