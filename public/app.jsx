@@ -520,9 +520,12 @@ function App({ session, onLogout }) {
   const [caisseSelectionneeId, setCaisseSelectionneeId] = useState(null);
   const [soldeCaisseActuelle, setSoldeCaisseActuelle] = useState(null);
   const [vueEnsembleCaisses, setVueEnsembleCaisses] = useState(null);
-  const [nouvelleCaisse, setNouvelleCaisse] = useState({ nom: "", est_principale: false });
+  const [nouvelleCaisse, setNouvelleCaisse] = useState({ nom: "", est_principale: false, responsable_id: "" });
   const [transfertCaisse, setTransfertCaisse] = useState({ caisse_destination_id: "", montant: "" });
   const [showEncaisserEleve, setShowEncaisserEleve] = useState(false);
+  const [encaisserCycle, setEncaisserCycle] = useState("");
+  const [encaisserNiveau, setEncaisserNiveau] = useState("");
+  const [encaisserClasseId, setEncaisserClasseId] = useState("");
   const [encaisserEleveId, setEncaisserEleveId] = useState("");
   const [encaisserMontant, setEncaisserMontant] = useState("");
 
@@ -655,9 +658,13 @@ function App({ session, onLogout }) {
       }
       if (view === "caisse") {
         api("/frais-scolarite").then(siEcoleInchangee(setFraisScolarite)).catch(catchErr);
+        api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
         api("/caisses").then(siEcoleInchangee((liste) => {
           setCaissesListe(liste);
-          if (!caisseSelectionneeId && liste.length > 0) setCaisseSelectionneeId(liste.find((c) => c.est_principale)?.id || liste[0].id);
+          if (!caisseSelectionneeId && liste.length > 0) {
+            const maCaisse = liste.find((c) => c.responsable_id === session.user.id);
+            setCaisseSelectionneeId(maCaisse?.id || liste.find((c) => c.est_principale)?.id || liste[0].id);
+          }
         })).catch(catchErr);
       }
       if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
@@ -1879,7 +1886,7 @@ function App({ session, onLogout }) {
     try {
       const cree = await api("/caisses", { method: "POST", body: nouvelleCaisse });
       setCaissesListe((liste) => [...liste.map((c) => nouvelleCaisse.est_principale ? { ...c, est_principale: false } : c), cree]);
-      setNouvelleCaisse({ nom: "", est_principale: false });
+      setNouvelleCaisse({ nom: "", est_principale: false, responsable_id: "" });
     } catch (e) { catchErr(e); }
   }
 
@@ -1887,6 +1894,13 @@ function App({ session, onLogout }) {
     try {
       await api(`/caisses/${id}/principale`, { method: "PATCH" });
       setCaissesListe((liste) => liste.map((c) => ({ ...c, est_principale: c.id === id })));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changerResponsableCaisse(id, responsableId) {
+    try {
+      const maj = await api(`/caisses/${id}/responsable`, { method: "PATCH", body: { responsable_id: responsableId || null } });
+      setCaissesListe((liste) => liste.map((c) => c.id === id ? { ...c, responsable_id: maj.responsable_id, responsable_nom: maj.responsable_nom } : c));
     } catch (e) { catchErr(e); }
   }
 
@@ -1919,6 +1933,9 @@ function App({ session, onLogout }) {
     try {
       await api("/paiements-scolarite/manuel", { method: "POST", body: { eleve_id: encaisserEleveId, montant: encaisserMontant, caisse_id: caisseSelectionneeId } });
       setShowEncaisserEleve(false);
+      setEncaisserCycle("");
+      setEncaisserNiveau("");
+      setEncaisserClasseId("");
       setEncaisserEleveId("");
       setEncaisserMontant("");
       if (caisseSelectionneeId) { const data = await api(`/caisses/${caisseSelectionneeId}/solde`); setSoldeCaisseActuelle(data); }
@@ -3290,6 +3307,10 @@ function App({ session, onLogout }) {
                   {caissesListe.map((c) => (
                     <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "7px 18px", fontSize: 12.5 }}>
                       <span style={{ flex: 1 }}>{c.nom}</span>
+                      <select style={{ ...inputStyle, fontSize: 11.5, padding: "4px 8px", width: 150 }} value={c.responsable_id || ""} onChange={(e) => changerResponsableCaisse(c.id, e.target.value)}>
+                        <option value="">— Sans responsable —</option>
+                        {users.filter((u) => ["caissier", "direction", "surveillant"].includes(u.role)).map((u) => <option key={u.id} value={u.id}>{u.nom}</option>)}
+                      </select>
                       {c.est_principale ? (
                         <span style={{ fontSize: 10.5, fontWeight: 700, color: COLORS.marker, background: "rgba(217,164,65,0.14)", borderRadius: 999, padding: "2px 8px" }}>Principale</span>
                       ) : (
@@ -3300,6 +3321,12 @@ function App({ session, onLogout }) {
                   ))}
                   <div style={{ padding: 14, display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", borderTop: `1px solid ${COLORS.line}` }}>
                     <Field label="Nouvelle caisse"><input style={inputStyle} value={nouvelleCaisse.nom} onChange={(e) => setNouvelleCaisse((v) => ({ ...v, nom: e.target.value }))} placeholder="ex. Caisse Secrétariat" /></Field>
+                    <Field label="Responsable">
+                      <select style={inputStyle} value={nouvelleCaisse.responsable_id} onChange={(e) => setNouvelleCaisse((v) => ({ ...v, responsable_id: e.target.value }))}>
+                        <option value="">— Non désigné —</option>
+                        {users.filter((u) => ["caissier", "direction", "surveillant"].includes(u.role)).map((u) => <option key={u.id} value={u.id}>{u.nom}</option>)}
+                      </select>
+                    </Field>
                     <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: COLORS.craieDim, cursor: "pointer", paddingBottom: 8 }}>
                       <input type="checkbox" checked={nouvelleCaisse.est_principale} onChange={(e) => setNouvelleCaisse((v) => ({ ...v, est_principale: e.target.checked }))} />
                       Désigner comme caisse principale
@@ -3312,17 +3339,63 @@ function App({ session, onLogout }) {
 
             {showEncaisserEleve && (
               <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setShowEncaisserEleve(false)}>
-                <div style={{ background: COLORS.ardoiseDeep, borderRadius: 12, padding: 22, width: 340, maxWidth: "90vw" }} onClick={(e) => e.stopPropagation()}>
+                <div style={{ background: COLORS.ardoiseDeep, borderRadius: 12, padding: 22, width: 420, maxWidth: "92vw", maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
                   <div style={{ fontFamily: "'Fraunces', serif", fontSize: 17, marginBottom: 14 }}>Encaisser un élève</div>
-                  <Field label="Élève">
-                    <select style={{ ...inputStyle, width: "100%" }} value={encaisserEleveId} onChange={(e) => setEncaisserEleveId(e.target.value)}>
-                      <option value="">— Choisir un élève —</option>
-                      {students.map((s) => <option key={s.id} value={s.id}>{nomCompletEleve(s)} ({s.classe_nom})</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Montant (F CFA)"><input type="number" style={{ ...inputStyle, width: "100%" }} value={encaisserMontant} onChange={(e) => setEncaisserMontant(e.target.value)} /></Field>
+                  {(() => {
+                    const NIVEAUX_1ER_CYCLE = ["6ème", "5ème", "4ème", "3ème"];
+                    const NIVEAUX_2ND_CYCLE = ["2nde", "1ère", "Terminale"];
+                    const niveauxCycle = encaisserCycle === "1er" ? NIVEAUX_1ER_CYCLE : encaisserCycle === "2nd" ? NIVEAUX_2ND_CYCLE : [];
+                    const classesFiltrees = classes.filter((c) => niveauxCycle.includes(c.niveau));
+                    const elevesClasse = students.filter((s) => s.classe_id === encaisserClasseId);
+                    return (
+                      <React.Fragment>
+                        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                          {[{ id: "1er", label: "1er cycle" }, { id: "2nd", label: "2nd cycle" }].map((c) => (
+                            <button key={c.id} onClick={() => { setEncaisserCycle(c.id); setEncaisserNiveau(""); setEncaisserClasseId(""); setEncaisserEleveId(""); }} style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: `1px solid ${COLORS.line}`, background: encaisserCycle === c.id ? COLORS.marker : "transparent", color: encaisserCycle === c.id ? COLORS.ardoiseDeep : COLORS.craie, fontWeight: 600, fontSize: 12.5, cursor: "pointer" }}>
+                              {c.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {encaisserCycle && (
+                          <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+                            {niveauxCycle.filter((n) => classes.some((c) => c.niveau === n)).map((n) => (
+                              <button key={n} onClick={() => { setEncaisserNiveau(n); setEncaisserClasseId(""); setEncaisserEleveId(""); }} style={{ padding: "6px 12px", borderRadius: 999, border: `1px solid ${COLORS.line}`, background: encaisserNiveau === n ? "rgba(217,164,65,0.16)" : "transparent", color: encaisserNiveau === n ? COLORS.marker : COLORS.craieDim, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
+                                {n}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {encaisserNiveau && (
+                          <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+                            {classesFiltrees.filter((c) => c.niveau === encaisserNiveau).map((c) => (
+                              <button key={c.id} onClick={() => { setEncaisserClasseId(c.id); setEncaisserEleveId(""); }} style={{ padding: "6px 12px", borderRadius: 999, border: `1px solid ${COLORS.line}`, background: encaisserClasseId === c.id ? "rgba(217,164,65,0.16)" : "transparent", color: encaisserClasseId === c.id ? COLORS.marker : COLORS.craieDim, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
+                                {c.nom}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {encaisserClasseId && (
+                          <div style={{ maxHeight: 180, overflowY: "auto", border: `1px solid ${COLORS.line}`, borderRadius: 8, marginBottom: 14 }}>
+                            {elevesClasse.length === 0 && <div style={{ padding: 12, fontSize: 12, color: COLORS.craieDim }}>Aucun élève dans cette classe.</div>}
+                            {elevesClasse.map((s) => (
+                              <div key={s.id} onClick={() => setEncaisserEleveId(s.id)} style={{ padding: "8px 12px", fontSize: 13, cursor: "pointer", background: encaisserEleveId === s.id ? "rgba(217,164,65,0.14)" : "transparent", color: encaisserEleveId === s.id ? COLORS.marker : COLORS.craie, fontWeight: encaisserEleveId === s.id ? 600 : 400 }}>
+                                {nomCompletEleve(s)}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {encaisserEleveId && (
+                          <Field label="Montant (F CFA)"><input type="number" autoFocus style={{ ...inputStyle, width: "100%" }} value={encaisserMontant} onChange={(e) => setEncaisserMontant(e.target.value)} /></Field>
+                        )}
+                      </React.Fragment>
+                    );
+                  })()}
                   <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                    <Button small onClick={encaisserEleveRapide} style={{ flex: 1 }}>Encaisser en espèces</Button>
+                    <Button small onClick={encaisserEleveRapide} style={{ flex: 1 }} disabled={!encaisserEleveId || !encaisserMontant}>Encaisser en espèces</Button>
                     <Button small variant="ghost" onClick={() => setShowEncaisserEleve(false)}>Annuler</Button>
                   </div>
                 </div>

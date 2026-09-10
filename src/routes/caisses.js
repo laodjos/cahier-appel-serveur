@@ -20,13 +20,18 @@ function solderMouvements(liste) {
 router.get("/", async (req, res) => {
   const ecoleId = ecoleEffective(req);
   if (!ecoleId) return res.status(400).json({ error: "Choisis d'abord une école." });
-  const { rows } = await pool.query("SELECT * FROM caisses WHERE ecole_id = $1 ORDER BY est_principale DESC, nom", [ecoleId]);
+  const { rows } = await pool.query(
+    `SELECT c.*, u.nom AS responsable_nom FROM caisses c
+     LEFT JOIN users u ON u.id = c.responsable_id
+     WHERE c.ecole_id = $1 ORDER BY c.est_principale DESC, c.nom`,
+    [ecoleId]
+  );
   res.json(rows);
 });
 
-// POST /api/caisses  { nom, est_principale? }
+// POST /api/caisses  { nom, est_principale?, responsable_id? }
 router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
-  const { nom, est_principale } = req.body;
+  const { nom, est_principale, responsable_id } = req.body;
   if (!nom || !nom.trim()) return res.status(400).json({ error: "Le nom de la caisse est requis." });
   const ecoleId = ecoleEffective(req);
   if (!ecoleId) return res.status(400).json({ error: "Choisis d'abord une école." });
@@ -37,10 +42,22 @@ router.post("/", requireRole("direction", "super_admin"), async (req, res) => {
     await pool.query("UPDATE caisses SET est_principale = false WHERE ecole_id = $1", [ecoleId]);
   }
   const { rows } = await pool.query(
-    "INSERT INTO caisses (ecole_id, nom, est_principale) VALUES ($1, $2, $3) RETURNING *",
-    [ecoleId, nom.trim(), !!est_principale]
+    "INSERT INTO caisses (ecole_id, nom, est_principale, responsable_id) VALUES ($1, $2, $3, $4) RETURNING *",
+    [ecoleId, nom.trim(), !!est_principale, responsable_id || null]
   );
   res.status(201).json(rows[0]);
+});
+
+// PATCH /api/caisses/:id/responsable  { responsable_id }
+router.patch("/:id/responsable", requireRole("direction", "super_admin"), async (req, res) => {
+  const { responsable_id } = req.body;
+  const { rows } = await pool.query(
+    `UPDATE caisses SET responsable_id = $1 WHERE id = $2
+     RETURNING *, (SELECT nom FROM users WHERE id = $1) AS responsable_nom`,
+    [responsable_id || null, req.params.id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Caisse introuvable." });
+  res.json(rows[0]);
 });
 
 // PATCH /api/caisses/:id/principale — désigne cette caisse comme la principale

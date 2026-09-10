@@ -667,3 +667,7 @@ CREATE TABLE IF NOT EXISTS frais_individuels (
 -- --------------------------------------------------------------------------
 ALTER TABLE users ADD COLUMN IF NOT EXISTS genre TEXT CHECK (genre IN ('M', 'F') OR genre IS NULL);
 ALTER TABLE parents ADD COLUMN IF NOT EXISTS genre TEXT CHECK (genre IN ('M', 'F') OR genre IS NULL);
+-- Rattache chaque caisse à un responsable (généralement un caissier) — permet
+-- de savoir qui opère quelle caisse, et de la sélectionner automatiquement
+-- quand ce responsable se connecte, plutôt que de la choisir à chaque fois.
+ALTER TABLE caisses ADD COLUMN IF NOT EXISTS responsable_id UUID REFERENCES users(id);
