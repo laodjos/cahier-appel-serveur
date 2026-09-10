@@ -46,7 +46,7 @@ router.get("/", async (req, res) => {
   const params = [];
   const filtreEcole = clauseEcole(req, params, "u.ecole_id");
   const { rows } = await pool.query(
-    `SELECT u.id, u.nom, u.email, u.role, u.matieres, u.statut_emploi, u.taux_horaire, u.salaire_base, u.heures_mensuelles_reference, u.parts_fiscales, u.cycle_enseignement, u.statut_matrimonial, u.nombre_enfants, u.derniere_activite, u.ecole_id, u.created_at, ec.nom AS ecole_nom,
+    `SELECT u.id, u.nom, u.email, u.role, u.matieres, u.statut_emploi, u.taux_horaire, u.salaire_base, u.heures_mensuelles_reference, u.parts_fiscales, u.cycle_enseignement, u.statut_matrimonial, u.nombre_enfants, u.genre, u.derniere_activite, u.ecole_id, u.created_at, ec.nom AS ecole_nom,
             COALESCE(
               json_agg(
                 json_build_object('id', c.id, 'nom', c.nom, 'niveau', c.niveau)
@@ -66,7 +66,7 @@ router.get("/", async (req, res) => {
 
 // POST /api/users  { nom, email, mot_de_passe, role, matieres, ecole_id? }
 router.post("/", async (req, res) => {
-  const { nom, email, mot_de_passe, role, matieres, statut_emploi, statut_matrimonial, nombre_enfants } = req.body;
+  const { nom, email, mot_de_passe, role, matieres, statut_emploi, statut_matrimonial, nombre_enfants, genre } = req.body;
   const { calculerPartsFiscales } = require("../services/payrollService");
   const rolesValides = ["super_admin", "direction", "enseignant", "surveillant", "caissier"];
 
@@ -88,6 +88,9 @@ router.post("/", async (req, res) => {
   if (statut_matrimonial && !["celibataire", "marie", "veuf", "divorce"].includes(statut_matrimonial)) {
     return res.status(400).json({ error: "Statut matrimonial invalide." });
   }
+  if (genre && !["M", "F"].includes(genre)) {
+    return res.status(400).json({ error: "Genre invalide." });
+  }
 
   const ecoleCible = ecoleEffective(req);
   if (role !== "super_admin" && !ecoleCible) {
@@ -102,9 +105,9 @@ router.post("/", async (req, res) => {
   try {
     const hash = await bcrypt.hash(mot_de_passe, 10);
     const { rows } = await pool.query(
-      `INSERT INTO users (nom, email, mot_de_passe_hash, role, matieres, ecole_id, statut_emploi, statut_matrimonial, nombre_enfants, parts_fiscales)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10, 1)) RETURNING id, nom, email, role, matieres, ecole_id, statut_emploi, statut_matrimonial, nombre_enfants, parts_fiscales, created_at`,
-      [nom.trim(), email.trim().toLowerCase(), hash, role, matieres?.trim() || null, ecoleCible, statut_emploi || null, statut_matrimonial || null, nombre_enfants || 0, partsFiscales]
+      `INSERT INTO users (nom, email, mot_de_passe_hash, role, matieres, ecole_id, statut_emploi, statut_matrimonial, nombre_enfants, parts_fiscales, genre)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10, 1),$11) RETURNING id, nom, email, role, matieres, ecole_id, statut_emploi, statut_matrimonial, nombre_enfants, parts_fiscales, genre, created_at`,
+      [nom.trim(), email.trim().toLowerCase(), hash, role, matieres?.trim() || null, ecoleCible, statut_emploi || null, statut_matrimonial || null, nombre_enfants || 0, partsFiscales, genre || null]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -122,6 +125,20 @@ router.patch("/:id/nom", async (req, res) => {
   const filtreEcole = clauseEcole(req, params, "ecole_id");
   const { rows } = await pool.query(
     `UPDATE users SET nom = $1 WHERE id = $2 AND ${filtreEcole} RETURNING id, nom, email, role, matieres, statut_emploi, ecole_id, created_at`,
+    params
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Compte introuvable (ou hors de ton école)." });
+  res.json(rows[0]);
+});
+
+// PATCH /api/users/:id/genre  { genre }
+router.patch("/:id/genre", async (req, res) => {
+  const { genre } = req.body;
+  if (genre && !["M", "F"].includes(genre)) return res.status(400).json({ error: "Genre invalide." });
+  const params = [genre || null, req.params.id];
+  const filtreEcole = clauseEcole(req, params, "ecole_id");
+  const { rows } = await pool.query(
+    `UPDATE users SET genre = $1 WHERE id = $2 AND ${filtreEcole} RETURNING id, nom, email, role, genre, ecole_id, created_at`,
     params
   );
   if (!rows[0]) return res.status(404).json({ error: "Compte introuvable (ou hors de ton école)." });

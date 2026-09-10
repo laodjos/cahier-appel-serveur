@@ -467,7 +467,7 @@ function App({ session, onLogout }) {
 
   const [users, setUsers] = useState([]);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [newUser, setNewUser] = useState({ nom: "", email: "", mot_de_passe: "", role: "enseignant", ecole_id: null, statut_emploi: "" });
+  const [newUser, setNewUser] = useState({ nom: "", email: "", mot_de_passe: "", role: "enseignant", ecole_id: null, statut_emploi: "", genre: "" });
   const [userFormError, setUserFormError] = useState("");
 
   // Dossier élève (fiche détaillée)
@@ -1269,7 +1269,7 @@ function App({ session, onLogout }) {
     const edit = parentEdits[studentId];
     if (!edit || !edit.parentTel) return;
     try {
-      await api(`/students/${studentId}/parents`, { method: "POST", body: { nom: edit.parentNom || "Parent", telephone: edit.parentTel } });
+      await api(`/students/${studentId}/parents`, { method: "POST", body: { nom: edit.parentNom || "Parent", telephone: edit.parentTel, genre: edit.parentGenre || undefined } });
       setParentEdits((p) => { const cp = { ...p }; delete cp[studentId]; return cp; });
     } catch (e) { catchErr(e); }
   }
@@ -1316,6 +1316,13 @@ function App({ session, onLogout }) {
   async function changeStatutEmploi(id, statut_emploi) {
     try {
       const updated = await api(`/users/${id}/statut-emploi`, { method: "PATCH", body: { statut_emploi } });
+      setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function changerGenreUser(id, genre) {
+    try {
+      const updated = await api(`/users/${id}/genre`, { method: "PATCH", body: { genre } });
       setUsers((u) => u.map((x) => x.id === id ? { ...x, ...updated } : x));
     } catch (e) { catchErr(e); }
   }
@@ -2769,8 +2776,8 @@ function App({ session, onLogout }) {
           <div>
             <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Rattachement des parents</h1>
             <Card title="Rattachement élève ↔ parent" style={{ marginBottom: 20 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1.4fr 1.4fr auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
-                <span>Élève</span><span>Nom du parent</span><span>Téléphone</span><span></span>
+              <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1.4fr 1.4fr 0.9fr auto", padding: "10px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.line}` }}>
+                <span>Élève</span><span>Nom du parent</span><span>Téléphone</span><span>Genre</span><span></span>
               </div>
               {students.map((s, i, arr) => {
                 const edit = parentEdits[s.id] || {};
@@ -2778,10 +2785,15 @@ function App({ session, onLogout }) {
                 const parentNomAffiche = edit.parentNom ?? s.parent_nom ?? "";
                 const parentTelAffiche = edit.parentTel ?? s.parent_telephone ?? "";
                 return (
-                  <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1.6fr 1.4fr 1.4fr auto", alignItems: "center", padding: "10px 18px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none", gap: 8 }}>
+                  <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1.6fr 1.4fr 1.4fr 0.9fr auto", alignItems: "center", padding: "10px 18px", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.line}` : "none", gap: 8 }}>
                     <div><div style={{ fontSize: 13, fontWeight: 500 }}>{nomCompletEleve(s)}</div><div style={{ fontSize: 11, color: COLORS.craieDim }}>{s.classe_nom}</div></div>
                     <input style={{ ...inputStyle, width: "100%" }} value={parentNomAffiche} onChange={(e) => updateParentEdit(s.id, "parentNom", e.target.value)} placeholder="Nom du parent/tuteur" />
                     <input style={{ ...inputStyle, width: "100%" }} value={parentTelAffiche} onChange={(e) => updateParentEdit(s.id, "parentTel", e.target.value)} placeholder="+225 07 00 00 00 00" />
+                    <select style={{ ...inputStyle, width: "100%" }} value={edit.parentGenre ?? ""} onChange={(e) => updateParentEdit(s.id, "parentGenre", e.target.value)}>
+                      <option value="">—</option>
+                      <option value="F">Féminin</option>
+                      <option value="M">Masculin</option>
+                    </select>
                     <Button small variant="ghost" icon={P.save} onClick={() => saveParentInfo(s.id)}>Enregistrer</Button>
                   </div>
                 );
@@ -3876,6 +3888,13 @@ function App({ session, onLogout }) {
                 <div style={{ display: "flex", gap: 12 }}>
                   <Field label="Nom complet"><input style={inputStyle} value={newUser.nom} onChange={(e) => setNewUser((v) => ({ ...v, nom: e.target.value }))} placeholder="ex. Mme Kader" autoFocus /></Field>
                   <Field label="Email"><input style={inputStyle} value={newUser.email} onChange={(e) => setNewUser((v) => ({ ...v, email: e.target.value }))} placeholder="ex. m.kader@ecole.example" /></Field>
+                  <Field label="Genre">
+                    <select style={inputStyle} value={newUser.genre} onChange={(e) => setNewUser((v) => ({ ...v, genre: e.target.value }))}>
+                      <option value="">— Non renseigné —</option>
+                      <option value="F">Féminin</option>
+                      <option value="M">Masculin</option>
+                    </select>
+                  </Field>
                 </div>
                 <div style={{ display: "flex", gap: 12 }}>
                   <Field label="Mot de passe (6 caractères min.)"><input type="password" style={inputStyle} value={newUser.mot_de_passe} onChange={(e) => setNewUser((v) => ({ ...v, mot_de_passe: e.target.value }))} /></Field>
@@ -4497,6 +4516,13 @@ function App({ session, onLogout }) {
                 </div>
                 <div style={{ display: "flex", gap: 12 }}>
                   <Field label="Mot de passe (6 caractères min.)"><input type="password" style={inputStyle} value={newUser.mot_de_passe} onChange={(e) => setNewUser((v) => ({ ...v, mot_de_passe: e.target.value }))} /></Field>
+                  <Field label="Genre">
+                    <select style={inputStyle} value={newUser.genre} onChange={(e) => setNewUser((v) => ({ ...v, genre: e.target.value }))}>
+                      <option value="">— Non renseigné —</option>
+                      <option value="F">Féminin</option>
+                      <option value="M">Masculin</option>
+                    </select>
+                  </Field>
                 </div>
                 <Field label="Matières enseignées">
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 10, background: COLORS.ardoise, border: `1px solid ${COLORS.line}`, borderRadius: 8, padding: "10px 12px" }}>
@@ -4670,6 +4696,11 @@ function App({ session, onLogout }) {
                     <option value="">Statut non renseigné</option>
                     <option value="permanent">Permanent</option>
                     <option value="vacataire">Vacataire</option>
+                  </select>
+                  <select style={{ ...inputStyle, fontSize: 12.5 }} value={u.genre || ""} onChange={(e) => changerGenreUser(u.id, e.target.value || null)}>
+                    <option value="">Genre non renseigné</option>
+                    <option value="F">Féminin</option>
+                    <option value="M">Masculin</option>
                   </select>
                 </div>
 

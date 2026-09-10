@@ -660,3 +660,10 @@ CREATE TABLE IF NOT EXISTS frais_individuels (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- --------------------------------------------------------------------------
+-- Genre — pour tout le monde qui participe à l'établissement, pas seulement
+-- les élèves (déjà en place plus haut) : le personnel (Direction, enseignants,
+-- surveillants, caissiers) et les parents/tuteurs.
+-- --------------------------------------------------------------------------
+ALTER TABLE users ADD COLUMN IF NOT EXISTS genre TEXT CHECK (genre IN ('M', 'F') OR genre IS NULL);
+ALTER TABLE parents ADD COLUMN IF NOT EXISTS genre TEXT CHECK (genre IN ('M', 'F') OR genre IS NULL);

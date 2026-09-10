@@ -225,10 +225,10 @@ router.get("/:id/barcode", async (req, res) => {
   res.json({ image });
 });
 
-// POST /api/students/:id/parents  { nom, telephone, email }
+// POST /api/students/:id/parents  { nom, telephone, email, genre }
 // Rattache (ou crée) un parent à un élève — alimente la section "Rattachement parents".
 router.post("/:id/parents", requireRole("direction", "surveillant"), async (req, res) => {
-  const { nom, telephone, email, lien } = req.body;
+  const { nom, telephone, email, lien, genre } = req.body;
   if (!telephone || !telephone.trim()) {
     return res.status(400).json({ error: "Le numéro de téléphone du parent est requis pour l'envoi des rapports." });
   }
@@ -241,8 +241,8 @@ router.post("/:id/parents", requireRole("direction", "surveillant"), async (req,
     let parent = rows[0];
     if (!parent) {
       const insert = await client.query(
-        "INSERT INTO parents (nom, telephone, email) VALUES ($1, $2, $3) RETURNING *",
-        [nom || "Parent", telephone.trim(), email || null]
+        "INSERT INTO parents (nom, telephone, email, genre) VALUES ($1, $2, $3, $4) RETURNING *",
+        [nom || "Parent", telephone.trim(), email || null, genre || null]
       );
       parent = insert.rows[0];
     }
