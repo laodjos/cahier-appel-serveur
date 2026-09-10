@@ -93,7 +93,9 @@ router.get("/:id/solde", async (req, res) => {
       [req.params.id]
     );
     const { rows: paiementsAujourdhui } = await pool.query(
-      "SELECT * FROM paiements_scolarite WHERE caisse_id = $1 AND statut = 'reussi' AND confirme_at::date = CURRENT_DATE ORDER BY confirme_at",
+      `SELECT ps.*, s.nom AS eleve_nom, s.prenoms AS eleve_prenoms FROM paiements_scolarite ps
+       LEFT JOIN students s ON s.id = ps.eleve_id
+       WHERE ps.caisse_id = $1 AND ps.statut = 'reussi' AND ps.confirme_at::date = CURRENT_DATE ORDER BY ps.confirme_at`,
       [req.params.id]
     );
 

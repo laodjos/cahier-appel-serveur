@@ -3312,6 +3312,24 @@ function App({ session, onLogout }) {
                 </div>
               )}
 
+              {caisseSelectionneeId && soldeCaisseActuelle && (soldeCaisseActuelle.paiements_du_jour?.length > 0 || soldeCaisseActuelle.mouvements_du_jour?.length > 0) && (
+                <div style={{ borderBottom: `1px solid ${COLORS.line}` }}>
+                  <div style={{ padding: "10px 18px 4px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase" }}>Détail du jour, sur cette caisse</div>
+                  {soldeCaisseActuelle.paiements_du_jour?.map((p) => (
+                    <div key={`p-${p.id}`} style={{ display: "flex", justifyContent: "space-between", padding: "6px 18px", fontSize: 12.5 }}>
+                      <span>Scolarité — {[p.eleve_nom, p.eleve_prenoms].filter(Boolean).join(" ") || "Élève"}</span>
+                      <span style={{ fontWeight: 600, color: COLORS.success }}>+{Number(p.montant).toLocaleString("fr-FR")} F</span>
+                    </div>
+                  ))}
+                  {soldeCaisseActuelle.mouvements_du_jour?.map((m) => (
+                    <div key={`m-${m.id}`} style={{ display: "flex", justifyContent: "space-between", padding: "6px 18px", fontSize: 12.5 }}>
+                      <span>{m.libelle}</span>
+                      <span style={{ fontWeight: 600, color: m.type === "entree" ? COLORS.success : COLORS.alert }}>{m.type === "entree" ? "+" : "-"}{Number(m.montant).toLocaleString("fr-FR")} F</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {vueEnsembleCaisses && (
                 <div style={{ padding: "14px 18px", borderBottom: `1px solid ${COLORS.line}` }}>
                   <div style={{ fontSize: 11.5, fontWeight: 600, color: COLORS.marker, marginBottom: 8 }}>Cette caisse est la Principale — solde de chaque caisse de l'école :</div>
