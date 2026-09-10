@@ -3,6 +3,8 @@ const crypto = require("crypto");
 const { pool } = require("../config/db");
 const { authRequired, requireRole, requireErpActif } = require("../middleware/auth");
 const { creerLienPaiement, verifierTransaction } = require("../services/paymentService");
+const { programmerNotificationPaiement } = require("../services/notificationService");
+const { calculerSoldeEleve } = require("./fraisScolarite");
 
 const router = express.Router();
 
@@ -56,6 +58,17 @@ router.post("/manuel", authRequired, requireErpActif, requireRole("direction", "
      VALUES ($1, $2, 'especes', 'reussi', $3, $4, $5, $6, now()) RETURNING *`,
     [eleve_id, montant, req.user.sub, caisse_id || null, frais_scolarite_id || null, frais_individuel_id || null]
   );
+  try {
+    const { rows: eleveRows } = await pool.query(
+      "SELECT s.*, c.niveau, c.ecole_id FROM students s JOIN classes c ON c.id = s.classe_id WHERE s.id = $1", [eleve_id]
+    );
+    if (eleveRows[0]) {
+      const solde = await calculerSoldeEleve(eleveRows[0]);
+      await programmerNotificationPaiement(eleve_id, montant, Math.max(0, solde.solde ?? 0));
+    }
+  } catch (err) {
+    console.error("Notification de paiement non envoyée (paiement déjà enregistré) :", err.message);
+  }
   res.status(201).json(rows[0]);
 });
 
@@ -113,6 +126,17 @@ router.post("/webhook-cinetpay", async (req, res) => {
     const statutReel = await verifierTransaction(transactionId);
     if (statutReel.status === "ACCEPTED") {
       await pool.query("UPDATE paiements_scolarite SET statut = 'reussi', confirme_at = now() WHERE id = $1", [paiement.id]);
+      try {
+        const { rows: eleveRows } = await pool.query(
+          "SELECT s.*, c.niveau, c.ecole_id FROM students s JOIN classes c ON c.id = s.classe_id WHERE s.id = $1", [paiement.eleve_id]
+        );
+        if (eleveRows[0]) {
+          const solde = await calculerSoldeEleve(eleveRows[0]);
+          await programmerNotificationPaiement(paiement.eleve_id, paiement.montant, Math.max(0, solde.solde ?? 0));
+        }
+      } catch (errNotif) {
+        console.error("Notification de paiement en ligne non envoyée :", errNotif.message);
+      }
     } else if (statutReel.status === "REFUSED") {
       await pool.query("UPDATE paiements_scolarite SET statut = 'echoue' WHERE id = $1", [paiement.id]);
     }

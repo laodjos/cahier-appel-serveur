@@ -40,6 +40,30 @@ async function programmerNotificationPresence(studentId, statut) {
   }
 }
 
+// Appelée après un encaissement de scolarité réussi (espèces ou en ligne) —
+// prévient le/les parent(s) du montant reçu et de ce qui reste, s'il reste
+// quelque chose. Un élève non rattaché à un parent ne génère rien (rien à
+// envoyer), sans faire échouer le paiement pour autant.
+async function programmerNotificationPaiement(studentId, montant, resteAPayer) {
+  const parents = await getParentsDeEleve(studentId);
+  if (parents.length === 0) return;
+
+  const { rows: sRows } = await pool.query("SELECT nom FROM students WHERE id = $1", [studentId]);
+  const nomEleve = sRows[0]?.nom || "Votre enfant";
+  const formatMontant = (n) => Number(n).toLocaleString("fr-FR") + " F";
+  const contenu = resteAPayer > 0
+    ? `Paiement de ${formatMontant(montant)} reçu pour la scolarité de ${nomEleve}. Reste à payer : ${formatMontant(resteAPayer)}.`
+    : `Paiement de ${formatMontant(montant)} reçu pour la scolarité de ${nomEleve}. Scolarité à jour, merci !`;
+
+  for (const parent of parents) {
+    await pool.query(
+      `INSERT INTO notifications (student_id, parent_id, type, contenu, statut, envoyer_a)
+       VALUES ($1, $2, 'paiement', $3, 'programmee', now())`,
+      [studentId, parent.id, contenu]
+    );
+  }
+}
+
 // Appelée depuis la section "Rattachement parents" / "Envoi du rapport".
 // mode: "immediat" | "differe" ; dateEnvoi requis si differe (objet Date).
 async function programmerEnvoiRapport({ studentIds, type, contenu, mode, dateEnvoi }) {
@@ -166,6 +190,7 @@ async function envoyerNotification(parent, message) {
 
 module.exports = {
   programmerNotificationPresence,
+  programmerNotificationPaiement,
   programmerEnvoiRapport,
   envoyerNotification,
   envoyerViaOrangeSms,

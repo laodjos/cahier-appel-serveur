@@ -678,3 +678,8 @@ ALTER TABLE caisses ADD COLUMN IF NOT EXISTS responsable_id UUID REFERENCES user
 -- l'un ni l'autre reste un règlement générique contre le total (comme avant).
 ALTER TABLE paiements_scolarite ADD COLUMN IF NOT EXISTS frais_scolarite_id UUID REFERENCES frais_scolarite(id);
 ALTER TABLE paiements_scolarite ADD COLUMN IF NOT EXISTS frais_individuel_id UUID REFERENCES frais_individuels(id);
+-- Autorise le type "paiement" pour les notifications — un reçu de scolarité
+-- encaissé génère une notification au parent, au même titre qu'une absence.
+ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
+  CHECK (type IN ('presence', 'retard', 'absence', 'rapport_journalier', 'rapport_mensuel', 'info', 'paiement'));
