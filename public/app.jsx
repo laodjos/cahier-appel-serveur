@@ -676,7 +676,6 @@ function App({ session, onLogout }) {
       }
       if (view === "caisse") {
         api("/frais-scolarite").then(siEcoleInchangee(setFraisScolarite)).catch(catchErr);
-        api("/paiements-scolarite").then(siEcoleInchangee(setTousLesPaiements)).catch(catchErr);
         // Réservé à la Direction — un caissier n'a pas le droit de lister les
         // comptes ni de gérer les caisses, et n'a donc pas besoin de cet appel
         // (qui échouerait pour lui avec "Accès non autorisé").
@@ -694,6 +693,7 @@ function App({ session, onLogout }) {
       if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
       if (availableViews.includes("emploi")) api("/salles").then(siEcoleInchangee(setSallesListe)).catch(catchErr);
       if (availableViews.includes("ecoles")) api("/ecoles").then(setEcoles).catch(catchErr);
+      if (view === "journal-paiements") api("/paiements-scolarite").then(siEcoleInchangee(setTousLesPaiements)).catch(catchErr);
     };
     load();
     const t = setInterval(load, 8000);
@@ -2514,6 +2514,7 @@ function App({ session, onLogout }) {
           {availableViews.includes("paie") && <NavItem label="Paie" active={view === "paie"} onClick={() => { setSidebarOuverte(false); setView("paie"); }} />}
           {availableViews.includes("erp") && (estDirectionGenerale || session.user.erp_actif) && <NavItem label="ERP (notes)" active={view === "erp"} onClick={() => { setSidebarOuverte(false); setView("erp"); }} />}
           {availableViews.includes("caisse") && (estDirectionGenerale || session.user.erp_actif) && <NavItem label="Caisse" active={view === "caisse"} onClick={() => { setSidebarOuverte(false); setView("caisse"); }} />}
+          {availableViews.includes("caisse") && (estDirectionGenerale || session.user.erp_actif) && <NavItem label="Journal des paiements" active={view === "journal-paiements"} onClick={() => { setSidebarOuverte(false); setView("journal-paiements"); }} />}
           {availableViews.includes("emploi") && <NavItem label="Emploi du temps" active={view === "emploi"} onClick={() => { setSidebarOuverte(false); setView("emploi"); }} />}
           {availableViews.includes("rapports") && <NavItem label="Rapports" active={view === "rapports"} onClick={() => { setSidebarOuverte(false); setView("rapports"); }} />}
           {availableViews.includes("notif") && <NavItem label="Notifications parents" active={view === "notif"} onClick={() => { setSidebarOuverte(false); setView("notif"); }} />}
@@ -3746,63 +3747,6 @@ function App({ session, onLogout }) {
                   {students.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun élève enregistré pour l'instant.</div>}
                 </Card>
 
-                <Card title="Tous les paiements" style={{ marginBottom: 20 }}>
-                  <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", borderBottom: `1px solid ${COLORS.line}` }}>
-                    <Field label="Du"><input type="date" style={inputStyle} value={filtrePaiementsDebut} onChange={(e) => setFiltrePaiementsDebut(e.target.value)} /></Field>
-                    <Field label="Au"><input type="date" style={inputStyle} value={filtrePaiementsFin} onChange={(e) => setFiltrePaiementsFin(e.target.value)} /></Field>
-                    <Button small variant="ghost" onClick={chargerTousLesPaiements}>Filtrer</Button>
-                    <Button small variant="ghost" onClick={() => { const auj = new Date().toISOString().slice(0, 10); setFiltrePaiementsDebut(auj); setFiltrePaiementsFin(auj); setTimeout(chargerTousLesPaiements, 0); }}>Aujourd'hui</Button>
-                  </div>
-                  {(() => {
-                    const paiementsReussis = (tousLesPaiements || []).filter((p) => p.statut === "reussi");
-                    const groupes = {};
-                    for (const p of paiementsReussis) {
-                      const cle = p.frais_libelle || "Paiement générique";
-                      if (!groupes[cle]) groupes[cle] = { libelle: cle, nombre: 0, total: 0 };
-                      groupes[cle].nombre++;
-                      groupes[cle].total += Number(p.montant);
-                    }
-                    const synthese = Object.values(groupes).sort((a, b) => b.total - a.total);
-                    const totalGeneral = synthese.reduce((s, g) => s + g.total, 0);
-                    if (synthese.length === 0) return null;
-                    return (
-                      <div style={{ padding: "14px 18px", borderBottom: `1px solid ${COLORS.line}` }}>
-                        <div style={{ fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", marginBottom: 8 }}>
-                          Synthèse par rubrique {filtrePaiementsDebut || filtrePaiementsFin ? `(${filtrePaiementsDebut || "…"} → ${filtrePaiementsFin || "…"})` : "(tout l'historique affiché)"}
-                        </div>
-                        {synthese.map((g) => (
-                          <div key={g.libelle} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13 }}>
-                            <span>{g.libelle} <span style={{ color: COLORS.craieDim, fontSize: 11.5 }}>({g.nombre} paiement{g.nombre > 1 ? "s" : ""})</span></span>
-                            <span style={{ fontWeight: 600 }}>{g.total.toLocaleString("fr-FR")} F</span>
-                          </div>
-                        ))}
-                        <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 0 0", marginTop: 4, borderTop: `1px solid ${COLORS.line}`, fontSize: 13.5, fontWeight: 700, color: COLORS.marker }}>
-                          <span>Total général</span>
-                          <span>{totalGeneral.toLocaleString("fr-FR")} F</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  {tousLesPaiements == null && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Chargement…</div>}
-                  {tousLesPaiements?.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun paiement enregistré pour l'instant.</div>}
-                  {tousLesPaiements?.map((p, i) => (
-                    <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < tousLesPaiements.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 12.5 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 500 }}>{[p.eleve_nom, p.eleve_prenoms].filter(Boolean).join(" ") || "Élève"} <span style={{ color: COLORS.craieDim, fontWeight: 400 }}>({p.classe_nom || "—"})</span></div>
-                        <div style={{ fontSize: 11, color: COLORS.craieDim }}>
-                          {new Date(p.confirme_at || p.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                          {" · "}{p.frais_libelle || "Paiement générique"}
-                          {" · "}{p.methode === "especes" ? "Espèces" : p.methode === "cinetpay" ? "En ligne" : p.methode}
-                          {p.caisse_nom ? ` · ${p.caisse_nom}` : ""}
-                          {p.statut !== "reussi" ? ` · ${p.statut}` : ""}
-                        </div>
-                      </div>
-                      <span style={{ fontWeight: 700, color: p.statut === "reussi" ? COLORS.success : COLORS.craieDim, width: 90, textAlign: "right" }}>{Number(p.montant).toLocaleString("fr-FR")} F</span>
-                      <Button small variant="ghost" icon={P.scan} onClick={() => reimprimerRecu(p)}>Reçu</Button>
-                    </div>
-                  ))}
-                </Card>
-
                 <Card title="Solde d'un élève" style={{ marginBottom: 20 }}>
                   <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
                     <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={soldeEleveId} onChange={(e) => { setSoldeEleveId(e.target.value); setSoldeData(null); setFraisChoisiPourPaiement(null); setHistoriquePaiementsEleve(null); setDernierPaiementRecu(null); }}>
@@ -4259,6 +4203,69 @@ function App({ session, onLogout }) {
                 </div>
               </Card>
             </div>
+          </div>
+        )}
+
+        {view === "journal-paiements" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Journal des paiements</h1>
+            <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Tous les paiements de scolarité, tous élèves confondus.</div>
+            <Card title="Tous les paiements">
+              <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", borderBottom: `1px solid ${COLORS.line}` }}>
+                <Field label="Du"><input type="date" style={inputStyle} value={filtrePaiementsDebut} onChange={(e) => setFiltrePaiementsDebut(e.target.value)} /></Field>
+                <Field label="Au"><input type="date" style={inputStyle} value={filtrePaiementsFin} onChange={(e) => setFiltrePaiementsFin(e.target.value)} /></Field>
+                <Button small variant="ghost" onClick={chargerTousLesPaiements}>Filtrer</Button>
+                <Button small variant="ghost" onClick={() => { const auj = new Date().toISOString().slice(0, 10); setFiltrePaiementsDebut(auj); setFiltrePaiementsFin(auj); setTimeout(chargerTousLesPaiements, 0); }}>Aujourd'hui</Button>
+              </div>
+              {(() => {
+                const paiementsReussis = (tousLesPaiements || []).filter((p) => p.statut === "reussi");
+                const groupes = {};
+                for (const p of paiementsReussis) {
+                  const cle = p.frais_libelle || "Paiement générique";
+                  if (!groupes[cle]) groupes[cle] = { libelle: cle, nombre: 0, total: 0 };
+                  groupes[cle].nombre++;
+                  groupes[cle].total += Number(p.montant);
+                }
+                const synthese = Object.values(groupes).sort((a, b) => b.total - a.total);
+                const totalGeneral = synthese.reduce((s, g) => s + g.total, 0);
+                if (synthese.length === 0) return null;
+                return (
+                  <div style={{ padding: "14px 18px", borderBottom: `1px solid ${COLORS.line}` }}>
+                    <div style={{ fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", marginBottom: 8 }}>
+                      Synthèse par rubrique {filtrePaiementsDebut || filtrePaiementsFin ? `(${filtrePaiementsDebut || "…"} → ${filtrePaiementsFin || "…"})` : "(tout l'historique affiché)"}
+                    </div>
+                    {synthese.map((g) => (
+                      <div key={g.libelle} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13 }}>
+                        <span>{g.libelle} <span style={{ color: COLORS.craieDim, fontSize: 11.5 }}>({g.nombre} paiement{g.nombre > 1 ? "s" : ""})</span></span>
+                        <span style={{ fontWeight: 600 }}>{g.total.toLocaleString("fr-FR")} F</span>
+                      </div>
+                    ))}
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 0 0", marginTop: 4, borderTop: `1px solid ${COLORS.line}`, fontSize: 13.5, fontWeight: 700, color: COLORS.marker }}>
+                      <span>Total général</span>
+                      <span>{totalGeneral.toLocaleString("fr-FR")} F</span>
+                    </div>
+                  </div>
+                );
+              })()}
+              {tousLesPaiements == null && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Chargement…</div>}
+              {tousLesPaiements?.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun paiement enregistré pour l'instant.</div>}
+              {tousLesPaiements?.map((p, i) => (
+                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < tousLesPaiements.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 12.5 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 500 }}>{[p.eleve_nom, p.eleve_prenoms].filter(Boolean).join(" ") || "Élève"} <span style={{ color: COLORS.craieDim, fontWeight: 400 }}>({p.classe_nom || "—"})</span></div>
+                    <div style={{ fontSize: 11, color: COLORS.craieDim }}>
+                      {new Date(p.confirme_at || p.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      {" · "}{p.frais_libelle || "Paiement générique"}
+                      {" · "}{p.methode === "especes" ? "Espèces" : p.methode === "cinetpay" ? "En ligne" : p.methode}
+                      {p.caisse_nom ? ` · ${p.caisse_nom}` : ""}
+                      {p.statut !== "reussi" ? ` · ${p.statut}` : ""}
+                    </div>
+                  </div>
+                  <span style={{ fontWeight: 700, color: p.statut === "reussi" ? COLORS.success : COLORS.craieDim, width: 90, textAlign: "right" }}>{Number(p.montant).toLocaleString("fr-FR")} F</span>
+                  <Button small variant="ghost" icon={P.scan} onClick={() => reimprimerRecu(p)}>Reçu</Button>
+                </div>
+              ))}
+            </Card>
           </div>
         )}
 
