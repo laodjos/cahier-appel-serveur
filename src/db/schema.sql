@@ -520,6 +520,26 @@ CREATE TABLE IF NOT EXISTS frais_scolarite (
   classe_id UUID REFERENCES classes(id) ON DELETE CASCADE,
   libelle TEXT NOT NULL DEFAULT 'Frais de scolarité',
   montant_total NUMERIC NOT NULL,
+  -- 'tous' (frais annexes de l'établissement, s'appliquent à tout le monde),
+  -- 'affecte' (uniquement les élèves affectés par l'orientation officielle),
+  -- 'non_affecte' (uniquement ceux qui ne le sont pas) — permet par exemple un
+  -- tarif d'inscription différent selon que l'élève est affecté ou non.
+  applicable_a TEXT NOT NULL DEFAULT 'tous' CHECK (applicable_a IN ('tous', 'affecte', 'non_affecte')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- --------------------------------------------------------------------------
+-- Frais propres à UN élève précis (pas toute une promotion) — sert notamment
+-- au reliquat : un solde impayé de l'année précédente qui doit se positionner
+-- en priorité, avant les frais de la nouvelle inscription.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS frais_individuels (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  eleve_id UUID REFERENCES students(id) ON DELETE CASCADE,
+  libelle TEXT NOT NULL, -- ex. "Reliquat 2025-2026"
+  montant NUMERIC NOT NULL,
+  est_reliquat BOOLEAN NOT NULL DEFAULT false, -- affiché en priorité et signalé si impayé
+  saisi_par UUID REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -590,4 +610,33 @@ CREATE TABLE IF NOT EXISTS parent_otp (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_parent_otp_telephone ON parent_otp(telephone);
+
+-- --------------------------------------------------------------------------
+-- Statut d'affectation de l'élève (orientation officielle après CEPE/BEPC,
+-- via la DOB) — les frais d'inscription diffèrent souvent selon qu'un élève
+-- a été affecté dans l'établissement ou y est entré par une autre voie.
+-- --------------------------------------------------------------------------
+ALTER TABLE students ADD COLUMN IF NOT EXISTS affecte BOOLEAN;
+
+-- Un frais peut s'appliquer à tous les élèves du niveau (ex. cantine, frais
+-- annexes), ou seulement aux élèves affectés / non affectés (ex. deux
+-- montants d'inscription différents selon le statut de l'élève).
+ALTER TABLE frais_scolarite ADD COLUMN IF NOT EXISTS applicable_a TEXT NOT NULL DEFAULT 'tous'
+  CHECK (applicable_a IN ('tous', 'affecte', 'non_affecte'));
+
+-- --------------------------------------------------------------------------
+-- Frais individuels — propres à UN élève précis, pas à tout un niveau (ex. un
+-- reliquat impayé de l'année précédente). Vient s'ajouter aux frais du niveau
+-- dans le calcul du solde de l'élève, et apparaît dès la consultation de son
+-- solde — donc avant toute nouvelle inscription, sans bloquer techniquement
+-- la saisie, mais en le rendant impossible à manquer.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS frais_individuels (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  eleve_id UUID REFERENCES students(id) ON DELETE CASCADE,
+  libelle TEXT NOT NULL, -- ex. "Reliquat 2025-2026"
+  montant NUMERIC NOT NULL,
+  saisi_par UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 

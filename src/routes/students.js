@@ -151,7 +151,7 @@ router.get("/export-desps", async (req, res) => {
 
 // POST /api/students  { matricule, nom, classe_id, methode_biometrique }
 router.post("/", requireRole("direction", "surveillant"), async (req, res) => {
-  const { matricule, nom, classe_id, methode_biometrique, parent_nom, parent_telephone, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere } = req.body;
+  const { matricule, nom, classe_id, methode_biometrique, parent_nom, parent_telephone, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere, affecte } = req.body;
   if (!matricule || !nom) return res.status(400).json({ error: "Matricule et nom requis." });
   if (!parent_telephone || !parent_telephone.trim()) {
     return res.status(400).json({ error: "Le téléphone du parent/tuteur est requis dès l'inscription de l'élève." });
@@ -171,9 +171,9 @@ router.post("/", requireRole("direction", "surveillant"), async (req, res) => {
   try {
     await client.query("BEGIN");
     const { rows } = await client.query(
-      `INSERT INTO students (matricule, nom, classe_id, methode_biometrique, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere)
-       VALUES ($1, $2, $3, COALESCE($4, 'aucune'), $5, $6, $7, $8, COALESCE($9, 'Ivoirienne'), $10, $11) RETURNING *`,
-      [matricule, nom, classe_id || null, methode_biometrique, date_naissance || null, lieu_naissance || null, prenoms || null, genre || null, nationalite || null, nom_pere || null, nom_mere || null]
+      `INSERT INTO students (matricule, nom, classe_id, methode_biometrique, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere, affecte)
+       VALUES ($1, $2, $3, COALESCE($4, 'aucune'), $5, $6, $7, $8, COALESCE($9, 'Ivoirienne'), $10, $11, $12) RETURNING *`,
+      [matricule, nom, classe_id || null, methode_biometrique, date_naissance || null, lieu_naissance || null, prenoms || null, genre || null, nationalite || null, nom_pere || null, nom_mere || null, affecte !== undefined ? !!affecte : null]
     );
     const student = rows[0];
 
@@ -287,9 +287,9 @@ router.get("/:id", async (req, res) => {
 
 // PATCH /api/students/:id  { nom?, matricule?, ... } — correction des informations d'un élève
 router.patch("/:id", requireRole("direction", "surveillant", "super_admin"), async (req, res) => {
-  const { nom, matricule, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere } = req.body;
+  const { nom, matricule, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere, affecte } = req.body;
   const rienAModifier = !nom?.trim() && !matricule?.trim() && date_naissance === undefined && lieu_naissance === undefined
-    && prenoms === undefined && genre === undefined && nationalite === undefined && nom_pere === undefined && nom_mere === undefined;
+    && prenoms === undefined && genre === undefined && nationalite === undefined && nom_pere === undefined && nom_mere === undefined && affecte === undefined;
   if (rienAModifier) {
     return res.status(400).json({ error: "Indique au moins un champ à corriger." });
   }
@@ -307,7 +307,8 @@ router.patch("/:id", requireRole("direction", "surveillant", "super_admin"), asy
          genre = CASE WHEN $7::text IS NOT NULL THEN NULLIF($7, '') ELSE genre END,
          nationalite = CASE WHEN $8::text IS NOT NULL THEN NULLIF($8, '') ELSE nationalite END,
          nom_pere = CASE WHEN $9::text IS NOT NULL THEN NULLIF($9, '') ELSE nom_pere END,
-         nom_mere = CASE WHEN $10::text IS NOT NULL THEN NULLIF($10, '') ELSE nom_mere END
+         nom_mere = CASE WHEN $10::text IS NOT NULL THEN NULLIF($10, '') ELSE nom_mere END,
+         affecte = COALESCE($11, affecte)
        WHERE id = $5 RETURNING *`,
       [
         nom?.trim() || "", matricule?.trim() || "",
@@ -319,6 +320,7 @@ router.patch("/:id", requireRole("direction", "surveillant", "super_admin"), asy
         nationalite !== undefined ? nationalite : null,
         nom_pere !== undefined ? nom_pere : null,
         nom_mere !== undefined ? nom_mere : null,
+        affecte !== undefined ? !!affecte : null,
       ]
     );
     if (!rows[0]) return res.status(404).json({ error: "Élève introuvable." });

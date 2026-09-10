@@ -450,7 +450,7 @@ function App({ session, onLogout }) {
   const [inclureSamedi, setInclureSamedi] = useState(false);
   const [resultatImport, setResultatImport] = useState(null);
   const [resultatImportEnseignants, setResultatImportEnseignants] = useState(null);
-  const [newEleve, setNewEleve] = useState({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "", prenoms: "", genre: "", nationalite: "Ivoirienne", nom_pere: "", nom_mere: "" });
+  const [newEleve, setNewEleve] = useState({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "", prenoms: "", genre: "", nationalite: "Ivoirienne", nom_pere: "", nom_mere: "", affecte: false });
   const [newCreneau, setNewCreneau] = useState({ jour_semaine: 1, heure_debut: "08:00", heure_fin: "09:00", matiere: "", enseignant: "", estRattrapage: false, date_exceptionnelle: "", salle_id: null, est_pause: false });
   const [formError, setFormError] = useState("");
 
@@ -516,10 +516,11 @@ function App({ session, onLogout }) {
   const [bulletinPeriodeId, setBulletinPeriodeId] = useState("");
   const [bulletinData, setBulletinData] = useState(null);
   const [fraisScolarite, setFraisScolarite] = useState([]);
-  const [nouveauFrais, setNouveauFrais] = useState({ niveau: "", libelle: "Frais de scolarité", montant_total: "" });
+  const [nouveauFrais, setNouveauFrais] = useState({ niveau: "", libelle: "Frais de scolarité", montant_total: "", applicable_a: "tous" });
   const [soldeEleveId, setSoldeEleveId] = useState("");
   const [soldeData, setSoldeData] = useState(null);
   const [montantPaiement, setMontantPaiement] = useState("");
+  const [nouveauFraisIndividuel, setNouveauFraisIndividuel] = useState({ libelle: "", montant: "", est_reliquat: false });
   const [soldeClasseId, setSoldeClasseId] = useState(null);
   const [soldeClasseData, setSoldeClasseData] = useState(null);
   const [nouveauMouvement, setNouveauMouvement] = useState({ type: "entree", categorie: "", libelle: "", montant: "" });
@@ -901,7 +902,7 @@ function App({ session, onLogout }) {
     try {
       const created = await api("/students", { method: "POST", body: { matricule: newEleve.matricule.trim(), nom: newEleve.nom.trim(), classe_id: selectedClasseId, methode_biometrique: newEleve.methode_biometrique, parent_nom: newEleve.parentNom.trim(), parent_telephone: newEleve.parentTel.trim(), date_naissance: newEleve.date_naissance || null, lieu_naissance: newEleve.lieu_naissance.trim() || null, prenoms: newEleve.prenoms.trim() || null, genre: newEleve.genre || null, nationalite: newEleve.nationalite.trim() || null, nom_pere: newEleve.nom_pere.trim() || null, nom_mere: newEleve.nom_mere.trim() || null } });
       await refreshStudents();
-      setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "", prenoms: "", genre: "", nationalite: "Ivoirienne", nom_pere: "", nom_mere: "" });
+      setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "", prenoms: "", genre: "", nationalite: "Ivoirienne", nom_pere: "", nom_mere: "", affecte: false });
       setShowAddEleve(false);
     } catch (e) { setFormError(e.message); }
   }
@@ -1815,7 +1816,7 @@ function App({ session, onLogout }) {
     try {
       const cree = await api("/frais-scolarite", { method: "POST", body: nouveauFrais });
       setFraisScolarite((liste) => [...liste, cree]);
-      setNouveauFrais({ niveau: "", libelle: "Frais de scolarité", montant_total: "" });
+      setNouveauFrais({ niveau: "", libelle: "Frais de scolarité", montant_total: "", applicable_a: "tous" });
     } catch (e) { catchErr(e); }
   }
 
@@ -1831,6 +1832,18 @@ function App({ session, onLogout }) {
     try {
       const data = await api(`/frais-scolarite/solde/${soldeEleveId}`);
       setSoldeData(data);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function ajouterFraisIndividuel() {
+    if (!soldeEleveId || !nouveauFraisIndividuel.libelle.trim() || !nouveauFraisIndividuel.montant) return;
+    try {
+      await api("/frais-scolarite/individuels", {
+        method: "POST",
+        body: { eleve_id: soldeEleveId, libelle: nouveauFraisIndividuel.libelle.trim(), montant: nouveauFraisIndividuel.montant, est_reliquat: nouveauFraisIndividuel.est_reliquat },
+      });
+      setNouveauFraisIndividuel({ libelle: "", montant: "", est_reliquat: false });
+      chargerSoldeEleve();
     } catch (e) { catchErr(e); }
   }
 
@@ -2500,7 +2513,7 @@ function App({ session, onLogout }) {
                   <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={handleImportFichier} />
                 </label>
               )}
-              {(role === "direction" || role === "surveillant") && <Button icon={P.users} onClick={() => { setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "", prenoms: "", genre: "", nationalite: "Ivoirienne", nom_pere: "", nom_mere: "" }); setShowAddEleve(true); setShowAddClasse(false); setFormError(""); }}>Ajouter un élève</Button>}
+              {(role === "direction" || role === "surveillant") && <Button icon={P.users} onClick={() => { setNewEleve({ matricule: "", nom: "", methode_biometrique: "aucune", parentNom: "", parentTel: "", date_naissance: "", lieu_naissance: "", prenoms: "", genre: "", nationalite: "Ivoirienne", nom_pere: "", nom_mere: "", affecte: false }); setShowAddEleve(true); setShowAddClasse(false); setFormError(""); }}>Ajouter un élève</Button>}
             </div>
             {resultatImport && (
               <div style={{ background: resultatImport.erreurs.length > 0 ? COLORS.alertBg : COLORS.successBg, border: `1px solid ${resultatImport.erreurs.length > 0 ? COLORS.alert : COLORS.success}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 12.5 }}>
@@ -2588,6 +2601,10 @@ function App({ session, onLogout }) {
                       <Field label="Nom et prénoms du Père"><input style={inputStyle} value={newEleve.nom_pere} onChange={(e) => setNewEleve((v) => ({ ...v, nom_pere: e.target.value }))} /></Field>
                       <Field label="Nom et prénoms de la Mère"><input style={inputStyle} value={newEleve.nom_mere} onChange={(e) => setNewEleve((v) => ({ ...v, nom_mere: e.target.value }))} /></Field>
                     </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, cursor: "pointer" }}>
+                      <input type="checkbox" checked={newEleve.affecte} onChange={(e) => setNewEleve((v) => ({ ...v, affecte: e.target.checked }))} />
+                      Élève affecté (orientation officielle DOB) — modifie les frais d'inscription applicables
+                    </label>
                   </React.Fragment>
                 )}
                 <div style={{ fontSize: 11, color: COLORS.craieDim }}>Utilise de préférence le matricule national de l'élève — c'est aussi celui à saisir sur le lecteur ZKTeco/Hikvision lors de l'enrôlement, pour que les pointages se relient au bon élève. Le bouton "Générer" ne sert qu'en dépannage, pour un élève sans matricule national.</div>
@@ -3131,7 +3148,14 @@ function App({ session, onLogout }) {
                         <div style={{ padding: "8px 18px 0 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", letterSpacing: 0.4 }}>{groupe}</div>
                         {items.map((f, i) => (
                           <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "7px 18px", fontSize: 13 }}>
-                            <span style={{ flex: 1 }}>{f.libelle}</span>
+                            <span style={{ flex: 1 }}>
+                              {f.libelle}
+                              {f.applicable_a !== "tous" && (
+                                <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: COLORS.marker, background: "rgba(217,164,65,0.14)", borderRadius: 999, padding: "2px 8px" }}>
+                                  {f.applicable_a === "affecte" ? "Affectés uniquement" : "Non affectés uniquement"}
+                                </span>
+                              )}
+                            </span>
                             <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.marker, width: 110, textAlign: "right" }}>{Number(f.montant_total).toLocaleString("fr-FR")} F</span>
                             <button onClick={() => supprimerFraisScolarite(f.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
                           </div>
@@ -3150,6 +3174,13 @@ function App({ session, onLogout }) {
                         </select>
                       </Field>
                       <Field label="Libellé (ex. Scolarité, Inscription, Cantine)"><input style={inputStyle} value={nouveauFrais.libelle} onChange={(e) => setNouveauFrais((v) => ({ ...v, libelle: e.target.value }))} /></Field>
+                      <Field label="Applicable à">
+                        <select style={inputStyle} value={nouveauFrais.applicable_a} onChange={(e) => setNouveauFrais((v) => ({ ...v, applicable_a: e.target.value }))}>
+                          <option value="tous">Tous les élèves</option>
+                          <option value="affecte">Élèves affectés uniquement</option>
+                          <option value="non_affecte">Élèves non affectés uniquement</option>
+                        </select>
+                      </Field>
                       <Field label="Montant annuel (F CFA)"><input type="number" style={inputStyle} value={nouveauFrais.montant_total} onChange={(e) => setNouveauFrais((v) => ({ ...v, montant_total: e.target.value }))} /></Field>
                       <Button small icon={P.plus} onClick={creerFraisScolarite}>Ajouter</Button>
                     </div>
@@ -3170,11 +3201,16 @@ function App({ session, onLogout }) {
                         <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucun montant de scolarité défini pour le niveau de cet élève.</div>
                       ) : (
                         <React.Fragment>
+                          {soldeData.reliquat_impaye && (
+                            <div style={{ padding: "10px 12px", marginBottom: 14, borderRadius: 8, background: COLORS.alertBg, color: COLORS.alert, fontSize: 12.5, fontWeight: 600 }}>
+                              ⚠ Reliquat impayé de l'année précédente — à régler en priorité, avant l'inscription de cette année.
+                            </div>
+                          )}
                           {soldeData.detail?.length > 0 && (
                             <div style={{ marginBottom: 14 }}>
                               {soldeData.detail.map((f) => (
-                                <div key={f.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, color: COLORS.craieDim }}>
-                                  <span>{f.libelle}</span><span>{f.montant.toLocaleString("fr-FR")} F</span>
+                                <div key={f.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, color: f.est_reliquat ? COLORS.alert : COLORS.craieDim, fontWeight: f.est_reliquat ? 700 : 400 }}>
+                                  <span>{f.est_reliquat ? "⚠ " : ""}{f.libelle}</span><span>{f.montant.toLocaleString("fr-FR")} F</span>
                                 </div>
                               ))}
                             </div>
@@ -3193,6 +3229,17 @@ function App({ session, onLogout }) {
                               <Button small variant="ghost" onClick={enregistrerPaiementManuel}>Encaisser en espèces</Button>
                               <Button small icon={P.check} onClick={genererLienPaiementScolarite}>Générer un lien de paiement</Button>
                               <Button small variant="ghost" icon={P.scan} onClick={() => imprimerRecuScolarite(soldeEleveId, soldeData)}>Imprimer le reçu</Button>
+                            </div>
+                          )}
+                          {(role === "direction" || role === "super_admin") && (
+                            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", paddingTop: 14, borderTop: `1px solid ${COLORS.line}` }}>
+                              <Field label="Libellé (ex. Reliquat 2025-2026)"><input style={{ ...inputStyle, width: 200 }} value={nouveauFraisIndividuel.libelle} onChange={(e) => setNouveauFraisIndividuel((v) => ({ ...v, libelle: e.target.value }))} /></Field>
+                              <Field label="Montant (F CFA)"><input type="number" style={{ ...inputStyle, width: 130 }} value={nouveauFraisIndividuel.montant} onChange={(e) => setNouveauFraisIndividuel((v) => ({ ...v, montant: e.target.value }))} /></Field>
+                              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: COLORS.craieDim, cursor: "pointer", paddingBottom: 8 }}>
+                                <input type="checkbox" checked={nouveauFraisIndividuel.est_reliquat} onChange={(e) => setNouveauFraisIndividuel((v) => ({ ...v, est_reliquat: e.target.checked }))} />
+                                C'est un reliquat (impayé de l'année précédente)
+                              </label>
+                              <Button small variant="ghost" icon={P.plus} onClick={ajouterFraisIndividuel}>Ajouter à cet élève</Button>
                             </div>
                           )}
                         </React.Fragment>
@@ -4692,6 +4739,18 @@ function App({ session, onLogout }) {
                       <div><span style={{ color: COLORS.craieDim }}>Nationalité</span><NomEditable valeur={dossierEleve.nationalite || "Non renseignée"} onValider={(v) => changeChampDespsEleve(dossierEleve.id, "nationalite", v === "Non renseignée" ? "" : v)} style={{ fontWeight: 600 }} /></div>
                       <div><span style={{ color: COLORS.craieDim }}>Nom et prénoms du Père</span><NomEditable valeur={dossierEleve.nom_pere || "Non renseigné"} onValider={(v) => changeChampDespsEleve(dossierEleve.id, "nom_pere", v === "Non renseigné" ? "" : v)} style={{ fontWeight: 600 }} /></div>
                       <div><span style={{ color: COLORS.craieDim }}>Nom et prénoms de la Mère</span><NomEditable valeur={dossierEleve.nom_mere || "Non renseigné"} onValider={(v) => changeChampDespsEleve(dossierEleve.id, "nom_mere", v === "Non renseigné" ? "" : v)} style={{ fontWeight: 600 }} /></div>
+                      <div>
+                        <span style={{ color: COLORS.craieDim }}>Affectation</span><br/>
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", marginTop: 4 }}>
+                          <input type="checkbox" checked={!!dossierEleve.affecte} onChange={async (e) => {
+                            try {
+                              const updated = await api(`/students/${dossierEleve.id}`, { method: "PATCH", body: { affecte: e.target.checked } });
+                              setDossierEleve((d) => d && d.id === dossierEleve.id ? { ...d, affecte: updated.affecte } : d);
+                            } catch (err) { catchErr(err); }
+                          }} />
+                          Élève affecté (orientation officielle)
+                        </label>
+                      </div>
                     </div>
                   )}
                 </div>
