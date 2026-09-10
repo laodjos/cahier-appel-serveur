@@ -1,7 +1,7 @@
 const express = require("express");
 const { pool } = require("../config/db");
 const { authRequired, requireRole } = require("../middleware/auth");
-const { programmerEnvoiRapport } = require("../services/notificationService");
+const { programmerEnvoiRapport, normaliserNumeroCi } = require("../services/notificationService");
 
 const router = express.Router();
 router.use(authRequired);
@@ -37,13 +37,20 @@ router.post("/rapport", requireRole("direction", "surveillant"), async (req, res
 // GET /api/notifications/journal — historique des envois (dashboard "Notifications parents")
 router.get("/journal", async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT n.*, s.nom AS eleve_nom, s.prenoms AS eleve_prenoms, p.nom AS parent_nom, p.telephone AS parent_telephone
+    `SELECT n.*, s.nom AS eleve_nom, s.prenoms AS eleve_prenoms, s.classe_id, c.nom AS classe_nom, p.nom AS parent_nom, p.telephone AS parent_telephone
      FROM notifications n
      JOIN students s ON s.id = n.student_id
+     LEFT JOIN classes c ON c.id = s.classe_id
      JOIN parents p ON p.id = n.parent_id
      ORDER BY n.created_at DESC LIMIT 50`
   );
-  res.json(rows);
+  const avecLienWhatsapp = rows.map((n) => ({
+    ...n,
+    lien_whatsapp: n.parent_telephone
+      ? `https://wa.me/${normaliserNumeroCi(n.parent_telephone)}?text=${encodeURIComponent(n.contenu || "")}`
+      : null,
+  }));
+  res.json(avecLienWhatsapp);
 });
 
 module.exports = router;

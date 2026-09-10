@@ -432,6 +432,7 @@ function App({ session, onLogout }) {
   const [notifJournal, setNotifJournal] = useState([]);
   const [modifierNumeroId, setModifierNumeroId] = useState(null);
   const [nouveauNumeroParent, setNouveauNumeroParent] = useState("");
+  const [fileEnvoiWhatsapp, setFileEnvoiWhatsapp] = useState(null); // { classeNom, notifs: [...], index }
   const [devices, setDevices] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [search, setSearch] = useState("");
@@ -4187,29 +4188,92 @@ function App({ session, onLogout }) {
         {view === "notif" && (
           <div>
             <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Notifications envoyées aux parents</h1>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 460 }}>
-              {notifJournal.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucune notification pour l'instant.</div>}
-              {notifJournal.map((n) => (
-                <div key={n.id} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 12, padding: "14px 16px" }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{[n.eleve_nom, n.eleve_prenoms].filter(Boolean).join(" ")} → {n.parent_nom}</div>
-                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginTop: 2 }}>{n.contenu}</div>
-                  <div style={{ fontSize: 10.5, color: COLORS.craieDim, marginTop: 4 }}>{n.statut === "envoyee" ? "Envoyée" : n.statut === "echouee" ? "Échec" : "Programmée"} · {fmtTime(n.envoyer_a)} · {n.parent_telephone}</div>
-                  {(role === "direction" || role === "surveillant" || role === "super_admin") && (
-                    modifierNumeroId === n.parent_id ? (
-                      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                        <input style={{ ...inputStyle, flex: 1, fontSize: 12.5, padding: "6px 8px" }} value={nouveauNumeroParent} onChange={(e) => setNouveauNumeroParent(e.target.value)} placeholder="+225 07 00 00 00 00" autoFocus />
-                        <Button small onClick={() => corrigerNumeroParent(n.parent_id)}>Enregistrer</Button>
-                        <Button small variant="ghost" onClick={() => { setModifierNumeroId(null); setNouveauNumeroParent(""); }}>Annuler</Button>
+            {notifJournal.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucune notification pour l'instant.</div>}
+            {Object.entries(
+              notifJournal.reduce((groupes, n) => {
+                const cle = n.classe_nom || "Sans classe";
+                (groupes[cle] = groupes[cle] || []).push(n);
+                return groupes;
+              }, {})
+            ).sort(([a], [b]) => a.localeCompare(b)).map(([classeNom, notifs]) => {
+              const notifsAvecTel = notifs.filter((n) => n.lien_whatsapp);
+              return (
+                <Card
+                  key={classeNom}
+                  title={`${classeNom} — ${notifs.length} notification${notifs.length > 1 ? "s" : ""}`}
+                  style={{ marginBottom: 16 }}
+                  right={notifsAvecTel.length > 0 && (role === "direction" || role === "surveillant" || role === "super_admin") ? (
+                    <Button small icon={P.check} onClick={() => setFileEnvoiWhatsapp({ classeNom, notifs: notifsAvecTel, index: 0 })}>
+                      File d'envoi WhatsApp ({notifsAvecTel.length})
+                    </Button>
+                  ) : undefined}
+                >
+                  <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                    {notifs.map((n) => (
+                      <div key={n.id} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 12, padding: "14px 16px" }}>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{[n.eleve_nom, n.eleve_prenoms].filter(Boolean).join(" ")} → {n.parent_nom}</div>
+                        <div style={{ fontSize: 12, color: COLORS.craieDim, marginTop: 2 }}>{n.contenu}</div>
+                        <div style={{ fontSize: 10.5, color: COLORS.craieDim, marginTop: 4 }}>{n.statut === "envoyee" ? "Envoyée" : n.statut === "echouee" ? "Échec" : "Programmée"} · {fmtTime(n.envoyer_a)} · {n.parent_telephone}</div>
+                        {(role === "direction" || role === "surveillant" || role === "super_admin") && (
+                          modifierNumeroId === n.parent_id ? (
+                            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                              <input style={{ ...inputStyle, flex: 1, fontSize: 12.5, padding: "6px 8px" }} value={nouveauNumeroParent} onChange={(e) => setNouveauNumeroParent(e.target.value)} placeholder="+225 07 00 00 00 00" autoFocus />
+                              <Button small onClick={() => corrigerNumeroParent(n.parent_id)}>Enregistrer</Button>
+                              <Button small variant="ghost" onClick={() => { setModifierNumeroId(null); setNouveauNumeroParent(""); }}>Annuler</Button>
+                            </div>
+                          ) : (
+                            <button onClick={() => { setModifierNumeroId(n.parent_id); setNouveauNumeroParent(n.parent_telephone || ""); }} style={{ background: "transparent", border: "none", color: COLORS.marker, cursor: "pointer", fontSize: 11, textDecoration: "underline", marginTop: 6, padding: 0 }}>
+                              Modifier le numéro
+                            </button>
+                          )
+                        )}
                       </div>
+                    ))}
+                  </div>
+                </Card>
+              );
+            })}
+
+            {fileEnvoiWhatsapp && (() => {
+              const n = fileEnvoiWhatsapp.notifs[fileEnvoiWhatsapp.index];
+              const termine = fileEnvoiWhatsapp.index >= fileEnvoiWhatsapp.notifs.length;
+              return (
+                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setFileEnvoiWhatsapp(null)}>
+                  <div style={{ background: COLORS.ardoiseDeep, borderRadius: 12, padding: 22, width: 380, maxWidth: "92vw" }} onClick={(e) => e.stopPropagation()}>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 17, marginBottom: 6 }}>File d'envoi WhatsApp — {fileEnvoiWhatsapp.classeNom}</div>
+                    {termine ? (
+                      <React.Fragment>
+                        <div style={{ padding: "20px 0", textAlign: "center", fontSize: 13.5, color: COLORS.success }}>✔ Tous les messages ont été ouverts ({fileEnvoiWhatsapp.notifs.length}/{fileEnvoiWhatsapp.notifs.length}).</div>
+                        <Button onClick={() => setFileEnvoiWhatsapp(null)} style={{ width: "100%" }}>Fermer</Button>
+                      </React.Fragment>
                     ) : (
-                      <button onClick={() => { setModifierNumeroId(n.parent_id); setNouveauNumeroParent(n.parent_telephone || ""); }} style={{ background: "transparent", border: "none", color: COLORS.marker, cursor: "pointer", fontSize: 11, textDecoration: "underline", marginTop: 6, padding: 0 }}>
-                        Modifier le numéro
-                      </button>
-                    )
-                  )}
+                      <React.Fragment>
+                        <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginBottom: 14 }}>{fileEnvoiWhatsapp.index + 1} / {fileEnvoiWhatsapp.notifs.length}</div>
+                        <div style={{ background: COLORS.ardoise, borderRadius: 8, padding: 12, marginBottom: 16 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{n.parent_nom} — {n.parent_telephone}</div>
+                          <div style={{ fontSize: 12, color: COLORS.craieDim }}>{n.contenu}</div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <Button
+                            style={{ flex: 1 }}
+                            onClick={() => {
+                              window.open(n.lien_whatsapp, "_blank");
+                              setFileEnvoiWhatsapp((f) => ({ ...f, index: f.index + 1 }));
+                            }}
+                          >
+                            Ouvrir WhatsApp et passer au suivant
+                          </Button>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
+                          <button onClick={() => setFileEnvoiWhatsapp((f) => ({ ...f, index: f.index + 1 }))} style={{ background: "transparent", border: "none", color: COLORS.craieDim, cursor: "pointer", fontSize: 11, textDecoration: "underline" }}>Passer celui-ci</button>
+                          <button onClick={() => setFileEnvoiWhatsapp(null)} style={{ background: "transparent", border: "none", color: COLORS.craieDim, cursor: "pointer", fontSize: 11, textDecoration: "underline" }}>Arrêter</button>
+                        </div>
+                      </React.Fragment>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </div>
         )}
 
