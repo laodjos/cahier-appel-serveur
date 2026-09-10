@@ -272,6 +272,24 @@ router.get("/:id/parents", async (req, res) => {
   res.json(rows);
 });
 
+// PATCH /api/students/parents/:parentId  { telephone?, nom?, genre? }
+// Corrige directement un numéro (ou un nom) déjà enregistré — plutôt que
+// d'attacher un nouveau parent en cas de faute de frappe, ce qui laisserait
+// l'ancien numéro erroné actif en double.
+router.patch("/parents/:parentId", requireRole("direction", "surveillant", "super_admin"), async (req, res) => {
+  const { telephone, nom, genre } = req.body;
+  const champs = [];
+  const params = [];
+  if (telephone !== undefined && telephone.trim()) { params.push(telephone.trim()); champs.push(`telephone = $${params.length}`); }
+  if (nom !== undefined && nom.trim()) { params.push(nom.trim()); champs.push(`nom = $${params.length}`); }
+  if (genre !== undefined) { params.push(genre || null); champs.push(`genre = $${params.length}`); }
+  if (champs.length === 0) return res.status(400).json({ error: "Indique au moins un champ à corriger." });
+  params.push(req.params.parentId);
+  const { rows } = await pool.query(`UPDATE parents SET ${champs.join(", ")} WHERE id = $${params.length} RETURNING *`, params);
+  if (!rows[0]) return res.status(404).json({ error: "Parent introuvable." });
+  res.json(rows[0]);
+});
+
 // GET /api/students/:id — fiche complète d'un élève (pour le dossier élève)
 router.get("/:id", async (req, res) => {
   const { rows } = await pool.query(

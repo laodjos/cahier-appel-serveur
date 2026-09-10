@@ -430,6 +430,8 @@ function App({ session, onLogout }) {
   const [nouveauFerieLibelle, setNouveauFerieLibelle] = useState("");
   const [absenteisme, setAbsenteisme] = useState([]);
   const [notifJournal, setNotifJournal] = useState([]);
+  const [modifierNumeroId, setModifierNumeroId] = useState(null);
+  const [nouveauNumeroParent, setNouveauNumeroParent] = useState("");
   const [devices, setDevices] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [search, setSearch] = useState("");
@@ -1305,6 +1307,16 @@ function App({ session, onLogout }) {
     try {
       const res = await api("/parent-auth/generer-code-assiste", { method: "POST", body: { telephone } });
       window.open(res.lien_whatsapp, "_blank");
+    } catch (e) { catchErr(e); }
+  }
+
+  async function corrigerNumeroParent(parentId) {
+    if (!nouveauNumeroParent.trim()) return;
+    try {
+      await api(`/students/parents/${parentId}`, { method: "PATCH", body: { telephone: nouveauNumeroParent.trim() } });
+      setNotifJournal((liste) => liste.map((n) => n.parent_id === parentId ? { ...n, parent_telephone: nouveauNumeroParent.trim() } : n));
+      setModifierNumeroId(null);
+      setNouveauNumeroParent("");
     } catch (e) { catchErr(e); }
   }
 
@@ -4181,7 +4193,20 @@ function App({ session, onLogout }) {
                 <div key={n.id} style={{ background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 12, padding: "14px 16px" }}>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{[n.eleve_nom, n.eleve_prenoms].filter(Boolean).join(" ")} → {n.parent_nom}</div>
                   <div style={{ fontSize: 12, color: COLORS.craieDim, marginTop: 2 }}>{n.contenu}</div>
-                  <div style={{ fontSize: 10.5, color: COLORS.craieDim, marginTop: 4 }}>{n.statut === "envoyee" ? "Envoyée" : n.statut === "echouee" ? "Échec" : "Programmée"} · {fmtTime(n.envoyer_a)}</div>
+                  <div style={{ fontSize: 10.5, color: COLORS.craieDim, marginTop: 4 }}>{n.statut === "envoyee" ? "Envoyée" : n.statut === "echouee" ? "Échec" : "Programmée"} · {fmtTime(n.envoyer_a)} · {n.parent_telephone}</div>
+                  {(role === "direction" || role === "surveillant" || role === "super_admin") && (
+                    modifierNumeroId === n.parent_id ? (
+                      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                        <input style={{ ...inputStyle, flex: 1, fontSize: 12.5, padding: "6px 8px" }} value={nouveauNumeroParent} onChange={(e) => setNouveauNumeroParent(e.target.value)} placeholder="+225 07 00 00 00 00" autoFocus />
+                        <Button small onClick={() => corrigerNumeroParent(n.parent_id)}>Enregistrer</Button>
+                        <Button small variant="ghost" onClick={() => { setModifierNumeroId(null); setNouveauNumeroParent(""); }}>Annuler</Button>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setModifierNumeroId(n.parent_id); setNouveauNumeroParent(n.parent_telephone || ""); }} style={{ background: "transparent", border: "none", color: COLORS.marker, cursor: "pointer", fontSize: 11, textDecoration: "underline", marginTop: 6, padding: 0 }}>
+                        Modifier le numéro
+                      </button>
+                    )
+                  )}
                 </div>
               ))}
             </div>
