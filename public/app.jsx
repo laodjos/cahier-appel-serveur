@@ -3387,8 +3387,9 @@ function App({ session, onLogout }) {
                         const trouve = students.find((s) => s.matricule === encaisserMatricule.trim());
                         if (trouve) {
                           const classeTrouvee = classes.find((c) => c.id === trouve.classe_id);
-                          const NIVEAUX_2ND_CYCLE_SCAN = ["2nde", "1ère", "Terminale"];
-                          setEncaisserCycle(NIVEAUX_2ND_CYCLE_SCAN.includes(classeTrouvee?.niveau) ? "2nd" : "1er");
+                          const normaliserNiveauScan = (t) => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+                          const NIVEAUX_2ND_CYCLE_SCAN = ["2nde", "1ere", "terminale"];
+                          setEncaisserCycle(NIVEAUX_2ND_CYCLE_SCAN.includes(normaliserNiveauScan(classeTrouvee?.niveau)) ? "2nd" : "1er");
                           setEncaisserNiveau(classeTrouvee?.niveau || "");
                           setEncaisserClasseId(trouve.classe_id);
                           setEncaisserEleveId(trouve.id);
@@ -3402,10 +3403,23 @@ function App({ session, onLogout }) {
                   </Field>
                   <div style={{ textAlign: "center", fontSize: 11, color: COLORS.craieDim, margin: "10px 0" }}>— ou repère l'élève par sa classe —</div>
                   {(() => {
-                    const NIVEAUX_1ER_CYCLE = ["6ème", "5ème", "4ème", "3ème"];
-                    const NIVEAUX_2ND_CYCLE = ["2nde", "1ère", "Terminale"];
-                    const niveauxCycle = encaisserCycle === "1er" ? NIVEAUX_1ER_CYCLE : encaisserCycle === "2nd" ? NIVEAUX_2ND_CYCLE : [];
-                    const classesFiltrees = classes.filter((c) => niveauxCycle.includes(c.niveau));
+                    // Le niveau d'une classe est un champ texte libre (pas une liste
+                    // fixe) — une école peut avoir tapé "6eme" sans accent, "Tle" etc.
+                    // On compare donc en normalisant (accents/casse ignorés), et on
+                    // n'affiche que les niveaux qui existent VRAIMENT dans les classes,
+                    // plutôt qu'une liste figée qui risquerait de ne rien trouver.
+                    const normaliser = (t) => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+                    const NIVEAUX_1ER_CYCLE_NORM = ["6eme", "5eme", "4eme", "3eme"];
+                    const NIVEAUX_2ND_CYCLE_NORM = ["2nde", "1ere", "terminale"];
+                    function cycleDeNiveau(niveau) {
+                      const n = normaliser(niveau);
+                      if (NIVEAUX_1ER_CYCLE_NORM.includes(n)) return "1er";
+                      if (NIVEAUX_2ND_CYCLE_NORM.includes(n)) return "2nd";
+                      return null;
+                    }
+                    const classesDuCycle = classes.filter((c) => cycleDeNiveau(c.niveau) === encaisserCycle);
+                    const niveauxDisponibles = [...new Set(classesDuCycle.map((c) => c.niveau))];
+                    const classesFiltrees = classesDuCycle.filter((c) => c.niveau === encaisserNiveau);
                     const elevesClasse = students.filter((s) => s.classe_id === encaisserClasseId);
                     return (
                       <React.Fragment>
@@ -3419,7 +3433,8 @@ function App({ session, onLogout }) {
 
                         {encaisserCycle && (
                           <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-                            {niveauxCycle.filter((n) => classes.some((c) => c.niveau === n)).map((n) => (
+                            {niveauxDisponibles.length === 0 && <div style={{ fontSize: 11.5, color: COLORS.craieDim }}>Aucune classe de ce cycle pour l'instant.</div>}
+                            {niveauxDisponibles.map((n) => (
                               <button key={n} onClick={() => { setEncaisserNiveau(n); setEncaisserClasseId(""); setEncaisserEleveId(""); }} style={{ padding: "6px 12px", borderRadius: 999, border: `1px solid ${COLORS.line}`, background: encaisserNiveau === n ? "rgba(217,164,65,0.16)" : "transparent", color: encaisserNiveau === n ? COLORS.marker : COLORS.craieDim, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
                                 {n}
                               </button>
@@ -3429,7 +3444,7 @@ function App({ session, onLogout }) {
 
                         {encaisserNiveau && (
                           <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-                            {classesFiltrees.filter((c) => c.niveau === encaisserNiveau).map((c) => (
+                            {classesFiltrees.map((c) => (
                               <button key={c.id} onClick={() => { setEncaisserClasseId(c.id); setEncaisserEleveId(""); }} style={{ padding: "6px 12px", borderRadius: 999, border: `1px solid ${COLORS.line}`, background: encaisserClasseId === c.id ? "rgba(217,164,65,0.16)" : "transparent", color: encaisserClasseId === c.id ? COLORS.marker : COLORS.craieDim, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
                                 {c.nom}
                               </button>
