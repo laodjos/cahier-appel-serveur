@@ -436,6 +436,8 @@ function App({ session, onLogout }) {
   const [fileCodesWhatsapp, setFileCodesWhatsapp] = useState(null); // { classeNom, eleves: [...], index, chargement }
   const [rapportCaisseType, setRapportCaisseType] = useState(null); // 'ouverture' | 'fermeture' | null
   const [rapportCaisseTelephone, setRapportCaisseTelephone] = useState("");
+  const [affectationCycle, setAffectationCycle] = useState("");
+  const [affectationNiveau, setAffectationNiveau] = useState("");
   const [devices, setDevices] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [search, setSearch] = useState("");
@@ -2528,6 +2530,7 @@ function App({ session, onLogout }) {
           {availableViews.includes("erp") && (estDirectionGenerale || session.user.erp_actif) && <NavItem label="ERP (notes)" active={view === "erp"} onClick={() => { setSidebarOuverte(false); setView("erp"); }} />}
           {availableViews.includes("caisse") && (estDirectionGenerale || session.user.erp_actif) && <NavItem label="Caisse" active={view === "caisse"} onClick={() => { setSidebarOuverte(false); setView("caisse"); }} />}
           {availableViews.includes("caisse") && (estDirectionGenerale || session.user.erp_actif) && <NavItem label="Journal des paiements" active={view === "journal-paiements"} onClick={() => { setSidebarOuverte(false); setView("journal-paiements"); }} />}
+          {availableViews.includes("caisse") && (estDirectionGenerale || session.user.erp_actif) && <NavItem label="Statut d'affectation" active={view === "affectation"} onClick={() => { setSidebarOuverte(false); setView("affectation"); }} />}
           {availableViews.includes("emploi") && <NavItem label="Emploi du temps" active={view === "emploi"} onClick={() => { setSidebarOuverte(false); setView("emploi"); }} />}
           {availableViews.includes("rapports") && <NavItem label="Rapports" active={view === "rapports"} onClick={() => { setSidebarOuverte(false); setView("rapports"); }} />}
           {availableViews.includes("notif") && <NavItem label="Notifications parents" active={view === "notif"} onClick={() => { setSidebarOuverte(false); setView("notif"); }} />}
@@ -3766,33 +3769,6 @@ function App({ session, onLogout }) {
                   </Card>
                 )}
 
-                <Card title="Statut d'affectation des élèves" style={{ marginBottom: 20 }}>
-                  <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>
-                    Les élèves déjà enregistrés n'ont pas encore de statut d'affectation renseigné — coche ceux qui sont affectés (orientation officielle) pour que les bons frais d'inscription s'appliquent à chacun.
-                  </div>
-                  {Object.entries(
-                    students.reduce((groupes, s) => {
-                      const cle = s.classe_nom || "Sans classe";
-                      (groupes[cle] = groupes[cle] || []).push(s);
-                      return groupes;
-                    }, {})
-                  ).sort(([a], [b]) => a.localeCompare(b)).map(([classeNom, eleves], gi, tousGroupes) => (
-                    <div key={classeNom} style={{ borderBottom: gi < tousGroupes.length - 1 ? `1px solid ${COLORS.line}` : "none" }}>
-                      <div style={{ padding: "8px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase", letterSpacing: 0.4, background: "rgba(255,255,255,0.02)" }}>{classeNom} — {eleves.length} élève(s)</div>
-                      {eleves.map((s, i) => (
-                        <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "7px 18px", borderBottom: i < eleves.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
-                          <span style={{ flex: 1 }}>{nomCompletEleve(s)}</span>
-                          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: COLORS.craieDim, cursor: "pointer" }}>
-                            <input type="checkbox" checked={!!s.affecte} onChange={() => changerAffecteEleve(s.id, !s.affecte)} />
-                            Affecté
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                  {students.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Aucun élève enregistré pour l'instant.</div>}
-                </Card>
-
                 <Card title="Solde d'un élève" style={{ marginBottom: 20 }}>
                   <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
                     <select style={{ ...inputStyle, flex: 1, minWidth: 180 }} value={soldeEleveId} onChange={(e) => { setSoldeEleveId(e.target.value); setSoldeData(null); setFraisChoisiPourPaiement(null); setHistoriquePaiementsEleve(null); setDernierPaiementRecu(null); }}>
@@ -4314,6 +4290,74 @@ function App({ session, onLogout }) {
             </Card>
           </div>
         )}
+
+        {view === "affectation" && (() => {
+          const normaliser = (t) => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+          const NIVEAUX_1ER_CYCLE_NORM = ["6eme", "5eme", "4eme", "3eme"];
+          const NIVEAUX_2ND_CYCLE_NORM = ["2nde", "1ere", "terminale"];
+          function cycleDeNiveau(niveau) {
+            const n = normaliser(niveau);
+            if (NIVEAUX_1ER_CYCLE_NORM.includes(n)) return "1er";
+            if (NIVEAUX_2ND_CYCLE_NORM.includes(n)) return "2nd";
+            return "autre";
+          }
+          const classesDuCycle = classes.filter((c) => cycleDeNiveau(c.niveau) === (affectationCycle || "1er"));
+          const niveauxDisponibles = [...new Set(classesDuCycle.map((c) => c.niveau))];
+          const niveauActif = affectationNiveau && niveauxDisponibles.includes(affectationNiveau) ? affectationNiveau : niveauxDisponibles[0];
+          const classesDuNiveau = classesDuCycle.filter((c) => c.niveau === niveauActif);
+
+          return (
+            <div>
+              <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Statut d'affectation des élèves</h1>
+              <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Coche les élèves affectés (orientation officielle) pour que les bons frais d'inscription s'appliquent à chacun.</div>
+
+              <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+                {[{ id: "1er", label: "1er cycle" }, { id: "2nd", label: "2nd cycle" }].map((c) => (
+                  <button key={c.id} onClick={() => { setAffectationCycle(c.id); setAffectationNiveau(""); }} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${COLORS.line}`, background: (affectationCycle || "1er") === c.id ? COLORS.marker : "transparent", color: (affectationCycle || "1er") === c.id ? COLORS.ardoiseDeep : COLORS.craie, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+
+              {niveauxDisponibles.length === 0 && <div style={{ fontSize: 12.5, color: COLORS.craieDim }}>Aucune classe pour ce cycle.</div>}
+
+              {niveauxDisponibles.length > 0 && (
+                <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
+                  {niveauxDisponibles.map((n) => (
+                    <button key={n} onClick={() => setAffectationNiveau(n)} style={{ padding: "6px 14px", borderRadius: 999, border: `1px solid ${COLORS.line}`, background: niveauActif === n ? "rgba(217,164,65,0.16)" : "transparent", color: niveauActif === n ? COLORS.marker : COLORS.craieDim, fontWeight: 600, fontSize: 12.5, cursor: "pointer" }}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {niveauActif && (
+                <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 8 }}>
+                  {classesDuNiveau.map((classe) => {
+                    const elevesClasse = students.filter((s) => s.classe_id === classe.id);
+                    return (
+                      <div key={classe.id} style={{ minWidth: 240, flex: "0 0 240px", background: COLORS.ardoiseDeep, border: `1px solid ${COLORS.line}`, borderRadius: 12, overflow: "hidden" }}>
+                        <div style={{ padding: "10px 14px", fontSize: 12.5, fontWeight: 600, borderBottom: `1px solid ${COLORS.line}`, background: "rgba(255,255,255,0.02)" }}>
+                          {classe.nom} <span style={{ color: COLORS.craieDim, fontWeight: 400 }}>({elevesClasse.length})</span>
+                        </div>
+                        {elevesClasse.map((s, i) => (
+                          <div key={s.id} style={{ padding: "8px 14px", borderBottom: i < elevesClasse.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 12.5 }}>
+                            <div style={{ marginBottom: 4 }}>{nomCompletEleve(s)}</div>
+                            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: COLORS.craieDim, cursor: "pointer" }}>
+                              <input type="checkbox" checked={!!s.affecte} onChange={() => changerAffecteEleve(s.id, !s.affecte)} />
+                              Affecté
+                            </label>
+                          </div>
+                        ))}
+                        {elevesClasse.length === 0 && <div style={{ padding: 14, fontSize: 12, color: COLORS.craieDim }}>Aucun élève.</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {view === "notif" && (
           <div>
