@@ -154,7 +154,10 @@ router.post("/:id/rapport-whatsapp", async (req, res) => {
       : `Clôture de caisse — ${nomCaisse}\nPar : ${nomUtilisateur}\nLe : ${maintenant}\n\nSolde d'ouverture (ce matin) : ${formatMontant(soldeOuverture)}\nMouvements du jour : ${variationJour >= 0 ? "+" : ""}${formatMontant(variationJour)}\nSolde de clôture : ${formatMontant(soldeActuel)}`;
 
     const lienWhatsapp = `https://wa.me/${normaliserNumeroCi(telephone)}?text=${encodeURIComponent(message)}`;
-    res.json({ message, lien_whatsapp: lienWhatsapp });
+    // Fermer la caisse la verrouille réellement (plus d'encaissement possible
+    // tant qu'elle n'est pas rouverte) — pas seulement un message envoyé.
+    await pool.query("UPDATE caisses SET fermee = $1 WHERE id = $2", [type === "fermeture", req.params.id]);
+    res.json({ message, lien_whatsapp: lienWhatsapp, fermee: type === "fermeture" });
   } catch (err) {
     console.error("Erreur rapport WhatsApp caisse :", err);
     res.status(500).json({ error: "Impossible de générer le rapport pour le moment." });

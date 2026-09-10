@@ -1337,6 +1337,7 @@ function App({ session, onLogout }) {
     try {
       const res = await api(`/caisses/${caisseSelectionneeId}/rapport-whatsapp`, { method: "POST", body: { type: rapportCaisseType, telephone: rapportCaisseTelephone.trim() } });
       window.open(res.lien_whatsapp, "_blank");
+      setCaissesListe((liste) => liste.map((c) => c.id === caisseSelectionneeId ? { ...c, fermee: res.fermee } : c));
       setRapportCaisseType(null);
       setRapportCaisseTelephone("");
     } catch (e) { catchErr(e); }
@@ -3440,16 +3441,22 @@ function App({ session, onLogout }) {
           <div>
             <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Caisse</h1>
             <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Frais de scolarité et paiements — visible uniquement par la Direction.</div>
-
+            {(() => {
+              const caisseActive = caissesListe.find((c) => c.id === caisseSelectionneeId);
+              return (
             <Card
               title="Vue d'ensemble de la caisse"
               style={{ marginBottom: 20 }}
-              right={<Button small icon={P.plus} onClick={() => setShowEncaisserEleve(true)}>Encaisser un élève</Button>}
+              right={
+                <Button small icon={P.plus} onClick={() => setShowEncaisserEleve(true)} disabled={caisseActive?.fermee} title={caisseActive?.fermee ? "Cette caisse est fermée — rouvre-la avant d'encaisser." : undefined}>
+                  Encaisser un élève
+                </Button>
+              }
             >
               <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
                 <select style={inputStyle} value={caisseSelectionneeId || ""} onChange={(e) => { setCaisseSelectionneeId(e.target.value); setRapportCaisseType(null); setRapportCaisseTelephone(""); }}>
                   <option value="">— Choisir une caisse —</option>
-                  {caissesListe.map((c) => <option key={c.id} value={c.id}>{c.nom}{c.est_principale ? " (Principale)" : ""}</option>)}
+                  {caissesListe.map((c) => <option key={c.id} value={c.id}>{c.nom}{c.est_principale ? " (Principale)" : ""}{c.fermee ? " — Fermée" : ""}</option>)}
                 </select>
               </div>
 
@@ -3474,6 +3481,9 @@ function App({ session, onLogout }) {
 
               {caisseSelectionneeId && soldeCaisseActuelle && (
                 <div style={{ padding: "12px 18px", borderBottom: `1px solid ${COLORS.line}` }}>
+                  {caisseActive?.fermee && (
+                    <div style={{ fontSize: 11.5, color: COLORS.alert, fontWeight: 600, marginBottom: 8 }}>⚠ Cette caisse est fermée — aucun encaissement possible tant qu'elle n'est pas rouverte.</div>
+                  )}
                   {rapportCaisseType ? (
                     <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
                       <Field label={`Numéro du destinataire (${rapportCaisseType === "ouverture" ? "ouverture" : "clôture"} de caisse)`}>
@@ -3484,8 +3494,11 @@ function App({ session, onLogout }) {
                     </div>
                   ) : (
                     <div style={{ display: "flex", gap: 8 }}>
-                      <Button small variant="ghost" onClick={() => setRapportCaisseType("ouverture")}>Ouvrir la caisse</Button>
-                      <Button small variant="ghost" onClick={() => setRapportCaisseType("fermeture")}>Fermer la caisse</Button>
+                      {caisseActive?.fermee ? (
+                        <Button small onClick={() => setRapportCaisseType("ouverture")}>Ouvrir la caisse</Button>
+                      ) : (
+                        <Button small variant="ghost" onClick={() => setRapportCaisseType("fermeture")}>Fermer la caisse</Button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3568,6 +3581,8 @@ function App({ session, onLogout }) {
                 </React.Fragment>
               )}
             </Card>
+              );
+            })()}
 
             {showEncaisserEleve && (
               <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setShowEncaisserEleve(false)}>

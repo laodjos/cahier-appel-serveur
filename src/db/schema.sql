@@ -683,3 +683,6 @@ ALTER TABLE paiements_scolarite ADD COLUMN IF NOT EXISTS frais_individuel_id UUI
 ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
 ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
   CHECK (type IN ('presence', 'retard', 'absence', 'rapport_journalier', 'rapport_mensuel', 'info', 'paiement'));
+-- Une caisse fermée ne doit plus pouvoir encaisser tant qu'elle n'est pas
+-- rouverte — évite qu'un paiement soit enregistré après la clôture du jour.
+ALTER TABLE caisses ADD COLUMN IF NOT EXISTS fermee BOOLEAN NOT NULL DEFAULT false;
