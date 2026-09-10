@@ -438,6 +438,7 @@ function App({ session, onLogout }) {
   const [rapportCaisseTelephone, setRapportCaisseTelephone] = useState("");
   const [affectationCycle, setAffectationCycle] = useState("");
   const [affectationNiveau, setAffectationNiveau] = useState("");
+  const [detailJourOuvert, setDetailJourOuvert] = useState(false);
   const [devices, setDevices] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [search, setSearch] = useState("");
@@ -3457,7 +3458,7 @@ function App({ session, onLogout }) {
               }
             >
               <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
-                <select style={inputStyle} value={caisseSelectionneeId || ""} onChange={(e) => { setCaisseSelectionneeId(e.target.value); setRapportCaisseType(null); setRapportCaisseTelephone(""); }}>
+                <select style={inputStyle} value={caisseSelectionneeId || ""} onChange={(e) => { setCaisseSelectionneeId(e.target.value); setRapportCaisseType(null); setRapportCaisseTelephone(""); setDetailJourOuvert(false); }}>
                   <option value="">— Choisir une caisse —</option>
                   {caissesListe.map((c) => <option key={c.id} value={c.id}>{c.nom}{c.est_principale ? " (Principale)" : ""}{c.fermee ? " — Fermée" : ""}</option>)}
                 </select>
@@ -3509,19 +3510,29 @@ function App({ session, onLogout }) {
 
               {caisseSelectionneeId && soldeCaisseActuelle && (soldeCaisseActuelle.paiements_du_jour?.length > 0 || soldeCaisseActuelle.mouvements_du_jour?.length > 0) && (
                 <div style={{ borderBottom: `1px solid ${COLORS.line}` }}>
-                  <div style={{ padding: "10px 18px 4px 18px", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase" }}>Détail du jour, sur cette caisse</div>
-                  {soldeCaisseActuelle.paiements_du_jour?.map((p) => (
-                    <div key={`p-${p.id}`} style={{ display: "flex", justifyContent: "space-between", padding: "6px 18px", fontSize: 12.5 }}>
-                      <span>Scolarité — {[p.eleve_nom, p.eleve_prenoms].filter(Boolean).join(" ") || "Élève"}</span>
-                      <span style={{ fontWeight: 600, color: COLORS.success }}>+{Number(p.montant).toLocaleString("fr-FR")} F</span>
-                    </div>
-                  ))}
-                  {soldeCaisseActuelle.mouvements_du_jour?.map((m) => (
-                    <div key={`m-${m.id}`} style={{ display: "flex", justifyContent: "space-between", padding: "6px 18px", fontSize: 12.5 }}>
-                      <span>{m.libelle}</span>
-                      <span style={{ fontWeight: 600, color: m.type === "entree" ? COLORS.success : COLORS.alert }}>{m.type === "entree" ? "+" : "-"}{Number(m.montant).toLocaleString("fr-FR")} F</span>
-                    </div>
-                  ))}
+                  <button
+                    onClick={() => setDetailJourOuvert((v) => !v)}
+                    style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 18px", background: "transparent", border: "none", cursor: "pointer", fontSize: 11, color: COLORS.craieDim, textTransform: "uppercase" }}
+                  >
+                    <span>Détail du jour, sur cette caisse ({(soldeCaisseActuelle.paiements_du_jour?.length || 0) + (soldeCaisseActuelle.mouvements_du_jour?.length || 0)})</span>
+                    <span>{detailJourOuvert ? "▾ Masquer" : "▸ Afficher"}</span>
+                  </button>
+                  {detailJourOuvert && (
+                    <React.Fragment>
+                      {soldeCaisseActuelle.paiements_du_jour?.map((p) => (
+                        <div key={`p-${p.id}`} style={{ display: "flex", justifyContent: "space-between", padding: "6px 18px", fontSize: 12.5 }}>
+                          <span>Scolarité — {[p.eleve_nom, p.eleve_prenoms].filter(Boolean).join(" ") || "Élève"}</span>
+                          <span style={{ fontWeight: 600, color: COLORS.success }}>+{Number(p.montant).toLocaleString("fr-FR")} F</span>
+                        </div>
+                      ))}
+                      {soldeCaisseActuelle.mouvements_du_jour?.map((m) => (
+                        <div key={`m-${m.id}`} style={{ display: "flex", justifyContent: "space-between", padding: "6px 18px", fontSize: 12.5 }}>
+                          <span>{m.libelle}</span>
+                          <span style={{ fontWeight: 600, color: m.type === "entree" ? COLORS.success : COLORS.alert }}>{m.type === "entree" ? "+" : "-"}{Number(m.montant).toLocaleString("fr-FR")} F</span>
+                        </div>
+                      ))}
+                    </React.Fragment>
+                  )}
                 </div>
               )}
 
