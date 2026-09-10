@@ -667,7 +667,12 @@ function App({ session, onLogout }) {
       }
       if (view === "caisse") {
         api("/frais-scolarite").then(siEcoleInchangee(setFraisScolarite)).catch(catchErr);
-        api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
+        // Réservé à la Direction — un caissier n'a pas le droit de lister les
+        // comptes ni de gérer les caisses, et n'a donc pas besoin de cet appel
+        // (qui échouerait pour lui avec "Accès non autorisé").
+        if (role === "direction" || role === "super_admin") {
+          api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
+        }
         api("/caisses").then(siEcoleInchangee((liste) => {
           setCaissesListe(liste);
           if (!caisseSelectionneeId && liste.length > 0) {
