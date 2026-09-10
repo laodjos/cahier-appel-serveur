@@ -598,6 +598,25 @@ CREATE TABLE IF NOT EXISTS mouvements_caisse (
 );
 
 -- --------------------------------------------------------------------------
+-- Caisses — un établissement peut avoir plusieurs caisses (une par caissier,
+-- un point de collecte...), avec une caisse marquée comme "principale" qui
+-- centralise les transferts venant des autres.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS caisses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ecole_id UUID REFERENCES ecoles(id),
+  nom TEXT NOT NULL,
+  est_principale BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE mouvements_caisse ADD COLUMN IF NOT EXISTS caisse_id UUID REFERENCES caisses(id);
+-- Si renseigné sur un mouvement de type "sortie", indique que ce mouvement est
+-- un TRANSFERT vers cette autre caisse — une "entrée" miroir y est créée
+-- automatiquement, plutôt que d'ajouter un nouveau type de mouvement.
+ALTER TABLE mouvements_caisse ADD COLUMN IF NOT EXISTS caisse_destination_id UUID REFERENCES caisses(id);
+ALTER TABLE paiements_scolarite ADD COLUMN IF NOT EXISTS caisse_id UUID REFERENCES caisses(id);
+
+-- --------------------------------------------------------------------------
 -- Espace Parent — connexion par numéro de téléphone + code à usage unique
 -- envoyé par SMS (comme WhatsApp), sans mot de passe à retenir. Un code
 -- expire au bout de 10 minutes et ne peut servir qu'une seule fois.

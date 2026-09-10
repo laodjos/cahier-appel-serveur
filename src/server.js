@@ -50,6 +50,7 @@ const fraisScolariteRoutes = require("./routes/fraisScolarite");
 const paiementsScolariteRoutes = require("./routes/paiementsScolarite");
 const publicRoutes = require("./routes/public");
 const caisseRoutes = require("./routes/caisse");
+const caissesRoutes = require("./routes/caisses");
 const parentAuthRoutes = require("./routes/parentAuth");
 const parentPortalRoutes = require("./routes/parentPortal");
 
@@ -116,6 +117,7 @@ app.use("/api/frais-scolarite", fraisScolariteRoutes);
 app.use("/api/paiements-scolarite", paiementsScolariteRoutes);
 app.use("/api/public", publicRoutes);
 app.use("/api/caisse", caisseRoutes);
+app.use("/api/caisses", caissesRoutes);
 app.use("/api/parent-auth", parentAuthRoutes);
 app.use("/api/parent-portal", parentPortalRoutes);
 

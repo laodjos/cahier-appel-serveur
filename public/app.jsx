@@ -516,6 +516,27 @@ function App({ session, onLogout }) {
   const [bulletinPeriodeId, setBulletinPeriodeId] = useState("");
   const [bulletinData, setBulletinData] = useState(null);
   const [fraisScolarite, setFraisScolarite] = useState([]);
+  const [caissesListe, setCaissesListe] = useState([]);
+  const [caisseSelectionneeId, setCaisseSelectionneeId] = useState(null);
+  const [soldeCaisseActuelle, setSoldeCaisseActuelle] = useState(null);
+  const [vueEnsembleCaisses, setVueEnsembleCaisses] = useState(null);
+  const [nouvelleCaisse, setNouvelleCaisse] = useState({ nom: "", est_principale: false });
+  const [transfertCaisse, setTransfertCaisse] = useState({ caisse_destination_id: "", montant: "" });
+  const [showEncaisserEleve, setShowEncaisserEleve] = useState(false);
+  const [encaisserEleveId, setEncaisserEleveId] = useState("");
+  const [encaisserMontant, setEncaisserMontant] = useState("");
+
+  useEffect(() => {
+    if (!caisseSelectionneeId) { setSoldeCaisseActuelle(null); return; }
+    api(`/caisses/${caisseSelectionneeId}/solde`).then(setSoldeCaisseActuelle).catch(catchErr);
+    const caisseActive = caissesListe.find((c) => c.id === caisseSelectionneeId);
+    if (caisseActive?.est_principale) {
+      api("/caisses/principale/vue-ensemble").then(setVueEnsembleCaisses).catch(catchErr);
+    } else {
+      setVueEnsembleCaisses(null);
+    }
+  }, [caisseSelectionneeId, caissesListe, api]);
+
   const [nouveauFrais, setNouveauFrais] = useState({ niveau: "", libelle: "Frais de scolarité", montant_total: "", applicable_a: "tous" });
   const [soldeEleveId, setSoldeEleveId] = useState("");
   const [soldeData, setSoldeData] = useState(null);
@@ -634,6 +655,10 @@ function App({ session, onLogout }) {
       }
       if (view === "caisse") {
         api("/frais-scolarite").then(siEcoleInchangee(setFraisScolarite)).catch(catchErr);
+        api("/caisses").then(siEcoleInchangee((liste) => {
+          setCaissesListe(liste);
+          if (!caisseSelectionneeId && liste.length > 0) setCaisseSelectionneeId(liste.find((c) => c.est_principale)?.id || liste[0].id);
+        })).catch(catchErr);
       }
       if (view === "emploi" && (role === "direction" || role === "super_admin")) api("/users").then(siEcoleInchangee(setUsers)).catch(catchErr);
       if (availableViews.includes("emploi")) api("/salles").then(siEcoleInchangee(setSallesListe)).catch(catchErr);
@@ -1832,6 +1857,59 @@ function App({ session, onLogout }) {
     try {
       const data = await api(`/frais-scolarite/solde/${soldeEleveId}`);
       setSoldeData(data);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function creerCaisse() {
+    if (!nouvelleCaisse.nom.trim()) return;
+    try {
+      const cree = await api("/caisses", { method: "POST", body: nouvelleCaisse });
+      setCaissesListe((liste) => [...liste.map((c) => nouvelleCaisse.est_principale ? { ...c, est_principale: false } : c), cree]);
+      setNouvelleCaisse({ nom: "", est_principale: false });
+    } catch (e) { catchErr(e); }
+  }
+
+  async function marquerCaissePrincipale(id) {
+    try {
+      await api(`/caisses/${id}/principale`, { method: "PATCH" });
+      setCaissesListe((liste) => liste.map((c) => ({ ...c, est_principale: c.id === id })));
+    } catch (e) { catchErr(e); }
+  }
+
+  async function supprimerCaisse(id) {
+    if (!window.confirm("Supprimer cette caisse ? Son historique de mouvements sera perdu.")) return;
+    try {
+      await api(`/caisses/${id}`, { method: "DELETE" });
+      setCaissesListe((liste) => liste.filter((c) => c.id !== id));
+      if (caisseSelectionneeId === id) setCaisseSelectionneeId(null);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function effectuerTransfertCaisse() {
+    if (!caisseSelectionneeId || !transfertCaisse.caisse_destination_id || !transfertCaisse.montant) return;
+    try {
+      await api("/caisses/transfert", {
+        method: "POST",
+        body: { caisse_source_id: caisseSelectionneeId, caisse_destination_id: transfertCaisse.caisse_destination_id, montant: transfertCaisse.montant },
+      });
+      setTransfertCaisse({ caisse_destination_id: "", montant: "" });
+      const data = await api(`/caisses/${caisseSelectionneeId}/solde`);
+      setSoldeCaisseActuelle(data);
+      setGlobalInfo("Transfert effectué avec succès.");
+      setTimeout(() => setGlobalInfo(""), 4000);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function encaisserEleveRapide() {
+    if (!encaisserEleveId || !encaisserMontant) return;
+    try {
+      await api("/paiements-scolarite/manuel", { method: "POST", body: { eleve_id: encaisserEleveId, montant: encaisserMontant, caisse_id: caisseSelectionneeId } });
+      setShowEncaisserEleve(false);
+      setEncaisserEleveId("");
+      setEncaisserMontant("");
+      if (caisseSelectionneeId) { const data = await api(`/caisses/${caisseSelectionneeId}/solde`); setSoldeCaisseActuelle(data); }
+      setGlobalInfo("Paiement encaissé avec succès.");
+      setTimeout(() => setGlobalInfo(""), 4000);
     } catch (e) { catchErr(e); }
   }
 
@@ -3131,6 +3209,107 @@ function App({ session, onLogout }) {
           <div>
             <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Caisse</h1>
             <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Frais de scolarité et paiements — visible uniquement par la Direction.</div>
+
+            <Card
+              title="Vue d'ensemble de la caisse"
+              style={{ marginBottom: 20 }}
+              right={<Button small icon={P.plus} onClick={() => setShowEncaisserEleve(true)}>Encaisser un élève</Button>}
+            >
+              <div style={{ padding: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${COLORS.line}` }}>
+                <select style={inputStyle} value={caisseSelectionneeId || ""} onChange={(e) => setCaisseSelectionneeId(e.target.value)}>
+                  <option value="">— Choisir une caisse —</option>
+                  {caissesListe.map((c) => <option key={c.id} value={c.id}>{c.nom}{c.est_principale ? " (Principale)" : ""}</option>)}
+                </select>
+              </div>
+
+              {caisseSelectionneeId && soldeCaisseActuelle && (
+                <div style={{ padding: 18, display: "flex", gap: 24, flexWrap: "wrap", borderBottom: `1px solid ${COLORS.line}` }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: COLORS.craieDim }}>Solde à l'ouverture (ce matin)</div>
+                    <div style={{ fontSize: 18, fontWeight: 600 }}>{soldeCaisseActuelle.solde_ouverture.toLocaleString("fr-FR")} F</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: COLORS.craieDim }}>Mouvements aujourd'hui</div>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: soldeCaisseActuelle.solde_actuel - soldeCaisseActuelle.solde_ouverture >= 0 ? COLORS.success : COLORS.alert }}>
+                      {soldeCaisseActuelle.solde_actuel - soldeCaisseActuelle.solde_ouverture >= 0 ? "+" : ""}{(soldeCaisseActuelle.solde_actuel - soldeCaisseActuelle.solde_ouverture).toLocaleString("fr-FR")} F
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: COLORS.craieDim }}>Solde actuel</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: COLORS.marker }}>{soldeCaisseActuelle.solde_actuel.toLocaleString("fr-FR")} F</div>
+                  </div>
+                </div>
+              )}
+
+              {vueEnsembleCaisses && (
+                <div style={{ padding: "14px 18px", borderBottom: `1px solid ${COLORS.line}` }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, color: COLORS.marker, marginBottom: 8 }}>Cette caisse est la Principale — solde de chaque caisse de l'école :</div>
+                  {vueEnsembleCaisses.map((v) => (
+                    <div key={v.caisse.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13 }}>
+                      <span>{v.caisse.nom}{v.caisse.est_principale ? " (Principale)" : ""}</span>
+                      <span style={{ fontWeight: 600 }}>{v.solde_actuel.toLocaleString("fr-FR")} F</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {caisseSelectionneeId && (role === "direction" || role === "super_admin") && caissesListe.length > 1 && (
+                <div style={{ padding: 14, display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", borderBottom: `1px solid ${COLORS.line}` }}>
+                  <Field label="Transférer vers">
+                    <select style={inputStyle} value={transfertCaisse.caisse_destination_id} onChange={(e) => setTransfertCaisse((v) => ({ ...v, caisse_destination_id: e.target.value }))}>
+                      <option value="">— Choisir la caisse destination —</option>
+                      {caissesListe.filter((c) => c.id !== caisseSelectionneeId).map((c) => <option key={c.id} value={c.id}>{c.nom}{c.est_principale ? " (Principale)" : ""}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Montant (F CFA)"><input type="number" style={{ ...inputStyle, width: 130 }} value={transfertCaisse.montant} onChange={(e) => setTransfertCaisse((v) => ({ ...v, montant: e.target.value }))} /></Field>
+                  <Button small variant="ghost" onClick={effectuerTransfertCaisse}>Transférer des fonds</Button>
+                </div>
+              )}
+
+              {(role === "direction" || role === "super_admin") && (
+                <React.Fragment>
+                  {caissesListe.map((c) => (
+                    <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "7px 18px", fontSize: 12.5 }}>
+                      <span style={{ flex: 1 }}>{c.nom}</span>
+                      {c.est_principale ? (
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: COLORS.marker, background: "rgba(217,164,65,0.14)", borderRadius: 999, padding: "2px 8px" }}>Principale</span>
+                      ) : (
+                        <button onClick={() => marquerCaissePrincipale(c.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim, fontSize: 11, textDecoration: "underline" }}>Désigner comme principale</button>
+                      )}
+                      <button onClick={() => supprimerCaisse(c.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
+                    </div>
+                  ))}
+                  <div style={{ padding: 14, display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", borderTop: `1px solid ${COLORS.line}` }}>
+                    <Field label="Nouvelle caisse"><input style={inputStyle} value={nouvelleCaisse.nom} onChange={(e) => setNouvelleCaisse((v) => ({ ...v, nom: e.target.value }))} placeholder="ex. Caisse Secrétariat" /></Field>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: COLORS.craieDim, cursor: "pointer", paddingBottom: 8 }}>
+                      <input type="checkbox" checked={nouvelleCaisse.est_principale} onChange={(e) => setNouvelleCaisse((v) => ({ ...v, est_principale: e.target.checked }))} />
+                      Désigner comme caisse principale
+                    </label>
+                    <Button small icon={P.plus} onClick={creerCaisse}>Créer la caisse</Button>
+                  </div>
+                </React.Fragment>
+              )}
+            </Card>
+
+            {showEncaisserEleve && (
+              <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setShowEncaisserEleve(false)}>
+                <div style={{ background: COLORS.ardoiseDeep, borderRadius: 12, padding: 22, width: 340, maxWidth: "90vw" }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 17, marginBottom: 14 }}>Encaisser un élève</div>
+                  <Field label="Élève">
+                    <select style={{ ...inputStyle, width: "100%" }} value={encaisserEleveId} onChange={(e) => setEncaisserEleveId(e.target.value)}>
+                      <option value="">— Choisir un élève —</option>
+                      {students.map((s) => <option key={s.id} value={s.id}>{nomCompletEleve(s)} ({s.classe_nom})</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Montant (F CFA)"><input type="number" style={{ ...inputStyle, width: "100%" }} value={encaisserMontant} onChange={(e) => setEncaisserMontant(e.target.value)} /></Field>
+                  <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                    <Button small onClick={encaisserEleveRapide} style={{ flex: 1 }}>Encaisser en espèces</Button>
+                    <Button small variant="ghost" onClick={() => setShowEncaisserEleve(false)}>Annuler</Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
                 {(role === "direction" || role === "super_admin") && (
                   <Card title="Frais par promotion (scolarité, inscription, cantine...)" style={{ marginBottom: 20 }}>
                     <div style={{ padding: "10px 18px", fontSize: 11.5, color: COLORS.craieDim, borderBottom: `1px solid ${COLORS.line}` }}>

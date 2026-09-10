@@ -20,12 +20,12 @@ router.get("/", authRequired, requireErpActif, async (req, res) => {
 // Enregistre un paiement reçu en espèces (ou tout autre moyen géré hors ligne),
 // saisi directement par l'administration.
 router.post("/manuel", authRequired, requireErpActif, requireRole("direction", "super_admin", "caissier"), async (req, res) => {
-  const { eleve_id, montant } = req.body;
+  const { eleve_id, montant, caisse_id } = req.body;
   if (!eleve_id || !montant || Number(montant) <= 0) return res.status(400).json({ error: "eleve_id et montant (positif) sont requis." });
   const { rows } = await pool.query(
-    `INSERT INTO paiements_scolarite (eleve_id, montant, methode, statut, saisi_par, confirme_at)
-     VALUES ($1, $2, 'especes', 'reussi', $3, now()) RETURNING *`,
-    [eleve_id, montant, req.user.sub]
+    `INSERT INTO paiements_scolarite (eleve_id, montant, methode, statut, saisi_par, caisse_id, confirme_at)
+     VALUES ($1, $2, 'especes', 'reussi', $3, $4, now()) RETURNING *`,
+    [eleve_id, montant, req.user.sub, caisse_id || null]
   );
   res.status(201).json(rows[0]);
 });

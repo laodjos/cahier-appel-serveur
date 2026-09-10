@@ -19,32 +19,33 @@ function calculerEtatCaisse(paiementsScolarite, mouvements) {
   return { entrees_scolarite: entreesScolarite, entrees_manuelles: entreesManuelles, total_entrees: totalEntrees, total_sorties: sorties, solde_net: totalEntrees - sorties };
 }
 
-// GET /api/caisse/mouvements?debut=&fin=
+// GET /api/caisse/mouvements?debut=&fin=&caisse_id=
 router.get("/mouvements", async (req, res) => {
-  const { debut, fin } = req.query;
+  const { debut, fin, caisse_id } = req.query;
   const params = [];
   let filtre = "TRUE";
   const ecoleId = ecoleEffective(req);
   if (ecoleId) { params.push(ecoleId); filtre += ` AND ecole_id = $${params.length}`; }
+  if (caisse_id) { params.push(caisse_id); filtre += ` AND caisse_id = $${params.length}`; }
   if (debut) { params.push(debut); filtre += ` AND created_at::date >= $${params.length}`; }
   if (fin) { params.push(fin); filtre += ` AND created_at::date <= $${params.length}`; }
   const { rows } = await pool.query(`SELECT * FROM mouvements_caisse WHERE ${filtre} ORDER BY created_at DESC`, params);
   res.json(rows);
 });
 
-// POST /api/caisse/mouvements  { type, categorie, libelle, montant }
+// POST /api/caisse/mouvements  { type, categorie, libelle, montant, caisse_id? }
 // Un caissier peut ENREGISTRER un mouvement, mais ni le modifier ni le
 // supprimer ensuite — seule la Direction peut corriger une erreur de saisie.
 router.post("/mouvements", requireRole("direction", "super_admin", "caissier"), async (req, res) => {
-  const { type, categorie, libelle, montant } = req.body;
+  const { type, categorie, libelle, montant, caisse_id } = req.body;
   if (!["entree", "sortie"].includes(type)) return res.status(400).json({ error: "type doit être 'entree' ou 'sortie'." });
   if (!libelle || !libelle.trim()) return res.status(400).json({ error: "Le libellé est requis." });
   if (!montant || Number(montant) <= 0) return res.status(400).json({ error: "Montant invalide." });
   const ecoleId = ecoleEffective(req);
   const { rows } = await pool.query(
-    `INSERT INTO mouvements_caisse (ecole_id, type, categorie, libelle, montant, saisi_par)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [ecoleId, type, categorie || null, libelle.trim(), montant, req.user.sub]
+    `INSERT INTO mouvements_caisse (ecole_id, caisse_id, type, categorie, libelle, montant, saisi_par)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [ecoleId, caisse_id || null, type, categorie || null, libelle.trim(), montant, req.user.sub]
   );
   res.status(201).json(rows[0]);
 });
