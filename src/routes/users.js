@@ -2,6 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const multer = require("multer");
 const XLSX = require("xlsx");
+const { creerClasseurAvecEntete } = require("../services/excelHeaderService");
 const { pool } = require("../config/db");
 const { authRequired, requireRole } = require("../middleware/auth");
 
@@ -525,21 +526,21 @@ router.get("/export-personnel", requireRole("direction", "super_admin"), async (
   );
 
   const libellesRole = { super_admin: "Super-administrateur", direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant", caissier: "Caissier" };
-  const donneesExport = rows.map((r) => ({
-    "Nom et prénoms": r.nom || "",
-    "Fonction": libellesRole[r.role] || r.role,
-    "Genre": r.genre === "M" ? "Masculin" : r.genre === "F" ? "Féminin" : "",
-    "Statut d'emploi": r.statut_emploi === "permanent" ? "Permanent" : r.statut_emploi === "vacataire" ? "Vacataire" : "",
-    "Matière(s) enseignée(s)": r.matieres || "",
-    "Contact (email)": r.email || "",
-    "Date d'entrée dans le système": r.created_at ? new Date(r.created_at).toISOString().slice(0, 10).split("-").reverse().join("/") : "",
-  }));
-
-  const feuille = XLSX.utils.json_to_sheet(donneesExport);
-  feuille["!cols"] = Object.keys(donneesExport[0] || {}).map(() => ({ wch: 24 }));
-  const classeur = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(classeur, feuille, "Personnel");
-  const buffer = XLSX.write(classeur, { type: "buffer", bookType: "xlsx" });
+  const { classeur, feuille } = await creerClasseurAvecEntete(ecoleId, "Liste nominative du personnel", "Personnel");
+  feuille.addRow(["Nom et prénoms", "Fonction", "Genre", "Statut d'emploi", "Matière(s) enseignée(s)", "Contact (email)", "Date d'entrée dans le système"]).font = { bold: true };
+  for (const r of rows) {
+    feuille.addRow([
+      r.nom || "",
+      libellesRole[r.role] || r.role,
+      r.genre === "M" ? "Masculin" : r.genre === "F" ? "Féminin" : "",
+      r.statut_emploi === "permanent" ? "Permanent" : r.statut_emploi === "vacataire" ? "Vacataire" : "",
+      r.matieres || "",
+      r.email || "",
+      r.created_at ? new Date(r.created_at).toISOString().slice(0, 10).split("-").reverse().join("/") : "",
+    ]);
+  }
+  feuille.columns.forEach((col) => { col.width = 24; });
+  const buffer = await classeur.xlsx.writeBuffer();
 
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", "attachment; filename=liste-nominative-personnel.xlsx");

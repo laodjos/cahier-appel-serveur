@@ -7,6 +7,7 @@ const { pool } = require("../config/db");
 const { authRequired, requireRole } = require("../middleware/auth");
 const { genererJetonEleve, genererImageQr } = require("../services/qrService");
 const { genererImageCodeBarres } = require("../services/barcodeService");
+const { creerClasseurAvecEntete } = require("../services/excelHeaderService");
 const { UPLOAD_DIR } = require("../config/uploadDir");
 
 const router = express.Router();
@@ -178,16 +179,12 @@ router.get("/statistiques-genre", async (req, res) => {
   );
 
   if (req.query.format === "excel") {
-    const donneesExport = parClasseListe.map((c) => ({
-      "Niveau": c.niveau, "Classe": c.classe, "Filles": c.filles, "Garçons": c.garcons,
-      "Genre non renseigné": c.non_precise, "Total": c.total,
-    }));
-    donneesExport.push({ "Niveau": "", "Classe": "TOTAL GÉNÉRAL", "Filles": totalGeneral.filles, "Garçons": totalGeneral.garcons, "Genre non renseigné": totalGeneral.non_precise, "Total": totalGeneral.total });
-    const feuille = XLSX.utils.json_to_sheet(donneesExport);
-    feuille["!cols"] = Object.keys(donneesExport[0] || {}).map(() => ({ wch: 18 }));
-    const classeur = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(classeur, feuille, "Statistiques par genre");
-    const buffer = XLSX.write(classeur, { type: "buffer", bookType: "xlsx" });
+    const { classeur, feuille } = await creerClasseurAvecEntete(ecoleId, "Statistiques par genre", "Statistiques par genre");
+    feuille.addRow(["Niveau", "Classe", "Filles", "Garçons", "Genre non renseigné", "Total"]).font = { bold: true };
+    for (const c of parClasseListe) feuille.addRow([c.niveau, c.classe, c.filles, c.garcons, c.non_precise, c.total]);
+    feuille.addRow(["", "TOTAL GÉNÉRAL", totalGeneral.filles, totalGeneral.garcons, totalGeneral.non_precise, totalGeneral.total]).font = { bold: true };
+    feuille.columns.forEach((col) => { col.width = 18; });
+    const buffer = await classeur.xlsx.writeBuffer();
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", "attachment; filename=statistiques-par-genre.xlsx");
     return res.send(buffer);
@@ -230,16 +227,12 @@ router.get("/statistiques-pedagogiques", async (req, res) => {
 
   if (req.query.format === "excel") {
     const toutesLesValeurs = [...new Set(parClasseListe.flatMap((c) => Object.keys(c.groupes)))];
-    const donneesExport = parClasseListe.map((c) => {
-      const ligne = { "Niveau": c.niveau, "Classe": c.classe };
-      for (const v of toutesLesValeurs) ligne[v] = c.groupes[v] || 0;
-      return ligne;
-    });
-    const feuille = XLSX.utils.json_to_sheet(donneesExport);
-    feuille["!cols"] = Object.keys(donneesExport[0] || {}).map(() => ({ wch: 18 }));
-    const classeur = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(classeur, feuille, "Statistiques");
-    const buffer = XLSX.write(classeur, { type: "buffer", bookType: "xlsx" });
+    const titres = { redoublant: "Redoublants par classe", etranger: "Élèves étrangers par classe", lv2: "LV2 par classe" };
+    const { classeur, feuille } = await creerClasseurAvecEntete(ecoleId, titres[critere] || "Statistiques", "Statistiques");
+    feuille.addRow(["Niveau", "Classe", ...toutesLesValeurs]).font = { bold: true };
+    for (const c of parClasseListe) feuille.addRow([c.niveau, c.classe, ...toutesLesValeurs.map((v) => c.groupes[v] || 0)]);
+    feuille.columns.forEach((col) => { col.width = 18; });
+    const buffer = await classeur.xlsx.writeBuffer();
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename=statistiques-${critere}.xlsx`);
     return res.send(buffer);
@@ -307,15 +300,11 @@ router.get("/boursiers", async (req, res) => {
   );
 
   if (req.query.format === "excel") {
-    const donneesExport = rows.map((r) => ({
-      "Nom": r.nom, "Prénoms": r.prenoms || "", "Matricule": r.matricule || "",
-      "Classe": r.classe_nom || "", "Régime de bourse": r.regime_bourse || "",
-    }));
-    const feuille = XLSX.utils.json_to_sheet(donneesExport);
-    feuille["!cols"] = Object.keys(donneesExport[0] || {}).map(() => ({ wch: 20 }));
-    const classeur = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(classeur, feuille, "Boursiers");
-    const buffer = XLSX.write(classeur, { type: "buffer", bookType: "xlsx" });
+    const { classeur, feuille } = await creerClasseurAvecEntete(ecoleId, "Liste des boursiers", "Boursiers");
+    feuille.addRow(["Nom", "Prénoms", "Matricule", "Classe", "Régime de bourse"]).font = { bold: true };
+    for (const r of rows) feuille.addRow([r.nom, r.prenoms || "", r.matricule || "", r.classe_nom || "", r.regime_bourse || ""]);
+    feuille.columns.forEach((col) => { col.width = 20; });
+    const buffer = await classeur.xlsx.writeBuffer();
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", "attachment; filename=liste-boursiers.xlsx");
     return res.send(buffer);

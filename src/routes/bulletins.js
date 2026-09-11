@@ -1,5 +1,6 @@
 const express = require("express");
 const XLSX = require("xlsx");
+const { creerClasseurAvecEntete } = require("../services/excelHeaderService");
 const { pool } = require("../config/db");
 const { authRequired, requireErpActif } = require("../middleware/auth");
 const { trouverCoefficient } = require("./coefficientsMatieres");
@@ -240,20 +241,15 @@ router.get("/premiers-de-classe", async (req, res) => {
     }
 
     if (format === "excel") {
-      const donneesExport = [];
+      const { classeur, feuille } = await creerClasseurAvecEntete(ecoleEffective(req), "Premiers de classe", "Premiers de classe");
+      feuille.addRow(["Classe", "Rang", "Nom", "Prénoms", "Moyenne générale"]).font = { bold: true };
       for (const c of resultatsParClasse) {
         for (const p of c.premiers) {
-          donneesExport.push({
-            "Classe": c.classe.nom, "Rang": p.rang, "Nom": p.nom, "Prénoms": p.prenoms || "",
-            "Moyenne générale": p.moyenne_generale,
-          });
+          feuille.addRow([c.classe.nom, p.rang, p.nom, p.prenoms || "", p.moyenne_generale]);
         }
       }
-      const feuille = XLSX.utils.json_to_sheet(donneesExport);
-      feuille["!cols"] = Object.keys(donneesExport[0] || {}).map(() => ({ wch: 20 }));
-      const classeur = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(classeur, feuille, "Premiers de classe");
-      const buffer = XLSX.write(classeur, { type: "buffer", bookType: "xlsx" });
+      feuille.columns.forEach((col) => { col.width = 20; });
+      const buffer = await classeur.xlsx.writeBuffer();
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition", "attachment; filename=premiers-de-classe.xlsx");
       return res.send(buffer);
