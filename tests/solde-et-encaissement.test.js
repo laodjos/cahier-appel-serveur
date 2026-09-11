@@ -1,0 +1,133 @@
+const { appelApi, creerToken } = require("./helpers");
+const { pool, preparerJeuDeTest, fermerPool, ECOLE_ID, DIRECTION_ID, CLASSE_ID, ELEVE_ID } = require("./fixtures");
+
+let tokenDirection;
+
+beforeAll(async () => {
+  await preparerJeuDeTest();
+  tokenDirection = creerToken({ sub: DIRECTION_ID, role: "direction", nom: "Mme Test Direction", ecole_id: ECOLE_ID });
+});
+
+afterAll(async () => {
+  await fermerPool();
+});
+
+beforeEach(async () => {
+  // Repart d'un solde propre avant chaque test de ce fichier.
+  await pool.query("DELETE FROM paiements_scolarite WHERE eleve_id = $1", [ELEVE_ID]);
+  await pool.query("DELETE FROM frais_scolarite WHERE ecole_id = $1", [ECOLE_ID]);
+  await pool.query("DELETE FROM frais_individuels WHERE eleve_id = $1", [ELEVE_ID]);
+});
+
+describe("Solde d'un élève", () => {
+  test("sans aucun frais configuré, le solde est vide (montant_total null)", async () => {
+    const res = await appelApi(`/frais-scolarite/solde/${ELEVE_ID}`, { token: tokenDirection });
+    expect(res.status).toBe(200);
+    expect(res.data.montant_total).toBeNull();
+  });
+
+  test("un frais configuré pour le niveau s'applique bien à l'élève", async () => {
+    await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES ($1, '6ème', 'Frais de scolarité', 250000, 'tous')`,
+      [ECOLE_ID]
+    );
+    const res = await appelApi(`/frais-scolarite/solde/${ELEVE_ID}`, { token: tokenDirection });
+    expect(res.data.montant_total).toBe(250000);
+    expect(res.data.solde).toBe(250000);
+    expect(res.data.a_jour).toBe(false);
+  });
+
+  // Reproduit exactement le bug corrigé : le niveau d'une classe est un champ
+  // texte libre, une école peut écrire "6eme" sans accent alors que le frais
+  // est configuré avec "6ème". Sans la normalisation, ce test échouerait.
+  test("un frais configuré avec accent s'applique à une classe sans accent", async () => {
+    await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES ($1, '6ème', 'Frais de scolarité', 250000, 'tous')`,
+      [ECOLE_ID]
+    );
+    // La classe de test est déjà enregistrée avec niveau = '6ème' (avec accent)
+    // dans fixtures.js — on la force ici SANS accent pour reproduire le cas réel.
+    await pool.query("UPDATE classes SET niveau = '6eme' WHERE id = $1", [CLASSE_ID]);
+    const res = await appelApi(`/frais-scolarite/solde/${ELEVE_ID}`, { token: tokenDirection });
+    expect(res.data.montant_total).toBe(250000);
+    // Remet l'accent pour ne pas perturber les autres tests de ce fichier.
+    await pool.query("UPDATE classes SET niveau = '6ème' WHERE id = $1", [CLASSE_ID]);
+  });
+
+  test("un encaissement en espèces réduit bien le solde du même montant", async () => {
+    await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES ($1, '6ème', 'Frais de scolarité', 250000, 'tous')`,
+      [ECOLE_ID]
+    );
+    const paiement = await appelApi("/paiements-scolarite/manuel", {
+      method: "POST", token: tokenDirection,
+      body: { eleve_id: ELEVE_ID, montant: 100000 },
+    });
+    expect(paiement.status).toBe(201);
+
+    const solde = await appelApi(`/frais-scolarite/solde/${ELEVE_ID}`, { token: tokenDirection });
+    expect(solde.data.montant_paye).toBe(100000);
+    expect(solde.data.solde).toBe(150000);
+  });
+
+  test("un paiement affecté à un frais précis se reflète dans le détail de CE frais uniquement", async () => {
+    const fraisA = await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES ($1, '6ème', 'Frais de scolarité', 250000, 'tous') RETURNING id`,
+      [ECOLE_ID]
+    );
+    await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES ($1, '6ème', 'Cantine', 50000, 'tous')`,
+      [ECOLE_ID]
+    );
+    await appelApi("/paiements-scolarite/manuel", {
+      method: "POST", token: tokenDirection,
+      body: { eleve_id: ELEVE_ID, montant: 100000, frais_scolarite_id: fraisA.rows[0].id },
+    });
+
+    const solde = await appelApi(`/frais-scolarite/solde/${ELEVE_ID}`, { token: tokenDirection });
+    const ligneScolarite = solde.data.detail.find((f) => f.libelle === "Frais de scolarité");
+    const ligneCantine = solde.data.detail.find((f) => f.libelle === "Cantine");
+    expect(ligneScolarite.montant_paye).toBe(100000);
+    expect(ligneCantine.montant_paye).toBe(0);
+  });
+
+  test("un reliquat impayé apparaît toujours en tête du détail et déclenche l'alerte", async () => {
+    await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES ($1, '6ème', 'Frais de scolarité', 250000, 'tous')`,
+      [ECOLE_ID]
+    );
+    await pool.query(
+      `INSERT INTO frais_individuels (eleve_id, libelle, montant, est_reliquat) VALUES ($1, 'Reliquat année précédente', 45000, true)`,
+      [ELEVE_ID]
+    );
+    const res = await appelApi(`/frais-scolarite/solde/${ELEVE_ID}`, { token: tokenDirection });
+    expect(res.data.detail[0].est_reliquat).toBe(true);
+    expect(res.data.reliquat_impaye).toBe(true);
+  });
+
+  test("un élève affecté ne voit que le tarif d'inscription qui lui correspond", async () => {
+    await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES
+        ($1, '6ème', 'Inscription (affecté)', 10000, 'affecte'),
+        ($1, '6ème', 'Inscription (non affecté)', 50000, 'non_affecte')`,
+      [ECOLE_ID]
+    );
+    await pool.query("UPDATE students SET affecte = true WHERE id = $1", [ELEVE_ID]);
+    const res = await appelApi(`/frais-scolarite/solde/${ELEVE_ID}`, { token: tokenDirection });
+    const libelles = res.data.detail.map((f) => f.libelle);
+    expect(libelles).toContain("Inscription (affecté)");
+    expect(libelles).not.toContain("Inscription (non affecté)");
+  });
+
+  test("une caisse fermée refuse un encaissement", async () => {
+    const caisse = await pool.query(
+      `INSERT INTO caisses (ecole_id, nom, fermee) VALUES ($1, 'Caisse Test', true) RETURNING id`,
+      [ECOLE_ID]
+    );
+    const res = await appelApi("/paiements-scolarite/manuel", {
+      method: "POST", token: tokenDirection,
+      body: { eleve_id: ELEVE_ID, montant: 10000, caisse_id: caisse.rows[0].id },
+    });
+    expect(res.status).toBe(409);
+  });
+});
