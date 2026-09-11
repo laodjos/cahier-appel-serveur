@@ -687,7 +687,7 @@ function App({ session, onLogout }) {
         api("/periodes-evaluation").then(siEcoleInchangee(setPeriodesEvaluation)).catch(catchErr);
         api("/coefficients-matieres").then(siEcoleInchangee(setCoefficientsMatieres)).catch(catchErr);
       }
-      if (view === "rapports" && periodesEvaluation.length === 0) {
+      if ((view === "rapports" || view === "pedagogie") && periodesEvaluation.length === 0) {
         api("/periodes-evaluation").then(siEcoleInchangee(setPeriodesEvaluation)).catch(catchErr);
       }
       if (view === "caisse") {
@@ -2667,6 +2667,7 @@ function App({ session, onLogout }) {
           {availableViews.includes("caisse") && (estDirectionGenerale || session.user.erp_actif) && <NavItem label="Statut d'affectation" active={view === "affectation"} onClick={() => { setSidebarOuverte(false); setView("affectation"); }} />}
           {availableViews.includes("emploi") && <NavItem label="Emploi du temps" active={view === "emploi"} onClick={() => { setSidebarOuverte(false); setView("emploi"); }} />}
           {availableViews.includes("rapports") && <NavItem label="Rapports" active={view === "rapports"} onClick={() => { setSidebarOuverte(false); setView("rapports"); }} />}
+          {availableViews.includes("rapports") && <NavItem label="Pédagogie" active={view === "pedagogie"} onClick={() => { setSidebarOuverte(false); setView("pedagogie"); }} />}
           {availableViews.includes("notif") && <NavItem label="Notifications parents" active={view === "notif"} onClick={() => { setSidebarOuverte(false); setView("notif"); }} />}
           {availableViews.includes("incidents") && <NavItem label="État des lecteurs" active={view === "incidents"} onClick={() => { setSidebarOuverte(false); setView("incidents"); }} badge={devices.some((d) => !d.en_ligne)} />}
           {availableViews.includes("parametrage-lecteurs") && <NavItem label="Paramétrage lecteurs" active={view === "parametrage-lecteurs"} onClick={() => { setSidebarOuverte(false); setView("parametrage-lecteurs"); }} count={devices.length} />}
@@ -4447,8 +4448,13 @@ function App({ session, onLogout }) {
               </Card>
             </div>
 
-            {/* ---- PÉDAGOGIE ---- */}
-            <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.marker, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Pédagogie</div>
+          </div>
+        )}
+
+        {view === "pedagogie" && (
+          <div>
+            <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, marginTop: 0 }}>Pédagogie</h1>
+            <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 18 }}>Documents et rapports pédagogiques.</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14, marginBottom: 24 }}>
               <Card>
                 <div style={{ padding: 18 }}>
