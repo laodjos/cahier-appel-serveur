@@ -2,6 +2,7 @@ module.exports = {
   testEnvironment: "node",
   globalSetup: "<rootDir>/tests/globalSetup.js",
   globalTeardown: "<rootDir>/tests/globalTeardown.js",
+  testSequencer: "<rootDir>/tests/sequenceur.js",
   testTimeout: 15000,
   // Les tests touchent tous la MÊME base de test et le MÊME serveur — les
   // lancer en parallèle créerait des interférences (un test qui encaisse

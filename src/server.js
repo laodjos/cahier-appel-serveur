@@ -58,7 +58,21 @@ const { demarrerPollingLecteurs, demarrerEnvoiNotifications, demarrerRappelsCour
 
 const app = express();
 
+// Render (comme la plupart des hébergeurs) place l'application derrière un
+// proxy inverse — sans ce réglage, Express verrait TOUTES les requêtes comme
+// venant de la même adresse IP (celle du proxy), ce qui casserait la
+// limitation de débit ci-dessous : après 10 tentatives ratées de N'IMPORTE
+// QUI, TOUT LE MONDE se retrouverait bloqué.
+app.set("trust proxy", 1);
+
 app.use(helmet({ contentSecurityPolicy: false })); // CSP désactivée : on sert nous-mêmes tout le JS, pas de source externe à autoriser
+if (!process.env.CORS_ORIGIN) {
+  console.warn(
+    "⚠  CORS_ORIGIN n'est pas défini — l'API accepte des requêtes depuis N'IMPORTE QUEL site pour l'instant. " +
+    "Puisque le frontend est servi depuis ce même serveur, ce n'est pas nécessaire pour ton propre usage. " +
+    "Recommandé : ajoute CORS_ORIGIN=https://cahier-appel-serveur.onrender.com (ton URL Render) dans les variables d'environnement pour fermer cet accès."
+  );
+}
 app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
 app.use(express.json());
 app.use(morgan("combined"));

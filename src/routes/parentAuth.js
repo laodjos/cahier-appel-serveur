@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const { pool } = require("../config/db");
 const { envoyerViaOrangeSms, normaliserNumeroCi } = require("../services/notificationService");
 const { authRequired, requireRole } = require("../middleware/auth");
+const { limiteurCodeOtp } = require("../middleware/rateLimit");
 
 const router = express.Router();
 
@@ -14,7 +15,7 @@ function genererCode() {
 // Envoie un code à usage unique par SMS — pas de mot de passe à retenir, comme
 // une connexion WhatsApp. Limité à un envoi par minute par numéro, pour éviter
 // les abus (coût des SMS).
-router.post("/demander-code", async (req, res) => {
+router.post("/demander-code", limiteurCodeOtp, async (req, res) => {
   const { telephone } = req.body;
   if (!telephone) return res.status(400).json({ error: "Numéro de téléphone requis." });
   const telephoneNorm = normaliserNumeroCi(telephone);
@@ -80,7 +81,7 @@ router.post("/generer-code-assiste", authRequired, requireRole("direction", "sur
 });
 
 // POST /api/parent-auth/verifier-code  { telephone, code }
-router.post("/verifier-code", async (req, res) => {
+router.post("/verifier-code", limiteurCodeOtp, async (req, res) => {
   const { telephone, code } = req.body;
   if (!telephone || !code) return res.status(400).json({ error: "Numéro et code requis." });
   const telephoneNorm = normaliserNumeroCi(telephone);
