@@ -717,3 +717,7 @@ ALTER TABLE students ADD COLUMN IF NOT EXISTS regime_bourse TEXT;
 ALTER TABLE paiements_scolarite DROP CONSTRAINT IF EXISTS paiements_scolarite_frais_scolarite_id_fkey;
 ALTER TABLE paiements_scolarite ADD CONSTRAINT paiements_scolarite_frais_scolarite_id_fkey
   FOREIGN KEY (frais_scolarite_id) REFERENCES frais_scolarite(id) ON DELETE SET NULL;
+-- Réduction (en %) sur la scolarité d'un élève précis — fratrie, enfant du
+-- personnel, mérite... Un motif optionnel garde la trace de la raison.
+ALTER TABLE students ADD COLUMN IF NOT EXISTS reduction_pourcentage NUMERIC NOT NULL DEFAULT 0 CHECK (reduction_pourcentage >= 0 AND reduction_pourcentage <= 100);
+ALTER TABLE students ADD COLUMN IF NOT EXISTS reduction_motif TEXT;

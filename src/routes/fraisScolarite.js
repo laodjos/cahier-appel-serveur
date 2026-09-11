@@ -30,6 +30,19 @@ function normaliserNiveau(t) {
   return (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 }
 
+// Applique le taux de réduction de l'élève aux lignes de frais NIVEAU (pas
+// aux frais individuels/reliquat, qui sont déjà des montants précis décidés
+// au cas par cas) — garde le montant original pour rester transparent sur
+// ce qui est réellement appliqué.
+function appliquerReductionScolarite(lignes, pourcentageReduction) {
+  const taux = Number(pourcentageReduction) || 0;
+  return lignes.map((ligne) => {
+    if (ligne.individuel || taux <= 0) return ligne;
+    const montantReduit = Math.round(ligne.montant * (1 - taux / 100));
+    return { ...ligne, montant: montantReduit, montant_avant_reduction: ligne.montant, reduction_appliquee: taux };
+  });
+}
+
 async function calculerSoldeEleve(eleve) {
   const { rows: fraisRows } = await pool.query(
     `SELECT * FROM frais_scolarite
@@ -69,10 +82,11 @@ async function calculerSoldeEleve(eleve) {
   // Le reliquat passe systématiquement en tête du détail — il doit se
   // régler en priorité, avant même les frais de la nouvelle inscription.
   const detailReliquat = fraisIndivRows.filter((f) => f.est_reliquat).map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant), individuel: true, est_reliquat: true }));
-  const detailAutres = [
+  const detailAutresBrut = [
     ...fraisApplicablesNiveau.map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant_total) })),
     ...fraisIndivRows.filter((f) => !f.est_reliquat).map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant), individuel: true })),
   ];
+  const detailAutres = appliquerReductionScolarite(detailAutresBrut, eleve.reduction_pourcentage);
   // Pour chaque ligne, calcule ce qui a été payé SPÉCIFIQUEMENT contre elle
   // (paiements affectés à ce frais précis) — un paiement générique, non
   // affecté à une ligne, compte dans le total global mais pas dans le détail
@@ -176,7 +190,7 @@ router.get("/solde-classe/:classeId", async (req, res) => {
   const classe = classeRows[0];
   if (!classe) return res.status(404).json({ error: "Classe introuvable." });
 
-  const { rows: eleves } = await pool.query("SELECT id, nom, prenoms, affecte FROM students WHERE classe_id = $1 ORDER BY nom", [classe.id]);
+  const { rows: eleves } = await pool.query("SELECT id, nom, prenoms, affecte, reduction_pourcentage FROM students WHERE classe_id = $1 ORDER BY nom", [classe.id]);
   const eleveIds = eleves.map((e) => e.id);
 
   // Tous les frais du niveau (toutes affectations confondues — on filtre par
@@ -207,10 +221,11 @@ router.get("/solde-classe/:classeId", async (req, res) => {
     const fraisApplicables = fraisDuNiveau.filter((f) => f.applicable_a === "tous" || f.applicable_a === (e.affecte ? "affecte" : "non_affecte"));
     const individuelsEleve = indivParEleve[e.id] || [];
     const detailReliquat = individuelsEleve.filter((f) => f.est_reliquat).map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant), individuel: true, est_reliquat: true }));
-    const detailAutres = [
+    const detailAutresBrut = [
       ...fraisApplicables.map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant_total) })),
       ...individuelsEleve.filter((f) => !f.est_reliquat).map((f) => ({ id: f.id, libelle: f.libelle, montant: Number(f.montant), individuel: true })),
     ];
+    const detailAutres = appliquerReductionScolarite(detailAutresBrut, e.reduction_pourcentage);
     const detail = [...detailReliquat, ...detailAutres];
     const montantTotal = detail.length > 0 ? detail.reduce((s, f) => s + Number(f.montant), 0) : null;
     const montantPaye = payeParEleve[e.id] || 0;

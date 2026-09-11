@@ -4069,6 +4069,9 @@ function App({ session, onLogout }) {
                                       <span style={{ fontWeight: 700, color: f.reste > 0 ? COLORS.alert : COLORS.success }}>{f.reste > 0 ? `${f.reste.toLocaleString("fr-FR")} F restant` : "Réglé"}</span>
                                     </span>
                                   </div>
+                                  {f.reduction_appliquee > 0 && (
+                                    <div style={{ fontSize: 10.5, color: COLORS.success, marginTop: 2 }}>✓ Réduction de {f.reduction_appliquee}% appliquée (au lieu de {f.montant_avant_reduction.toLocaleString("fr-FR")} F)</div>
+                                  )}
                                   {f.echeancier?.en_retard && (
                                     <div style={{ fontSize: 10.5, color: COLORS.alert, marginTop: 2 }}>⚠ En retard de {f.echeancier.montant_retard.toLocaleString("fr-FR")} F sur l'échéancier</div>
                                   )}
@@ -6128,6 +6131,27 @@ function App({ session, onLogout }) {
                         {dossierEleve.boursier && (
                           <div style={{ marginTop: 6 }}>
                             <NomEditable valeur={dossierEleve.regime_bourse || "Régime non renseigné"} onValider={(v) => changeChampDespsEleve(dossierEleve.id, "regime_bourse", v === "Régime non renseigné" ? "" : v)} style={{ fontWeight: 600 }} />
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <span style={{ color: COLORS.craieDim }}>Réduction sur la scolarité (si besoin)</span><br/>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                          <input
+                            type="number" min="0" max="100" style={{ ...inputStyle, width: 70 }}
+                            value={dossierEleve.reduction_pourcentage || ""}
+                            onChange={async (e) => {
+                              try {
+                                const updated = await api(`/students/${dossierEleve.id}`, { method: "PATCH", body: { reduction_pourcentage: e.target.value || 0 } });
+                                setDossierEleve((d) => d && d.id === dossierEleve.id ? { ...d, reduction_pourcentage: updated.reduction_pourcentage } : d);
+                              } catch (err) { catchErr(err); }
+                            }}
+                          />
+                          <span style={{ fontWeight: 600 }}>%</span>
+                        </div>
+                        {Number(dossierEleve.reduction_pourcentage) > 0 && (
+                          <div style={{ marginTop: 6 }}>
+                            <NomEditable valeur={dossierEleve.reduction_motif || "Motif non renseigné"} onValider={(v) => changeChampDespsEleve(dossierEleve.id, "reduction_motif", v === "Motif non renseigné" ? "" : v)} style={{ fontWeight: 600 }} />
                           </div>
                         )}
                       </div>

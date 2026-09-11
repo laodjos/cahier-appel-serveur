@@ -469,15 +469,19 @@ router.get("/:id", async (req, res) => {
 
 // PATCH /api/students/:id  { nom?, matricule?, ... } — correction des informations d'un élève
 router.patch("/:id", requireRole("direction", "surveillant", "super_admin"), async (req, res) => {
-  const { nom, matricule, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere, affecte, redoublant, lv2, boursier, regime_bourse } = req.body;
+  const { nom, matricule, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere, affecte, redoublant, lv2, boursier, regime_bourse, reduction_pourcentage, reduction_motif } = req.body;
   const rienAModifier = !nom?.trim() && !matricule?.trim() && date_naissance === undefined && lieu_naissance === undefined
     && prenoms === undefined && genre === undefined && nationalite === undefined && nom_pere === undefined && nom_mere === undefined && affecte === undefined
-    && redoublant === undefined && lv2 === undefined && boursier === undefined && regime_bourse === undefined;
+    && redoublant === undefined && lv2 === undefined && boursier === undefined && regime_bourse === undefined
+    && reduction_pourcentage === undefined && reduction_motif === undefined;
   if (rienAModifier) {
     return res.status(400).json({ error: "Indique au moins un champ à corriger." });
   }
   if (genre !== undefined && genre !== null && genre !== "" && !["M", "F"].includes(genre)) {
     return res.status(400).json({ error: "Genre invalide (M ou F)." });
+  }
+  if (reduction_pourcentage !== undefined && reduction_pourcentage !== null && (Number(reduction_pourcentage) < 0 || Number(reduction_pourcentage) > 100)) {
+    return res.status(400).json({ error: "La réduction doit être un pourcentage entre 0 et 100." });
   }
   try {
     const { rows } = await pool.query(
@@ -495,7 +499,9 @@ router.patch("/:id", requireRole("direction", "surveillant", "super_admin"), asy
          redoublant = COALESCE($12, redoublant),
          lv2 = CASE WHEN $13::text IS NOT NULL THEN NULLIF($13, '') ELSE lv2 END,
          boursier = COALESCE($14, boursier),
-         regime_bourse = CASE WHEN $15::text IS NOT NULL THEN NULLIF($15, '') ELSE regime_bourse END
+         regime_bourse = CASE WHEN $15::text IS NOT NULL THEN NULLIF($15, '') ELSE regime_bourse END,
+         reduction_pourcentage = CASE WHEN $16::text IS NOT NULL THEN $16::numeric ELSE reduction_pourcentage END,
+         reduction_motif = CASE WHEN $17::text IS NOT NULL THEN NULLIF($17, '') ELSE reduction_motif END
        WHERE id = $5 RETURNING *`,
       [
         nom?.trim() || "", matricule?.trim() || "",
@@ -512,6 +518,8 @@ router.patch("/:id", requireRole("direction", "surveillant", "super_admin"), asy
         lv2 !== undefined ? lv2 : null,
         boursier !== undefined ? !!boursier : null,
         regime_bourse !== undefined ? regime_bourse : null,
+        reduction_pourcentage !== undefined && reduction_pourcentage !== null ? String(reduction_pourcentage) : null,
+        reduction_motif !== undefined ? reduction_motif : null,
       ]
     );
     if (!rows[0]) return res.status(404).json({ error: "Élève introuvable." });
