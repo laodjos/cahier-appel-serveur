@@ -446,6 +446,11 @@ function App({ session, onLogout }) {
   const [premiersDeClasse, setPremiersDeClasse] = useState(null);
   const [periodePremiersId, setPeriodePremiersId] = useState("");
   const [topPremiers, setTopPremiers] = useState("3");
+  const [critereStatsPedago, setCritereStatsPedago] = useState("redoublant");
+  const [statsPedagoParClasse, setStatsPedagoParClasse] = useState(null);
+  const [pyramideClasses, setPyramideClasses] = useState(null);
+  const [repartitionNaissance, setRepartitionNaissance] = useState(null);
+  const [listeBoursiers, setListeBoursiers] = useState(null);
   const [classeRelanceId, setClasseRelanceId] = useState("");
   const [devices, setDevices] = useState([]);
   const [incidents, setIncidents] = useState([]);
@@ -842,6 +847,39 @@ function App({ session, onLogout }) {
   async function exporterPremiersDeClasseExcel() {
     if (!periodePremiersId) return;
     telechargerFichier(`/bulletins/premiers-de-classe?periode_id=${periodePremiersId}&top=${topPremiers}&format=excel`, "premiers-de-classe.xlsx");
+  }
+
+  async function chargerStatsPedagoParClasse() {
+    try {
+      const data = await api(`/students/statistiques-pedagogiques?critere=${critereStatsPedago}`);
+      setStatsPedagoParClasse(data);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function exporterStatsPedagoParClasseExcel() {
+    telechargerFichier(`/students/statistiques-pedagogiques?critere=${critereStatsPedago}&format=excel`, `statistiques-${critereStatsPedago}.xlsx`);
+  }
+
+  async function chargerPyramideEtAge() {
+    try {
+      const [pyramide, repartition] = await Promise.all([
+        api("/students/pyramide-classes"),
+        api("/students/repartition-naissance"),
+      ]);
+      setPyramideClasses(pyramide);
+      setRepartitionNaissance(repartition);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function chargerListeBoursiers() {
+    try {
+      const data = await api("/students/boursiers");
+      setListeBoursiers(data);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function exporterBoursiersExcel() {
+    telechargerFichier("/students/boursiers?format=excel", "liste-boursiers.xlsx");
   }
 
   async function exporterElevesExcel() {
@@ -4493,6 +4531,85 @@ function App({ session, onLogout }) {
                   </div>
                 </div>
               </Card>
+
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Statistiques par classe</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Redoublants, élèves étrangers, ou répartition LV2 — par classe et par niveau.</div>
+                  <select style={{ ...inputStyle, fontSize: 12, padding: "6px 8px", width: "100%", marginBottom: 10 }} value={critereStatsPedago} onChange={(e) => { setCritereStatsPedago(e.target.value); setStatsPedagoParClasse(null); }}>
+                    <option value="redoublant">Redoublants</option>
+                    <option value="etranger">Élèves étrangers</option>
+                    <option value="lv2">Langue Vivante 2 (LV2)</option>
+                  </select>
+                  {statsPedagoParClasse && (
+                    <div style={{ marginBottom: 10, fontSize: 12, maxHeight: 200, overflowY: "auto" }}>
+                      {statsPedagoParClasse.map((c) => (
+                        <div key={c.classe} style={{ padding: "4px 0", borderBottom: `1px solid ${COLORS.line}` }}>
+                          <div style={{ fontWeight: 600 }}>{c.classe}</div>
+                          {Object.entries(c.groupes).map(([nom, n]) => (
+                            <div key={nom} style={{ display: "flex", justifyContent: "space-between", color: COLORS.craieDim }}>
+                              <span>{nom}</span><span>{n}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Button small variant="ghost" onClick={chargerStatsPedagoParClasse}>{statsPedagoParClasse ? "Actualiser" : "Afficher"}</Button>
+                    <Button small variant="ghost" onClick={exporterStatsPedagoParClasseExcel}>Télécharger le fichier Excel</Button>
+                  </div>
+                </div>
+              </Card>
+
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Pyramide des classes & répartition par âge</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Effectif par niveau, et répartition des élèves par année de naissance.</div>
+                  {pyramideClasses && (
+                    <div style={{ marginBottom: 10, fontSize: 12 }}>
+                      {pyramideClasses.map((p) => (
+                        <div key={p.niveau} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                          <span>{p.niveau}</span><span>{p.effectif}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {repartitionNaissance && (
+                    <div style={{ marginBottom: 10, fontSize: 12, borderTop: `1px solid ${COLORS.line}`, paddingTop: 8 }}>
+                      {repartitionNaissance.repartition.map((r) => (
+                        <div key={r.annee} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                          <span>Né(e)s en {r.annee}</span><span>{r.nombre}</span>
+                        </div>
+                      ))}
+                      {repartitionNaissance.sans_date > 0 && <div style={{ color: COLORS.craieDim, fontSize: 11, marginTop: 4 }}>{repartitionNaissance.sans_date} élève(s) sans date de naissance renseignée.</div>}
+                    </div>
+                  )}
+                  <Button small variant="ghost" onClick={chargerPyramideEtAge}>{(pyramideClasses || repartitionNaissance) ? "Actualiser" : "Afficher"}</Button>
+                </div>
+              </Card>
+
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Liste des boursiers</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Élèves marqués boursiers, avec leur régime de bourse. À cocher dans le dossier de chaque élève.</div>
+                  {listeBoursiers && (
+                    <div style={{ marginBottom: 10, fontSize: 12, maxHeight: 180, overflowY: "auto" }}>
+                      {listeBoursiers.map((b, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: `1px solid ${COLORS.line}` }}>
+                          <span>{[b.nom, b.prenoms].filter(Boolean).join(" ")} ({b.classe_nom})</span>
+                          <span style={{ color: COLORS.craieDim }}>{b.regime_bourse || "—"}</span>
+                        </div>
+                      ))}
+                      {listeBoursiers.length === 0 && <div style={{ color: COLORS.craieDim }}>Aucun élève marqué boursier pour l'instant.</div>}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Button small variant="ghost" onClick={chargerListeBoursiers}>{listeBoursiers ? "Actualiser" : "Afficher"}</Button>
+                    <Button small variant="ghost" onClick={exporterBoursiersExcel}>Télécharger le fichier Excel</Button>
+                  </div>
+                </div>
+              </Card>
             </div>
           </div>
         )}
@@ -5863,6 +5980,36 @@ function App({ session, onLogout }) {
                           }} />
                           Élève affecté (orientation officielle)
                         </label>
+                      </div>
+                      <div>
+                        <span style={{ color: COLORS.craieDim }}>Situation</span><br/>
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", marginTop: 4 }}>
+                          <input type="checkbox" checked={!!dossierEleve.redoublant} onChange={async (e) => {
+                            try {
+                              const updated = await api(`/students/${dossierEleve.id}`, { method: "PATCH", body: { redoublant: e.target.checked } });
+                              setDossierEleve((d) => d && d.id === dossierEleve.id ? { ...d, redoublant: updated.redoublant } : d);
+                            } catch (err) { catchErr(err); }
+                          }} />
+                          Redoublant(e) cette année
+                        </label>
+                      </div>
+                      <div><span style={{ color: COLORS.craieDim }}>Langue Vivante 2 (LV2)</span><NomEditable valeur={dossierEleve.lv2 || "Non renseigné"} onValider={(v) => changeChampDespsEleve(dossierEleve.id, "lv2", v === "Non renseigné" ? "" : v)} style={{ fontWeight: 600 }} /></div>
+                      <div>
+                        <span style={{ color: COLORS.craieDim }}>Bourse</span><br/>
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", marginTop: 4 }}>
+                          <input type="checkbox" checked={!!dossierEleve.boursier} onChange={async (e) => {
+                            try {
+                              const updated = await api(`/students/${dossierEleve.id}`, { method: "PATCH", body: { boursier: e.target.checked } });
+                              setDossierEleve((d) => d && d.id === dossierEleve.id ? { ...d, boursier: updated.boursier } : d);
+                            } catch (err) { catchErr(err); }
+                          }} />
+                          Élève boursier
+                        </label>
+                        {dossierEleve.boursier && (
+                          <div style={{ marginTop: 6 }}>
+                            <NomEditable valeur={dossierEleve.regime_bourse || "Régime non renseigné"} onValider={(v) => changeChampDespsEleve(dossierEleve.id, "regime_bourse", v === "Régime non renseigné" ? "" : v)} style={{ fontWeight: 600 }} />
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

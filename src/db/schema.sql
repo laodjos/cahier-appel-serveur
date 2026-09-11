@@ -702,3 +702,10 @@ CREATE TABLE IF NOT EXISTS echeances_frais (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_echeances_frais_scolarite ON echeances_frais(frais_scolarite_id);
+-- Champs supplémentaires pour les statistiques pédagogiques demandées par le
+-- ministère (redoublement, langue vivante 2, bourse) — inspirés des états du
+-- logiciel Akademia, pour rapprocher nos rapports de ce format habituel.
+ALTER TABLE students ADD COLUMN IF NOT EXISTS redoublant BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS lv2 TEXT;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS boursier BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS regime_bourse TEXT;

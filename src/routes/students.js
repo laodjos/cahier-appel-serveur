@@ -196,6 +196,134 @@ router.get("/statistiques-genre", async (req, res) => {
   res.json({ par_classe: parClasseListe, total_general: totalGeneral });
 });
 
+// GET /api/students/statistiques-pedagogiques?critere=redoublant|etranger|lv2
+// Regroupements génériques par classe, sur les critères habituellement
+// demandés par le ministère — même logique que statistiques-genre, appliquée
+// à d'autres colonnes.
+router.get("/statistiques-pedagogiques", async (req, res) => {
+  const { critere } = req.query;
+  if (!["redoublant", "etranger", "lv2"].includes(critere)) {
+    return res.status(400).json({ error: "critere doit être 'redoublant', 'etranger' ou 'lv2'." });
+  }
+  const params = [];
+  let filtreEcole = "TRUE";
+  const ecoleId = ecoleEffective(req);
+  if (ecoleId) { params.push(ecoleId); filtreEcole = "c.ecole_id = $1"; }
+  const { rows } = await pool.query(
+    `SELECT s.redoublant, s.nationalite, s.lv2, c.nom AS classe_nom, c.niveau
+     FROM students s LEFT JOIN classes c ON c.id = s.classe_id
+     WHERE ${filtreEcole} ORDER BY c.niveau NULLS LAST, c.nom NULLS LAST`,
+    params
+  );
+
+  const parClasse = {};
+  for (const e of rows) {
+    const cle = e.classe_nom || "Sans classe";
+    if (!parClasse[cle]) parClasse[cle] = { niveau: e.niveau || "", classe: cle, groupes: {} };
+    let valeur;
+    if (critere === "redoublant") valeur = e.redoublant ? "Redoublant(e)" : "Non redoublant(e)";
+    else if (critere === "etranger") valeur = (e.nationalite && e.nationalite !== "Ivoirienne") ? "Étranger" : "Ivoirien(ne)";
+    else valeur = e.lv2 || "Non renseigné";
+    parClasse[cle].groupes[valeur] = (parClasse[cle].groupes[valeur] || 0) + 1;
+  }
+  const parClasseListe = Object.values(parClasse);
+
+  if (req.query.format === "excel") {
+    const toutesLesValeurs = [...new Set(parClasseListe.flatMap((c) => Object.keys(c.groupes)))];
+    const donneesExport = parClasseListe.map((c) => {
+      const ligne = { "Niveau": c.niveau, "Classe": c.classe };
+      for (const v of toutesLesValeurs) ligne[v] = c.groupes[v] || 0;
+      return ligne;
+    });
+    const feuille = XLSX.utils.json_to_sheet(donneesExport);
+    feuille["!cols"] = Object.keys(donneesExport[0] || {}).map(() => ({ wch: 18 }));
+    const classeur = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(classeur, feuille, "Statistiques");
+    const buffer = XLSX.write(classeur, { type: "buffer", bookType: "xlsx" });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename=statistiques-${critere}.xlsx`);
+    return res.send(buffer);
+  }
+
+  res.json(parClasseListe);
+});
+
+// GET /api/students/repartition-naissance — répartition des élèves par année
+// de naissance, tous niveaux confondus (utile pour la pyramide des âges).
+router.get("/repartition-naissance", async (req, res) => {
+  const params = [];
+  let filtreEcole = "TRUE";
+  const ecoleId = ecoleEffective(req);
+  if (ecoleId) { params.push(ecoleId); filtreEcole = "c.ecole_id = $1"; }
+  const { rows } = await pool.query(
+    `SELECT s.date_naissance FROM students s LEFT JOIN classes c ON c.id = s.classe_id WHERE ${filtreEcole}`,
+    params
+  );
+  const parAnnee = {};
+  let sansDate = 0;
+  for (const e of rows) {
+    if (!e.date_naissance) { sansDate++; continue; }
+    const annee = new Date(e.date_naissance).getFullYear();
+    parAnnee[annee] = (parAnnee[annee] || 0) + 1;
+  }
+  const repartition = Object.entries(parAnnee).sort(([a], [b]) => Number(a) - Number(b)).map(([annee, nombre]) => ({ annee: Number(annee), nombre }));
+  res.json({ repartition, sans_date: sansDate });
+});
+
+// GET /api/students/pyramide-classes — effectif total par niveau, dans
+// l'ordre pédagogique (du plus petit niveau au plus grand).
+router.get("/pyramide-classes", async (req, res) => {
+  const params = [];
+  let filtreEcole = "TRUE";
+  const ecoleId = ecoleEffective(req);
+  if (ecoleId) { params.push(ecoleId); filtreEcole = "c.ecole_id = $1"; }
+  const { rows } = await pool.query(
+    `SELECT c.niveau, COUNT(s.id)::int AS effectif
+     FROM classes c LEFT JOIN students s ON s.classe_id = c.id
+     WHERE ${filtreEcole} GROUP BY c.niveau`,
+    params
+  );
+  const ORDRE_NIVEAUX = ["CP1", "CP2", "CE1", "CE2", "CM1", "CM2", "6ème", "5ème", "4ème", "3ème", "2nde", "1ère", "Terminale"];
+  const normaliser = (t) => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  rows.sort((a, b) => {
+    const ia = ORDRE_NIVEAUX.findIndex((n) => normaliser(n) === normaliser(a.niveau));
+    const ib = ORDRE_NIVEAUX.findIndex((n) => normaliser(n) === normaliser(b.niveau));
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+  });
+  res.json(rows);
+});
+
+// GET /api/students/boursiers — liste nominative des élèves boursiers.
+router.get("/boursiers", async (req, res) => {
+  const params = [];
+  let filtreEcole = "TRUE";
+  const ecoleId = ecoleEffective(req);
+  if (ecoleId) { params.push(ecoleId); filtreEcole = "c.ecole_id = $1"; }
+  const { rows } = await pool.query(
+    `SELECT s.nom, s.prenoms, s.matricule, s.regime_bourse, c.nom AS classe_nom, c.niveau
+     FROM students s LEFT JOIN classes c ON c.id = s.classe_id
+     WHERE s.boursier = true AND ${filtreEcole} ORDER BY c.niveau NULLS LAST, s.nom`,
+    params
+  );
+
+  if (req.query.format === "excel") {
+    const donneesExport = rows.map((r) => ({
+      "Nom": r.nom, "Prénoms": r.prenoms || "", "Matricule": r.matricule || "",
+      "Classe": r.classe_nom || "", "Régime de bourse": r.regime_bourse || "",
+    }));
+    const feuille = XLSX.utils.json_to_sheet(donneesExport);
+    feuille["!cols"] = Object.keys(donneesExport[0] || {}).map(() => ({ wch: 20 }));
+    const classeur = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(classeur, feuille, "Boursiers");
+    const buffer = XLSX.write(classeur, { type: "buffer", bookType: "xlsx" });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", "attachment; filename=liste-boursiers.xlsx");
+    return res.send(buffer);
+  }
+
+  res.json(rows);
+});
+
 // POST /api/students  { matricule, nom, classe_id, methode_biometrique }
 router.post("/", requireRole("direction", "surveillant"), async (req, res) => {
   const { matricule, nom, classe_id, methode_biometrique, parent_nom, parent_telephone, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere, affecte } = req.body;
@@ -352,9 +480,10 @@ router.get("/:id", async (req, res) => {
 
 // PATCH /api/students/:id  { nom?, matricule?, ... } — correction des informations d'un élève
 router.patch("/:id", requireRole("direction", "surveillant", "super_admin"), async (req, res) => {
-  const { nom, matricule, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere, affecte } = req.body;
+  const { nom, matricule, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere, affecte, redoublant, lv2, boursier, regime_bourse } = req.body;
   const rienAModifier = !nom?.trim() && !matricule?.trim() && date_naissance === undefined && lieu_naissance === undefined
-    && prenoms === undefined && genre === undefined && nationalite === undefined && nom_pere === undefined && nom_mere === undefined && affecte === undefined;
+    && prenoms === undefined && genre === undefined && nationalite === undefined && nom_pere === undefined && nom_mere === undefined && affecte === undefined
+    && redoublant === undefined && lv2 === undefined && boursier === undefined && regime_bourse === undefined;
   if (rienAModifier) {
     return res.status(400).json({ error: "Indique au moins un champ à corriger." });
   }
@@ -373,7 +502,11 @@ router.patch("/:id", requireRole("direction", "surveillant", "super_admin"), asy
          nationalite = CASE WHEN $8::text IS NOT NULL THEN NULLIF($8, '') ELSE nationalite END,
          nom_pere = CASE WHEN $9::text IS NOT NULL THEN NULLIF($9, '') ELSE nom_pere END,
          nom_mere = CASE WHEN $10::text IS NOT NULL THEN NULLIF($10, '') ELSE nom_mere END,
-         affecte = COALESCE($11, affecte)
+         affecte = COALESCE($11, affecte),
+         redoublant = COALESCE($12, redoublant),
+         lv2 = CASE WHEN $13::text IS NOT NULL THEN NULLIF($13, '') ELSE lv2 END,
+         boursier = COALESCE($14, boursier),
+         regime_bourse = CASE WHEN $15::text IS NOT NULL THEN NULLIF($15, '') ELSE regime_bourse END
        WHERE id = $5 RETURNING *`,
       [
         nom?.trim() || "", matricule?.trim() || "",
@@ -386,6 +519,10 @@ router.patch("/:id", requireRole("direction", "surveillant", "super_admin"), asy
         nom_pere !== undefined ? nom_pere : null,
         nom_mere !== undefined ? nom_mere : null,
         affecte !== undefined ? !!affecte : null,
+        redoublant !== undefined ? !!redoublant : null,
+        lv2 !== undefined ? lv2 : null,
+        boursier !== undefined ? !!boursier : null,
+        regime_bourse !== undefined ? regime_bourse : null,
       ]
     );
     if (!rows[0]) return res.status(404).json({ error: "Élève introuvable." });
