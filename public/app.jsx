@@ -2038,6 +2038,13 @@ function App({ session, onLogout }) {
     } catch (e) { catchErr(e); }
   }
 
+  async function changerApplicableAFrais(id, applicable_a) {
+    try {
+      const maj = await api(`/frais-scolarite/${id}`, { method: "PATCH", body: { applicable_a } });
+      setFraisScolarite((liste) => liste.map((f) => f.id === id ? { ...f, applicable_a: maj.applicable_a } : f));
+    } catch (e) { catchErr(e); }
+  }
+
   async function supprimerFraisScolarite(id) {
     try {
       await api(`/frais-scolarite/${id}`, { method: "DELETE" });
@@ -3925,14 +3932,16 @@ function App({ session, onLogout }) {
                         {items.map((f, i) => (
                           <React.Fragment key={f.id}>
                             <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "7px 18px", fontSize: 13 }}>
-                              <span style={{ flex: 1 }}>
-                                {f.libelle}
-                                {f.applicable_a !== "tous" && (
-                                  <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: COLORS.marker, background: "rgba(217,164,65,0.14)", borderRadius: 999, padding: "2px 8px" }}>
-                                    {f.applicable_a === "affecte" ? "Affectés uniquement" : "Non affectés uniquement"}
-                                  </span>
-                                )}
-                              </span>
+                              <span style={{ flex: 1 }}>{f.libelle}</span>
+                              <select
+                                value={f.applicable_a}
+                                onChange={(e) => changerApplicableAFrais(f.id, e.target.value)}
+                                style={{ fontSize: 10.5, fontWeight: 700, color: f.applicable_a === "tous" ? COLORS.craieDim : COLORS.marker, background: f.applicable_a === "tous" ? "transparent" : "rgba(217,164,65,0.14)", border: `1px solid ${COLORS.line}`, borderRadius: 999, padding: "2px 6px", cursor: "pointer" }}
+                              >
+                                <option value="tous">Tous les élèves</option>
+                                <option value="affecte">Affectés uniquement</option>
+                                <option value="non_affecte">Non affectés uniquement</option>
+                              </select>
                               <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.marker, width: 110, textAlign: "right" }}>{Number(f.montant_total).toLocaleString("fr-FR")} F</span>
                               <button onClick={() => ouvrirEcheancierFrais(f.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim, fontSize: 11, textDecoration: "underline" }}>Échéancier</button>
                               <button onClick={() => supprimerFraisScolarite(f.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
