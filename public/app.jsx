@@ -4400,18 +4400,35 @@ function App({ session, onLogout }) {
                   <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Statistiques par genre</div>
                   <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Effectifs Filles/Garçons/Total par classe — format attendu pour les rapports de rentrée MENA.</div>
                   {statistiquesGenre && (
-                    <div style={{ marginBottom: 10, fontSize: 12 }}>
-                      {(statistiquesGenre.par_classe || []).map((c) => (
-                        <div key={c.classe} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: `1px solid ${COLORS.line}` }}>
-                          <span>{c.classe}</span>
-                          <span>F: {c.filles} · G: {c.garcons}{c.non_precise > 0 ? ` · ?: ${c.non_precise}` : ""} · Total: {c.total}</span>
-                        </div>
-                      ))}
-                      <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0 0 0", fontWeight: 700 }}>
-                        <span>Total général</span>
-                        <span>F: {statistiquesGenre.total_general?.filles ?? 0} · G: {statistiquesGenre.total_general?.garcons ?? 0} · Total: {statistiquesGenre.total_general?.total ?? 0}</span>
-                      </div>
-                    </div>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 10 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: "left", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Classe</th>
+                          <th style={{ textAlign: "right", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Filles</th>
+                          <th style={{ textAlign: "right", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Garçons</th>
+                          <th style={{ textAlign: "right", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Non précisé</th>
+                          <th style={{ textAlign: "right", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(statistiquesGenre.par_classe || []).map((c) => (
+                          <tr key={c.classe}>
+                            <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}` }}>{c.classe}</td>
+                            <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}`, textAlign: "right" }}>{c.filles}</td>
+                            <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}`, textAlign: "right" }}>{c.garcons}</td>
+                            <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}`, textAlign: "right" }}>{c.non_precise}</td>
+                            <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}`, textAlign: "right", fontWeight: 600 }}>{c.total}</td>
+                          </tr>
+                        ))}
+                        <tr>
+                          <td style={{ padding: "5px 4px", fontWeight: 700, color: COLORS.marker }}>Total général</td>
+                          <td style={{ padding: "5px 4px", fontWeight: 700, color: COLORS.marker, textAlign: "right" }}>{statistiquesGenre.total_general?.filles ?? 0}</td>
+                          <td style={{ padding: "5px 4px", fontWeight: 700, color: COLORS.marker, textAlign: "right" }}>{statistiquesGenre.total_general?.garcons ?? 0}</td>
+                          <td style={{ padding: "5px 4px", fontWeight: 700, color: COLORS.marker, textAlign: "right" }}>{statistiquesGenre.total_general?.non_precise ?? 0}</td>
+                          <td style={{ padding: "5px 4px", fontWeight: 700, color: COLORS.marker, textAlign: "right" }}>{statistiquesGenre.total_general?.total ?? 0}</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   )}
                   <div style={{ display: "flex", gap: 8 }}>
                     <Button small variant="ghost" onClick={chargerStatistiquesGenre}>{statistiquesGenre ? "Actualiser" : "Afficher"}</Button>
@@ -4510,19 +4527,31 @@ function App({ session, onLogout }) {
                     </select>
                   </div>
                   {premiersDeClasse && (
-                    <div style={{ marginBottom: 10, fontSize: 12, maxHeight: 220, overflowY: "auto" }}>
-                      {(premiersDeClasse || []).map((c) => (
-                        <div key={c.classe.id} style={{ marginBottom: 8 }}>
-                          <div style={{ fontWeight: 700, color: COLORS.marker }}>{c.classe.nom}</div>
-                          {(c.premiers || []).map((p) => (
-                            <div key={p.eleve_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
-                              <span>{p.rang}. {[p.nom, p.prenoms].filter(Boolean).join(" ")}</span>
-                              <span>{p.moyenne_generale}/20</span>
-                            </div>
-                          ))}
-                        </div>
-                      ))}
-                      {premiersDeClasse.length === 0 && <div style={{ color: COLORS.craieDim }}>Aucune moyenne calculable pour cette période — vérifie que des notes ont été saisies.</div>}
+                    <div style={{ marginBottom: 10, maxHeight: 220, overflowY: "auto" }}>
+                      {premiersDeClasse.length === 0 ? (
+                        <div style={{ fontSize: 12, color: COLORS.craieDim }}>Aucune moyenne calculable pour cette période — vérifie que des notes ont été saisies.</div>
+                      ) : (
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                          <thead>
+                            <tr>
+                              <th style={{ textAlign: "left", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Classe</th>
+                              <th style={{ textAlign: "right", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Rang</th>
+                              <th style={{ textAlign: "left", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Nom et prénoms</th>
+                              <th style={{ textAlign: "right", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Moyenne</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {premiersDeClasse.map((c) => (c.premiers || []).map((p) => (
+                              <tr key={`${c.classe.id}-${p.eleve_id}`}>
+                                <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.marker, fontWeight: 600 }}>{c.classe.nom}</td>
+                                <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}`, textAlign: "right" }}>{p.rang}</td>
+                                <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}` }}>{[p.nom, p.prenoms].filter(Boolean).join(" ")}</td>
+                                <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}`, textAlign: "right" }}>{p.moyenne_generale}/20</td>
+                              </tr>
+                            )))}
+                          </tbody>
+                        </table>
+                      )}
                     </div>
                   )}
                   <div style={{ display: "flex", gap: 8 }}>
@@ -4541,20 +4570,33 @@ function App({ session, onLogout }) {
                     <option value="etranger">Élèves étrangers</option>
                     <option value="lv2">Langue Vivante 2 (LV2)</option>
                   </select>
-                  {statsPedagoParClasse && (
-                    <div style={{ marginBottom: 10, fontSize: 12, maxHeight: 200, overflowY: "auto" }}>
-                      {statsPedagoParClasse.map((c) => (
-                        <div key={c.classe} style={{ padding: "4px 0", borderBottom: `1px solid ${COLORS.line}` }}>
-                          <div style={{ fontWeight: 600 }}>{c.classe}</div>
-                          {Object.entries(c.groupes).map(([nom, n]) => (
-                            <div key={nom} style={{ display: "flex", justifyContent: "space-between", color: COLORS.craieDim }}>
-                              <span>{nom}</span><span>{n}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {statsPedagoParClasse && (() => {
+                    const toutesLesValeurs = [...new Set(statsPedagoParClasse.flatMap((c) => Object.keys(c.groupes)))];
+                    return (
+                      <div style={{ marginBottom: 10, maxHeight: 220, overflowY: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                          <thead>
+                            <tr>
+                              <th style={{ textAlign: "left", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Classe</th>
+                              {toutesLesValeurs.map((v) => (
+                                <th key={v} style={{ textAlign: "right", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>{v}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {statsPedagoParClasse.map((c) => (
+                              <tr key={c.classe}>
+                                <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}` }}>{c.classe}</td>
+                                {toutesLesValeurs.map((v) => (
+                                  <td key={v} style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}`, textAlign: "right" }}>{c.groupes[v] || 0}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
                   <div style={{ display: "flex", gap: 8 }}>
                     <Button small variant="ghost" onClick={chargerStatsPedagoParClasse}>{statsPedagoParClasse ? "Actualiser" : "Afficher"}</Button>
                     <Button small variant="ghost" onClick={exporterStatsPedagoParClasseExcel}>Télécharger le fichier Excel</Button>
@@ -4567,21 +4609,41 @@ function App({ session, onLogout }) {
                   <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Pyramide des classes & répartition par âge</div>
                   <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Effectif par niveau, et répartition des élèves par année de naissance.</div>
                   {pyramideClasses && (
-                    <div style={{ marginBottom: 10, fontSize: 12 }}>
-                      {pyramideClasses.map((p) => (
-                        <div key={p.niveau} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
-                          <span>{p.niveau}</span><span>{p.effectif}</span>
-                        </div>
-                      ))}
-                    </div>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 10 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: "left", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Niveau</th>
+                          <th style={{ textAlign: "right", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Effectif</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pyramideClasses.map((p) => (
+                          <tr key={p.niveau}>
+                            <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}` }}>{p.niveau}</td>
+                            <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}`, textAlign: "right" }}>{p.effectif}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   )}
                   {repartitionNaissance && (
-                    <div style={{ marginBottom: 10, fontSize: 12, borderTop: `1px solid ${COLORS.line}`, paddingTop: 8 }}>
-                      {repartitionNaissance.repartition.map((r) => (
-                        <div key={r.annee} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
-                          <span>Né(e)s en {r.annee}</span><span>{r.nombre}</span>
-                        </div>
-                      ))}
+                    <div style={{ marginBottom: 10 }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: "left", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Année de naissance</th>
+                            <th style={{ textAlign: "right", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Nombre d'élèves</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {repartitionNaissance.repartition.map((r) => (
+                            <tr key={r.annee}>
+                              <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}` }}>{r.annee}</td>
+                              <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}`, textAlign: "right" }}>{r.nombre}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                       {repartitionNaissance.sans_date > 0 && <div style={{ color: COLORS.craieDim, fontSize: 11, marginTop: 4 }}>{repartitionNaissance.sans_date} élève(s) sans date de naissance renseignée.</div>}
                     </div>
                   )}
@@ -4594,14 +4656,29 @@ function App({ session, onLogout }) {
                   <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Liste des boursiers</div>
                   <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Élèves marqués boursiers, avec leur régime de bourse. À cocher dans le dossier de chaque élève.</div>
                   {listeBoursiers && (
-                    <div style={{ marginBottom: 10, fontSize: 12, maxHeight: 180, overflowY: "auto" }}>
-                      {listeBoursiers.map((b, i) => (
-                        <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: `1px solid ${COLORS.line}` }}>
-                          <span>{[b.nom, b.prenoms].filter(Boolean).join(" ")} ({b.classe_nom})</span>
-                          <span style={{ color: COLORS.craieDim }}>{b.regime_bourse || "—"}</span>
-                        </div>
-                      ))}
-                      {listeBoursiers.length === 0 && <div style={{ color: COLORS.craieDim }}>Aucun élève marqué boursier pour l'instant.</div>}
+                    <div style={{ marginBottom: 10, maxHeight: 200, overflowY: "auto" }}>
+                      {listeBoursiers.length === 0 ? (
+                        <div style={{ fontSize: 12, color: COLORS.craieDim }}>Aucun élève marqué boursier pour l'instant.</div>
+                      ) : (
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                          <thead>
+                            <tr>
+                              <th style={{ textAlign: "left", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Nom et prénoms</th>
+                              <th style={{ textAlign: "left", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Classe</th>
+                              <th style={{ textAlign: "left", padding: "5px 4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim, fontWeight: 600, fontSize: 11 }}>Régime de bourse</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {listeBoursiers.map((b, i) => (
+                              <tr key={i}>
+                                <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}` }}>{[b.nom, b.prenoms].filter(Boolean).join(" ")}</td>
+                                <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}` }}>{b.classe_nom}</td>
+                                <td style={{ padding: "4px", borderBottom: `1px solid ${COLORS.line}`, color: COLORS.craieDim }}>{b.regime_bourse || "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
                     </div>
                   )}
                   <div style={{ display: "flex", gap: 8 }}>
