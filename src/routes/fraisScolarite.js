@@ -285,10 +285,18 @@ router.get("/classe/:classeId/relances", async (req, res) => {
 
 // GET /api/frais-scolarite/:id/echeances
 router.get("/:id/echeances", async (req, res) => {
+  const { rows: fraisRows } = await pool.query("SELECT montant_total FROM frais_scolarite WHERE id = $1", [req.params.id]);
+  if (!fraisRows[0]) return res.status(404).json({ error: "Frais introuvable." });
   const { rows } = await pool.query(
     "SELECT * FROM echeances_frais WHERE frais_scolarite_id = $1 ORDER BY date_echeance", [req.params.id]
   );
-  res.json(rows);
+  const dejaReparti = rows.reduce((s, e) => s + Number(e.montant), 0);
+  res.json({
+    echeances: rows,
+    montant_total: Number(fraisRows[0].montant_total),
+    deja_reparti: dejaReparti,
+    reste_a_repartir: Number(fraisRows[0].montant_total) - dejaReparti,
+  });
 });
 
 // POST /api/frais-scolarite/:id/echeances  { libelle, montant, date_echeance }
@@ -297,6 +305,20 @@ router.post("/:id/echeances", requireRole("direction", "super_admin"), async (re
   if (!libelle || !libelle.trim() || !montant || Number(montant) <= 0 || !date_echeance) {
     return res.status(400).json({ error: "libelle, montant (positif) et date_echeance sont requis." });
   }
+  // Le total des tranches d'un frais ne doit jamais dépasser son montant —
+  // sans ça, l'échéancier annoncerait plus que ce que l'élève doit réellement.
+  const { rows: fraisRows } = await pool.query("SELECT montant_total FROM frais_scolarite WHERE id = $1", [req.params.id]);
+  if (!fraisRows[0]) return res.status(404).json({ error: "Frais introuvable." });
+  const { rows: echeancesExistantes } = await pool.query("SELECT montant FROM echeances_frais WHERE frais_scolarite_id = $1", [req.params.id]);
+  const dejaReparti = echeancesExistantes.reduce((s, e) => s + Number(e.montant), 0);
+  const resteARepartir = Number(fraisRows[0].montant_total) - dejaReparti;
+  if (Number(montant) > resteARepartir) {
+    return res.status(400).json({
+      error: `Ce montant dépasse ce qu'il reste à répartir. Reste à répartir sur ce frais : ${resteARepartir.toLocaleString("fr-FR")} F.`,
+      reste_a_repartir: resteARepartir,
+    });
+  }
+
   const { rows } = await pool.query(
     "INSERT INTO echeances_frais (frais_scolarite_id, libelle, montant, date_echeance) VALUES ($1, $2, $3, $4) RETURNING *",
     [req.params.id, libelle.trim(), montant, date_echeance]

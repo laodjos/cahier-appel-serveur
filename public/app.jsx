@@ -2039,19 +2039,20 @@ function App({ session, onLogout }) {
   async function ouvrirEcheancierFrais(fraisId) {
     if (echeancierOuvertPourFraisId === fraisId) { setEcheancierOuvertPourFraisId(null); return; }
     setEcheancierOuvertPourFraisId(fraisId);
-    if (!echeancesParFrais[fraisId]) {
-      try {
-        const liste = await api(`/frais-scolarite/${fraisId}/echeances`);
-        setEcheancesParFrais((v) => ({ ...v, [fraisId]: liste }));
-      } catch (e) { catchErr(e); }
-    }
+    try {
+      const data = await api(`/frais-scolarite/${fraisId}/echeances`);
+      setEcheancesParFrais((v) => ({ ...v, [fraisId]: data }));
+    } catch (e) { catchErr(e); }
   }
 
   async function ajouterEcheance(fraisId) {
     if (!nouvelleEcheance.libelle.trim() || !nouvelleEcheance.montant || !nouvelleEcheance.date_echeance) return;
     try {
-      const cree = await api(`/frais-scolarite/${fraisId}/echeances`, { method: "POST", body: nouvelleEcheance });
-      setEcheancesParFrais((v) => ({ ...v, [fraisId]: [...(v[fraisId] || []), cree].sort((a, b) => new Date(a.date_echeance) - new Date(b.date_echeance)) }));
+      await api(`/frais-scolarite/${fraisId}/echeances`, { method: "POST", body: nouvelleEcheance });
+      // Recharge plutôt que de mettre à jour localement — le reste à répartir
+      // doit toujours refléter exactement ce qu'il y a en base.
+      const data = await api(`/frais-scolarite/${fraisId}/echeances`);
+      setEcheancesParFrais((v) => ({ ...v, [fraisId]: data }));
       setNouvelleEcheance({ libelle: "", montant: "", date_echeance: "" });
     } catch (e) { catchErr(e); }
   }
@@ -2059,7 +2060,8 @@ function App({ session, onLogout }) {
   async function supprimerEcheance(fraisId, echeanceId) {
     try {
       await api(`/frais-scolarite/echeances/${echeanceId}`, { method: "DELETE" });
-      setEcheancesParFrais((v) => ({ ...v, [fraisId]: (v[fraisId] || []).filter((e) => e.id !== echeanceId) }));
+      const data = await api(`/frais-scolarite/${fraisId}/echeances`);
+      setEcheancesParFrais((v) => ({ ...v, [fraisId]: data }));
     } catch (e) { catchErr(e); }
   }
 
@@ -3926,26 +3928,36 @@ function App({ session, onLogout }) {
                               <button onClick={() => ouvrirEcheancierFrais(f.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim, fontSize: 11, textDecoration: "underline" }}>Échéancier</button>
                               <button onClick={() => supprimerFraisScolarite(f.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={13} /></button>
                             </div>
-                            {echeancierOuvertPourFraisId === f.id && (
-                              <div style={{ padding: "10px 18px 14px 18px", background: "rgba(255,255,255,0.02)" }}>
-                                {(echeancesParFrais[f.id] || []).map((e) => (
-                                  <div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", fontSize: 12 }}>
-                                    <span>{e.libelle} — {new Date(e.date_echeance).toLocaleDateString("fr-FR")}</span>
-                                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                      <span style={{ fontWeight: 600 }}>{Number(e.montant).toLocaleString("fr-FR")} F</span>
-                                      <button onClick={() => supprimerEcheance(f.id, e.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={11} /></button>
-                                    </span>
+                            {echeancierOuvertPourFraisId === f.id && (() => {
+                              const donnees = echeancesParFrais[f.id];
+                              const echeancesListe = donnees?.echeances || [];
+                              const resteARepartir = donnees?.reste_a_repartir ?? f.montant_total;
+                              return (
+                                <div style={{ padding: "10px 18px 14px 18px", background: "rgba(255,255,255,0.02)" }}>
+                                  {echeancesListe.map((e) => (
+                                    <div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", fontSize: 12 }}>
+                                      <span>{e.libelle} — {new Date(e.date_echeance).toLocaleDateString("fr-FR")}</span>
+                                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                        <span style={{ fontWeight: 600 }}>{Number(e.montant).toLocaleString("fr-FR")} F</span>
+                                        <button onClick={() => supprimerEcheance(f.id, e.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: COLORS.craieDim }}><Icon path={P.trash} size={11} /></button>
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {echeancesListe.length === 0 && <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginBottom: 6 }}>Aucune tranche définie — le frais est dû en une seule fois.</div>}
+                                  {donnees && (
+                                    <div style={{ fontSize: 11.5, fontWeight: 700, color: resteARepartir > 0 ? COLORS.marker : COLORS.success, marginTop: 6, paddingTop: 6, borderTop: `1px solid ${COLORS.line}` }}>
+                                      {resteARepartir > 0 ? `Reste à répartir : ${resteARepartir.toLocaleString("fr-FR")} F` : "✔ Totalité du frais répartie sur les tranches"}
+                                    </div>
+                                  )}
+                                  <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                                    <Field label="Libellé"><input style={{ ...inputStyle, width: 130 }} value={nouvelleEcheance.libelle} onChange={(e) => setNouvelleEcheance((v) => ({ ...v, libelle: e.target.value }))} placeholder="1ère tranche" /></Field>
+                                    <Field label={`Montant (max ${resteARepartir.toLocaleString("fr-FR")} F)`}><input type="number" max={resteARepartir} style={{ ...inputStyle, width: 130 }} value={nouvelleEcheance.montant} onChange={(e) => setNouvelleEcheance((v) => ({ ...v, montant: e.target.value }))} /></Field>
+                                    <Field label="Date limite"><input type="date" style={{ ...inputStyle, width: 140 }} value={nouvelleEcheance.date_echeance} onChange={(e) => setNouvelleEcheance((v) => ({ ...v, date_echeance: e.target.value }))} /></Field>
+                                    <Button small variant="ghost" onClick={() => ajouterEcheance(f.id)} disabled={resteARepartir <= 0}>Ajouter</Button>
                                   </div>
-                                ))}
-                                {(echeancesParFrais[f.id] || []).length === 0 && <div style={{ fontSize: 11.5, color: COLORS.craieDim, marginBottom: 6 }}>Aucune tranche définie — le frais est dû en une seule fois.</div>}
-                                <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-                                  <Field label="Libellé"><input style={{ ...inputStyle, width: 130 }} value={nouvelleEcheance.libelle} onChange={(e) => setNouvelleEcheance((v) => ({ ...v, libelle: e.target.value }))} placeholder="1ère tranche" /></Field>
-                                  <Field label="Montant"><input type="number" style={{ ...inputStyle, width: 100 }} value={nouvelleEcheance.montant} onChange={(e) => setNouvelleEcheance((v) => ({ ...v, montant: e.target.value }))} /></Field>
-                                  <Field label="Date limite"><input type="date" style={{ ...inputStyle, width: 140 }} value={nouvelleEcheance.date_echeance} onChange={(e) => setNouvelleEcheance((v) => ({ ...v, date_echeance: e.target.value }))} /></Field>
-                                  <Button small variant="ghost" onClick={() => ajouterEcheance(f.id)}>Ajouter</Button>
                                 </div>
-                              </div>
-                            )}
+                              );
+                            })()}
                           </React.Fragment>
                         ))}
                         <div style={{ display: "flex", padding: "4px 18px 10px 18px", fontSize: 11.5, color: COLORS.craieDim, fontWeight: 600 }}>
