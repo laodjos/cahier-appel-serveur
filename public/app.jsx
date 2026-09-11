@@ -309,6 +309,15 @@ function LoginScreen({ onConnected }) {
    Application principale — connectée à l'API
    ============================================================ */
 const ROLE_LABELS = { super_admin: "Super-administrateur", direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant général", caissier: "Caissier(ère)" };
+// Libellés de frais les plus courants dans les établissements ivoiriens —
+// pour éviter de retaper la même chose à chaque fois. "Autre" reste possible
+// pour un frais qui ne serait pas dans cette liste.
+const LIBELLES_FRAIS_COURANTS = [
+  "Frais de scolarité", "Frais d'inscription", "Cantine", "Transport scolaire",
+  "Assurance scolaire", "Frais d'examen", "Tenue scolaire", "Fournitures scolaires",
+  "Frais de bibliothèque", "Frais informatique / APC", "Carte d'identité scolaire",
+];
+
 const NAV_BY_ROLE = {
   super_admin: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "erp", "caisse", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
   direction: ["dashboard", "appel", "students", "enseignants", "parents", "absenteisme", "paie", "emploi", "erp", "caisse", "rapports", "notif", "incidents", "parametrage-lecteurs", "en-ligne", "parametres", "ecoles"],
@@ -3973,7 +3982,20 @@ function App({ session, onLogout }) {
                           {["6ème", "5ème", "4ème", "3ème", "2nde", "1ère", "Terminale"].map((n) => <option key={n} value={n}>{n}</option>)}
                         </select>
                       </Field>
-                      <Field label="Libellé (ex. Scolarité, Inscription, Cantine)"><input style={inputStyle} value={nouveauFrais.libelle} onChange={(e) => setNouveauFrais((v) => ({ ...v, libelle: e.target.value }))} /></Field>
+                      <Field label="Libellé">
+                        <select
+                          style={inputStyle}
+                          value={LIBELLES_FRAIS_COURANTS.includes(nouveauFrais.libelle) ? nouveauFrais.libelle : (nouveauFrais.libelle ? "Autre" : "")}
+                          onChange={(e) => setNouveauFrais((v) => ({ ...v, libelle: e.target.value === "Autre" ? "" : e.target.value }))}
+                        >
+                          <option value="">— Choisir —</option>
+                          {LIBELLES_FRAIS_COURANTS.map((l) => <option key={l} value={l}>{l}</option>)}
+                          <option value="Autre">Autre (à préciser)</option>
+                        </select>
+                        {(!LIBELLES_FRAIS_COURANTS.includes(nouveauFrais.libelle)) && (
+                          <input style={{ ...inputStyle, marginTop: 6 }} value={nouveauFrais.libelle} onChange={(e) => setNouveauFrais((v) => ({ ...v, libelle: e.target.value }))} placeholder="Précise le libellé" />
+                        )}
+                      </Field>
                       <Field label="Applicable à">
                         <select style={inputStyle} value={nouveauFrais.applicable_a} onChange={(e) => setNouveauFrais((v) => ({ ...v, applicable_a: e.target.value }))}>
                           <option value="tous">Tous les élèves</option>
