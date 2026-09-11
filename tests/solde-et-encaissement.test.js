@@ -130,4 +130,26 @@ describe("Solde d'un élève", () => {
     });
     expect(res.status).toBe(409);
   });
+
+  // Bug réel corrigé : supprimer un frais déjà utilisé dans un paiement
+  // échouait (contrainte de clé étrangère sans règle définie). Le paiement
+  // doit survivre, juste détaché du frais supprimé.
+  test("un frais déjà payé peut être supprimé — le paiement survit, détaché", async () => {
+    const frais = await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES ($1, '6ème', 'Frais à supprimer', 30000, 'tous') RETURNING id`,
+      [ECOLE_ID]
+    );
+    const fraisId = frais.rows[0].id;
+    const paiement = await appelApi("/paiements-scolarite/manuel", {
+      method: "POST", token: tokenDirection,
+      body: { eleve_id: ELEVE_ID, montant: 5000, frais_scolarite_id: fraisId },
+    });
+    expect(paiement.status).toBe(201);
+
+    const suppression = await appelApi(`/frais-scolarite/${fraisId}`, { method: "DELETE", token: tokenDirection });
+    expect(suppression.status).toBe(204);
+
+    const verif = await pool.query("SELECT frais_scolarite_id FROM paiements_scolarite WHERE id = $1", [paiement.data.id]);
+    expect(verif.rows[0].frais_scolarite_id).toBeNull();
+  });
 });

@@ -709,3 +709,11 @@ ALTER TABLE students ADD COLUMN IF NOT EXISTS redoublant BOOLEAN NOT NULL DEFAUL
 ALTER TABLE students ADD COLUMN IF NOT EXISTS lv2 TEXT;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS boursier BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS regime_bourse TEXT;
+-- Un frais déjà utilisé dans des paiements ne pouvait pas être supprimé (la
+-- contrainte bloquait sans qu'aucune règle ne prévoie quoi faire). On garde
+-- l'historique des paiements (jamais de CASCADE ici, ce serait perdre de
+-- l'argent réellement encaissé) — seul le lien vers le frais supprimé
+-- devient NULL, le paiement redevient "générique".
+ALTER TABLE paiements_scolarite DROP CONSTRAINT IF EXISTS paiements_scolarite_frais_scolarite_id_fkey;
+ALTER TABLE paiements_scolarite ADD CONSTRAINT paiements_scolarite_frais_scolarite_id_fkey
+  FOREIGN KEY (frais_scolarite_id) REFERENCES frais_scolarite(id) ON DELETE SET NULL;
