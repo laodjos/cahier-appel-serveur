@@ -511,4 +511,39 @@ router.post("/import", upload.single("fichier"), async (req, res) => {
   res.status(201).json({ total_lignes: lignes.length, crees: crees.length, erreurs, details_crees: crees });
 });
 
+// GET /api/users/export-personnel — liste nominative complète du personnel,
+// pour les besoins de reporting auprès du ministère (DRENA/IEPP).
+router.get("/export-personnel", requireRole("direction", "super_admin"), async (req, res) => {
+  const params = [];
+  let filtreEcole = "TRUE";
+  const ecoleId = ecoleEffective(req);
+  if (ecoleId) { params.push(ecoleId); filtreEcole = "ecole_id = $1"; }
+  const { rows } = await pool.query(
+    `SELECT nom, email, role, genre, statut_emploi, matieres, created_at
+     FROM users WHERE ${filtreEcole} ORDER BY role, nom`,
+    params
+  );
+
+  const libellesRole = { super_admin: "Super-administrateur", direction: "Direction", enseignant: "Enseignant", surveillant: "Surveillant", caissier: "Caissier" };
+  const donneesExport = rows.map((r) => ({
+    "Nom et prénoms": r.nom || "",
+    "Fonction": libellesRole[r.role] || r.role,
+    "Genre": r.genre === "M" ? "Masculin" : r.genre === "F" ? "Féminin" : "",
+    "Statut d'emploi": r.statut_emploi === "permanent" ? "Permanent" : r.statut_emploi === "vacataire" ? "Vacataire" : "",
+    "Matière(s) enseignée(s)": r.matieres || "",
+    "Contact (email)": r.email || "",
+    "Date d'entrée dans le système": r.created_at ? new Date(r.created_at).toISOString().slice(0, 10).split("-").reverse().join("/") : "",
+  }));
+
+  const feuille = XLSX.utils.json_to_sheet(donneesExport);
+  feuille["!cols"] = Object.keys(donneesExport[0] || {}).map(() => ({ wch: 24 }));
+  const classeur = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(classeur, feuille, "Personnel");
+  const buffer = XLSX.write(classeur, { type: "buffer", bookType: "xlsx" });
+
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", "attachment; filename=liste-nominative-personnel.xlsx");
+  res.send(buffer);
+});
+
 module.exports = router;

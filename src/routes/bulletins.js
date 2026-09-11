@@ -1,4 +1,5 @@
 const express = require("express");
+const XLSX = require("xlsx");
 const { pool } = require("../config/db");
 const { authRequired, requireErpActif } = require("../middleware/auth");
 const { trouverCoefficient } = require("./coefficientsMatieres");
@@ -6,6 +7,11 @@ const { trouverCoefficient } = require("./coefficientsMatieres");
 const router = express.Router();
 router.use(authRequired);
 router.use(requireErpActif);
+
+function ecoleEffective(req) {
+  if (req.user.ecole_id) return req.user.ecole_id;
+  return req.query?.ecole_id || null;
+}
 
 // Moyenne d'un élève par matière, sur une période — normalisée sur 20 même si
 // une note a été saisie sur un barème différent (ex. devoir noté sur 10).
@@ -199,6 +205,64 @@ router.get("/classe/:classeId", async (req, res) => {
   } catch (err) {
     console.error("Erreur bulletins de classe :", err);
     res.status(500).json({ error: "Impossible de calculer les bulletins de la classe pour le moment." });
+  }
+});
+
+// GET /api/bulletins/premiers-de-classe?periode_id=&top=3 — pour chaque
+// classe de l'école, les N meilleurs élèves de la période, pour les rapports
+// pédagogiques (tableaux d'honneur, remise de prix, transmission DRENA).
+router.get("/premiers-de-classe", async (req, res) => {
+  const { periode_id, format } = req.query;
+  const top = Number(req.query.top) || 3;
+  if (!periode_id) return res.status(400).json({ error: "periode_id est requis." });
+
+  try {
+    const params = [];
+    let filtreEcole = "TRUE";
+    const ecoleId = ecoleEffective(req);
+    if (ecoleId) { params.push(ecoleId); filtreEcole = "ecole_id = $1"; }
+    const { rows: classesEcole } = await pool.query(`SELECT * FROM classes WHERE ${filtreEcole} ORDER BY niveau NULLS LAST, nom`, params);
+
+    const resultatsParClasse = [];
+    for (const classe of classesEcole) {
+      const { rows: elevesClasse } = await pool.query("SELECT id, nom, prenoms FROM students WHERE classe_id = $1", [classe.id]);
+      if (elevesClasse.length === 0) continue;
+      const bulletinsParEleve = await calculerBulletinsClasseBatch(classe.id, periode_id, classe.niveau, classe.serie);
+      const resultats = elevesClasse.map((e) => ({
+        eleve_id: e.id, nom: e.nom, prenoms: e.prenoms,
+        moyenne_generale: bulletinsParEleve[e.id]?.moyenne_generale ?? null,
+      }));
+      calculerRangs(resultats);
+      const premiers = resultats.filter((r) => r.rang != null && r.rang <= top).sort((a, b) => a.rang - b.rang);
+      if (premiers.length > 0) {
+        resultatsParClasse.push({ classe: { id: classe.id, nom: classe.nom, niveau: classe.niveau }, premiers });
+      }
+    }
+
+    if (format === "excel") {
+      const donneesExport = [];
+      for (const c of resultatsParClasse) {
+        for (const p of c.premiers) {
+          donneesExport.push({
+            "Classe": c.classe.nom, "Rang": p.rang, "Nom": p.nom, "Prénoms": p.prenoms || "",
+            "Moyenne générale": p.moyenne_generale,
+          });
+        }
+      }
+      const feuille = XLSX.utils.json_to_sheet(donneesExport);
+      feuille["!cols"] = Object.keys(donneesExport[0] || {}).map(() => ({ wch: 20 }));
+      const classeur = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(classeur, feuille, "Premiers de classe");
+      const buffer = XLSX.write(classeur, { type: "buffer", bookType: "xlsx" });
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", "attachment; filename=premiers-de-classe.xlsx");
+      return res.send(buffer);
+    }
+
+    res.json(resultatsParClasse);
+  } catch (err) {
+    console.error("Erreur premiers de classe :", err);
+    res.status(500).json({ error: "Impossible de calculer les premiers de classe pour le moment." });
   }
 });
 

@@ -442,6 +442,10 @@ function App({ session, onLogout }) {
   const [echeancierOuvertPourFraisId, setEcheancierOuvertPourFraisId] = useState(null);
   const [echeancesParFrais, setEcheancesParFrais] = useState({});
   const [nouvelleEcheance, setNouvelleEcheance] = useState({ libelle: "", montant: "", date_echeance: "" });
+  const [statistiquesGenre, setStatistiquesGenre] = useState(null);
+  const [premiersDeClasse, setPremiersDeClasse] = useState(null);
+  const [periodePremiersId, setPeriodePremiersId] = useState("");
+  const [topPremiers, setTopPremiers] = useState("3");
   const [classeRelanceId, setClasseRelanceId] = useState("");
   const [devices, setDevices] = useState([]);
   const [incidents, setIncidents] = useState([]);
@@ -683,6 +687,9 @@ function App({ session, onLogout }) {
         api("/periodes-evaluation").then(siEcoleInchangee(setPeriodesEvaluation)).catch(catchErr);
         api("/coefficients-matieres").then(siEcoleInchangee(setCoefficientsMatieres)).catch(catchErr);
       }
+      if (view === "rapports" && periodesEvaluation.length === 0) {
+        api("/periodes-evaluation").then(siEcoleInchangee(setPeriodesEvaluation)).catch(catchErr);
+      }
       if (view === "caisse") {
         api("/frais-scolarite").then(siEcoleInchangee(setFraisScolarite)).catch(catchErr);
         // Réservé à la Direction — un caissier n'a pas le droit de lister les
@@ -789,6 +796,52 @@ function App({ session, onLogout }) {
       document.body.removeChild(lien);
       URL.revokeObjectURL(url);
     } catch (e) { catchErr(e); }
+  }
+
+  async function telechargerFichier(chemin, nomFichier) {
+    try {
+      const res = await fetch(`${session.baseUrl}${chemin}`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!res.ok) throw new Error("Échec de l'export.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const lien = document.createElement("a");
+      lien.href = url;
+      lien.download = nomFichier;
+      document.body.appendChild(lien);
+      lien.click();
+      document.body.removeChild(lien);
+      URL.revokeObjectURL(url);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function exporterListePersonnel() {
+    telechargerFichier("/users/export-personnel", "liste-nominative-personnel.xlsx");
+  }
+
+  async function chargerStatistiquesGenre() {
+    try {
+      const data = await api("/students/statistiques-genre");
+      setStatistiquesGenre(data);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function exporterStatistiquesGenreExcel() {
+    telechargerFichier("/students/statistiques-genre?format=excel", "statistiques-par-genre.xlsx");
+  }
+
+  async function chargerPremiersDeClasse() {
+    if (!periodePremiersId) return;
+    try {
+      const data = await api(`/bulletins/premiers-de-classe?periode_id=${periodePremiersId}&top=${topPremiers}`);
+      setPremiersDeClasse(data);
+    } catch (e) { catchErr(e); }
+  }
+
+  async function exporterPremiersDeClasseExcel() {
+    if (!periodePremiersId) return;
+    telechargerFichier(`/bulletins/premiers-de-classe?periode_id=${periodePremiersId}&top=${topPremiers}&format=excel`, "premiers-de-classe.xlsx");
   }
 
   async function exporterElevesExcel() {
@@ -4303,6 +4356,30 @@ function App({ session, onLogout }) {
                   <Button small variant="ghost" onClick={exporterAbsenteismePdf}>Générer le PDF</Button>
                 </div>
               </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Statistiques par genre</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Effectifs Filles/Garçons/Total par classe — format attendu pour les rapports de rentrée MENA.</div>
+                  {statistiquesGenre && (
+                    <div style={{ marginBottom: 10, fontSize: 12 }}>
+                      {(statistiquesGenre.par_classe || []).map((c) => (
+                        <div key={c.classe} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: `1px solid ${COLORS.line}` }}>
+                          <span>{c.classe}</span>
+                          <span>F: {c.filles} · G: {c.garcons}{c.non_precise > 0 ? ` · ?: ${c.non_precise}` : ""} · Total: {c.total}</span>
+                        </div>
+                      ))}
+                      <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0 0 0", fontWeight: 700 }}>
+                        <span>Total général</span>
+                        <span>F: {statistiquesGenre.total_general?.filles ?? 0} · G: {statistiquesGenre.total_general?.garcons ?? 0} · Total: {statistiquesGenre.total_general?.total ?? 0}</span>
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Button small variant="ghost" onClick={chargerStatistiquesGenre}>{statistiquesGenre ? "Actualiser" : "Afficher"}</Button>
+                    <Button small variant="ghost" onClick={exporterStatistiquesGenreExcel}>Télécharger le fichier Excel</Button>
+                  </div>
+                </div>
+              </Card>
             </div>
 
             {/* ---- EMPLOI DU TEMPS ---- */}
@@ -4328,6 +4405,13 @@ function App({ session, onLogout }) {
                   <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Export enseignants (Excel)</div>
                   <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>Liste complète, matières, statut, classes rattachées.</div>
                   <Button small variant="ghost" onClick={exporterEnseignants}>Télécharger le fichier Excel</Button>
+                </div>
+              </Card>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Liste nominative du personnel</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>Tous les rôles (Direction, enseignants, surveillants, caissiers), avec genre — pour les besoins de reporting DRENA/IEPP.</div>
+                  <Button small variant="ghost" onClick={exporterListePersonnel}>Télécharger le fichier Excel</Button>
                 </div>
               </Card>
               <Card>
@@ -4359,6 +4443,48 @@ function App({ session, onLogout }) {
                   <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Suivi des heures manquées</div>
                   <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 14 }}>Voir le détail complet dans la page "Absentéisme" — export PDF disponible là-bas.</div>
                   <Button small variant="ghost" onClick={() => setView("absenteisme")}>Ouvrir "Absentéisme"</Button>
+                </div>
+              </Card>
+            </div>
+
+            {/* ---- PÉDAGOGIE ---- */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.marker, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Pédagogie</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14, marginBottom: 24 }}>
+              <Card>
+                <div style={{ padding: 18 }}>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Premiers de classe</div>
+                  <div style={{ fontSize: 12, color: COLORS.craieDim, marginBottom: 10 }}>Les meilleurs élèves de chaque classe, sur la période choisie — tableau d'honneur, remise de prix, transmission DRENA.</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+                    <select style={{ ...inputStyle, fontSize: 12, padding: "6px 8px", flex: 1, minWidth: 140 }} value={periodePremiersId} onChange={(e) => setPeriodePremiersId(e.target.value)}>
+                      <option value="">— Choisir une période —</option>
+                      {periodesEvaluation.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+                    </select>
+                    <select style={{ ...inputStyle, fontSize: 12, padding: "6px 8px", width: 90 }} value={topPremiers} onChange={(e) => setTopPremiers(e.target.value)}>
+                      <option value="1">Top 1</option>
+                      <option value="3">Top 3</option>
+                      <option value="5">Top 5</option>
+                    </select>
+                  </div>
+                  {premiersDeClasse && (
+                    <div style={{ marginBottom: 10, fontSize: 12, maxHeight: 220, overflowY: "auto" }}>
+                      {(premiersDeClasse || []).map((c) => (
+                        <div key={c.classe.id} style={{ marginBottom: 8 }}>
+                          <div style={{ fontWeight: 700, color: COLORS.marker }}>{c.classe.nom}</div>
+                          {(c.premiers || []).map((p) => (
+                            <div key={p.eleve_id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                              <span>{p.rang}. {[p.nom, p.prenoms].filter(Boolean).join(" ")}</span>
+                              <span>{p.moyenne_generale}/20</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                      {premiersDeClasse.length === 0 && <div style={{ color: COLORS.craieDim }}>Aucune moyenne calculable pour cette période — vérifie que des notes ont été saisies.</div>}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Button small variant="ghost" onClick={chargerPremiersDeClasse} disabled={!periodePremiersId}>{premiersDeClasse ? "Actualiser" : "Afficher"}</Button>
+                    <Button small variant="ghost" onClick={exporterPremiersDeClasseExcel} disabled={!periodePremiersId}>Télécharger le fichier Excel</Button>
+                  </div>
                 </div>
               </Card>
             </div>

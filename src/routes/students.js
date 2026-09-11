@@ -149,6 +149,53 @@ router.get("/export-desps", async (req, res) => {
   res.send(buffer);
 });
 
+// GET /api/students/statistiques-genre — effectifs Filles/Garçons/Total par
+// classe et par niveau, comme le demandent les rapports de rentrée du MENA.
+router.get("/statistiques-genre", async (req, res) => {
+  const params = [];
+  let filtreEcole = "TRUE";
+  const ecoleId = ecoleEffective(req);
+  if (ecoleId) { params.push(ecoleId); filtreEcole = "c.ecole_id = $1"; }
+  const { rows } = await pool.query(
+    `SELECT s.genre, c.nom AS classe_nom, c.niveau
+     FROM students s LEFT JOIN classes c ON c.id = s.classe_id
+     WHERE ${filtreEcole} ORDER BY c.niveau NULLS LAST, c.nom NULLS LAST`,
+    params
+  );
+
+  const parClasse = {};
+  for (const e of rows) {
+    const cle = e.classe_nom || "Sans classe";
+    if (!parClasse[cle]) parClasse[cle] = { niveau: e.niveau || "", classe: cle, filles: 0, garcons: 0, non_precise: 0 };
+    if (e.genre === "F") parClasse[cle].filles++;
+    else if (e.genre === "M") parClasse[cle].garcons++;
+    else parClasse[cle].non_precise++;
+  }
+  const parClasseListe = Object.values(parClasse).map((c) => ({ ...c, total: c.filles + c.garcons + c.non_precise }));
+  const totalGeneral = parClasseListe.reduce(
+    (acc, c) => ({ filles: acc.filles + c.filles, garcons: acc.garcons + c.garcons, non_precise: acc.non_precise + c.non_precise, total: acc.total + c.total }),
+    { filles: 0, garcons: 0, non_precise: 0, total: 0 }
+  );
+
+  if (req.query.format === "excel") {
+    const donneesExport = parClasseListe.map((c) => ({
+      "Niveau": c.niveau, "Classe": c.classe, "Filles": c.filles, "Garçons": c.garcons,
+      "Genre non renseigné": c.non_precise, "Total": c.total,
+    }));
+    donneesExport.push({ "Niveau": "", "Classe": "TOTAL GÉNÉRAL", "Filles": totalGeneral.filles, "Garçons": totalGeneral.garcons, "Genre non renseigné": totalGeneral.non_precise, "Total": totalGeneral.total });
+    const feuille = XLSX.utils.json_to_sheet(donneesExport);
+    feuille["!cols"] = Object.keys(donneesExport[0] || {}).map(() => ({ wch: 18 }));
+    const classeur = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(classeur, feuille, "Statistiques par genre");
+    const buffer = XLSX.write(classeur, { type: "buffer", bookType: "xlsx" });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", "attachment; filename=statistiques-par-genre.xlsx");
+    return res.send(buffer);
+  }
+
+  res.json({ par_classe: parClasseListe, total_general: totalGeneral });
+});
+
 // POST /api/students  { matricule, nom, classe_id, methode_biometrique }
 router.post("/", requireRole("direction", "surveillant"), async (req, res) => {
   const { matricule, nom, classe_id, methode_biometrique, parent_nom, parent_telephone, date_naissance, lieu_naissance, prenoms, genre, nationalite, nom_pere, nom_mere, affecte } = req.body;
