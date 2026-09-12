@@ -2388,6 +2388,11 @@ function App({ session, onLogout }) {
       }
       const ecoleActive = ecoles.find((e) => e.active) || ecoles[0] || {};
       const ecoleNom = ecoleActive.nom || "";
+      // Date limite affichée sur toutes les fiches : le 5 du mois, ou le 5 du
+      // mois suivant si le 5 de ce mois-ci est déjà passé.
+      const aujourdhui = new Date();
+      const dateLimite = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth() + (aujourdhui.getDate() > 5 ? 1 : 0), 5);
+      const dateLimiteTexte = dateLimite.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
       const w = window.open("", "_blank");
       w.document.write(`
         <html><head><title>Fiches de relance</title>
@@ -2399,6 +2404,7 @@ function App({ session, onLogout }) {
           h1 { font-size: 15px; margin: 0 0 2px; }
           .sous-titre { font-size: 11px; color: #555; margin-bottom: 10px; }
           .titre-relance { font-size: 13px; font-weight: bold; color: #b33; margin-bottom: 8px; }
+          .date-limite { font-size: 12px; font-weight: bold; background: #fdecea; color: #b33; padding: 5px 8px; border-radius: 4px; margin-bottom: 10px; display: inline-block; }
           table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
           td { padding: 5px 0; border-bottom: 1px solid #eee; font-size: 12px; }
           .montant { text-align: right; }
@@ -2412,6 +2418,7 @@ function App({ session, onLogout }) {
               <h1>${ecoleNom}</h1>
               <div class="sous-titre">Fiche de relance — ${new Date().toLocaleDateString("fr-FR")}</div>
               <div class="titre-relance">⚠ Cet élève n'est pas à jour — détail de l'ensemble des frais :</div>
+              <div class="date-limite">📅 À régulariser avant le <strong>${dateLimiteTexte}</strong></div>
               <table>
                 <tr><td><strong>Élève</strong></td><td class="montant">${[r.eleve.nom, r.eleve.prenoms].filter(Boolean).join(" ")}</td></tr>
                 <tr><td><strong>Classe</strong></td><td class="montant">${r.eleve.classe_nom || ""}</td></tr>
