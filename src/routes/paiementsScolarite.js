@@ -59,11 +59,56 @@ router.post("/manuel", authRequired, requireErpActif, requireRole("direction", "
       return res.status(409).json({ error: `${caisseRows[0].nom} est fermée — rouvre-la avant d'encaisser.` });
     }
   }
-  const { rows } = await pool.query(
-    `INSERT INTO paiements_scolarite (eleve_id, montant, methode, statut, saisi_par, caisse_id, frais_scolarite_id, frais_individuel_id, confirme_at)
-     VALUES ($1, $2, 'especes', 'reussi', $3, $4, $5, $6, now()) RETURNING *`,
-    [eleve_id, montant, req.user.sub, caisse_id || null, frais_scolarite_id || null, frais_individuel_id || null]
-  );
+
+  let lignesInserees;
+  if (frais_scolarite_id || frais_individuel_id) {
+    // Un frais précis a été choisi (clic sur une ligne) — le versement va
+    // entièrement dessus, comme avant.
+    const { rows } = await pool.query(
+      `INSERT INTO paiements_scolarite (eleve_id, montant, methode, statut, saisi_par, caisse_id, frais_scolarite_id, frais_individuel_id, confirme_at)
+       VALUES ($1, $2, 'especes', 'reussi', $3, $4, $5, $6, now()) RETURNING *`,
+      [eleve_id, montant, req.user.sub, caisse_id || null, frais_scolarite_id || null, frais_individuel_id || null]
+    );
+    lignesInserees = rows;
+  } else {
+    // Aucun frais précis choisi — le versement se fait sur le total dû et se
+    // répartit automatiquement sur les frais restants (reliquat en priorité,
+    // puis les autres dans l'ordre habituel), plutôt que de rester un
+    // paiement générique non affecté à un frais précis.
+    const { rows: eleveRows } = await pool.query(
+      "SELECT s.*, c.niveau, c.ecole_id FROM students s JOIN classes c ON c.id = s.classe_id WHERE s.id = $1", [eleve_id]
+    );
+    if (!eleveRows[0]) return res.status(404).json({ error: "Élève introuvable." });
+    const solde = await calculerSoldeEleve(eleveRows[0]);
+    const lignesAPayer = (solde.detail || []).filter((f) => f.reste > 0);
+
+    let resteAVerser = Number(montant);
+    const repartition = [];
+    for (const ligne of lignesAPayer) {
+      if (resteAVerser <= 0) break;
+      const montantAlloue = Math.min(resteAVerser, ligne.reste);
+      repartition.push({
+        frais_scolarite_id: ligne.individuel ? null : ligne.id,
+        frais_individuel_id: ligne.individuel ? ligne.id : null,
+        montant: montantAlloue,
+      });
+      resteAVerser -= montantAlloue;
+    }
+    // Ce qui reste après avoir soldé tous les frais connus part comme
+    // versement générique (excédent) — jamais perdu, juste non affecté.
+    if (resteAVerser > 0) repartition.push({ frais_scolarite_id: null, frais_individuel_id: null, montant: resteAVerser });
+
+    lignesInserees = [];
+    for (const part of repartition) {
+      const { rows } = await pool.query(
+        `INSERT INTO paiements_scolarite (eleve_id, montant, methode, statut, saisi_par, caisse_id, frais_scolarite_id, frais_individuel_id, confirme_at)
+         VALUES ($1, $2, 'especes', 'reussi', $3, $4, $5, $6, now()) RETURNING *`,
+        [eleve_id, part.montant, req.user.sub, caisse_id || null, part.frais_scolarite_id, part.frais_individuel_id]
+      );
+      lignesInserees.push(rows[0]);
+    }
+  }
+
   try {
     const { rows: eleveRows } = await pool.query(
       "SELECT s.*, c.niveau, c.ecole_id FROM students s JOIN classes c ON c.id = s.classe_id WHERE s.id = $1", [eleve_id]
@@ -75,7 +120,10 @@ router.post("/manuel", authRequired, requireErpActif, requireRole("direction", "
   } catch (err) {
     console.error("Notification de paiement non envoyée (paiement déjà enregistré) :", err.message);
   }
-  res.status(201).json(rows[0]);
+  // Renvoie la première ligne créée (pour compatibilité avec le code
+  // existant qui attend un seul paiement) et le détail complet de la
+  // répartition, pour que l'interface puisse l'afficher si besoin.
+  res.status(201).json({ ...lignesInserees[0], repartition: lignesInserees });
 });
 
 // POST /api/paiements-scolarite/initier  { eleve_id, montant }

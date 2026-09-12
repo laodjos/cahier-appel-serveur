@@ -2173,7 +2173,7 @@ function App({ session, onLogout }) {
     encaissementEnCoursRef.current = true;
     setEncaissementEnCours(true);
     try {
-      await api("/paiements-scolarite/manuel", {
+      const resultat = await api("/paiements-scolarite/manuel", {
         method: "POST",
         body: {
           eleve_id: encaisserEleveId, montant: encaisserMontant, caisse_id: caisseSelectionneeId,
@@ -2195,8 +2195,22 @@ function App({ session, onLogout }) {
       setEncaisserFraisChoisi(null);
       setEncaisserMatricule("");
       if (caisseSelectionneeId) { const data = await api(`/caisses/${caisseSelectionneeId}/solde`); setSoldeCaisseActuelle(data); }
-      setGlobalInfo("Paiement encaissé avec succès.");
-      setTimeout(() => setGlobalInfo(""), 4000);
+      // Si le versement a été réparti automatiquement (aucun frais précis
+      // choisi), le dire clairement plutôt que le message générique.
+      if (!encaisserFraisChoisi && resultat.repartition?.length > 1) {
+        const detailParId = {};
+        (soldeAJour?.detail || []).forEach((f) => { detailParId[f.id] = f.libelle; });
+        const lignes = resultat.repartition.map((p) => {
+          const id = p.frais_scolarite_id || p.frais_individuel_id;
+          const libelle = id ? (detailParId[id] || "Frais") : "Excédent (non affecté)";
+          return `${libelle} : ${Number(p.montant).toLocaleString("fr-FR")} F`;
+        });
+        setGlobalInfo(`Versement réparti automatiquement — ${lignes.join(" · ")}`);
+        setTimeout(() => setGlobalInfo(""), 8000);
+      } else {
+        setGlobalInfo("Paiement encaissé avec succès.");
+        setTimeout(() => setGlobalInfo(""), 4000);
+      }
     } catch (e) { catchErr(e); } finally { encaissementEnCoursRef.current = false; setEncaissementEnCours(false); }
   }
 
@@ -2222,7 +2236,7 @@ function App({ session, onLogout }) {
     encaissementEnCoursRef.current = true;
     setEncaissementEnCours(true);
     try {
-      await api("/paiements-scolarite/manuel", {
+      const resultat = await api("/paiements-scolarite/manuel", {
         method: "POST",
         body: {
           eleve_id: soldeEleveId, montant: montantPaiement,
@@ -2230,6 +2244,20 @@ function App({ session, onLogout }) {
           frais_individuel_id: fraisChoisiPourPaiement?.individuel ? fraisChoisiPourPaiement.id : undefined,
         },
       });
+      // Si aucun frais précis n'avait été choisi, le versement a été réparti
+      // automatiquement sur les frais restants — on l'affiche clairement,
+      // plutôt que de laisser croire que tout est parti sur un seul frais.
+      if (!fraisChoisiPourPaiement && resultat.repartition?.length > 1) {
+        const detailParId = {};
+        (soldeData?.detail || []).forEach((f) => { detailParId[f.id] = f.libelle; });
+        const lignes = resultat.repartition.map((p) => {
+          const id = p.frais_scolarite_id || p.frais_individuel_id;
+          const libelle = id ? (detailParId[id] || "Frais") : "Excédent (non affecté)";
+          return `${libelle} : ${Number(p.montant).toLocaleString("fr-FR")} F`;
+        });
+        setGlobalInfo(`Versement réparti automatiquement — ${lignes.join(" · ")}`);
+        setTimeout(() => setGlobalInfo(""), 8000);
+      }
       setDernierPaiementRecu({ montant: montantPaiement, libelle: fraisChoisiPourPaiement?.libelle || null });
       setMontantPaiement("");
       setFraisChoisiPourPaiement(null);

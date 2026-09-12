@@ -190,4 +190,48 @@ describe("Solde d'un élève", () => {
     expect(ligneCantine.echeancier.en_retard).toBe(true);
     expect(ligneCantine.echeancier.montant_retard).toBe(50000);
   });
+
+  // Nouvelle règle : un versement sans frais précis choisi doit se répartir
+  // automatiquement sur les frais restants (reliquat en premier), plutôt que
+  // de rester un paiement générique non affecté à aucune ligne.
+  test("un versement sans frais précis se répartit automatiquement, reliquat en premier", async () => {
+    await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES ($1, '6ème', 'Frais de scolarité', 250000, 'tous')`,
+      [ECOLE_ID]
+    );
+    await pool.query(
+      `INSERT INTO frais_individuels (eleve_id, libelle, montant, est_reliquat) VALUES ($1, 'Reliquat', 45000, true)`,
+      [ELEVE_ID]
+    );
+
+    const paiement = await appelApi("/paiements-scolarite/manuel", {
+      method: "POST", token: tokenDirection,
+      body: { eleve_id: ELEVE_ID, montant: 100000 },
+    });
+    expect(paiement.status).toBe(201);
+    expect(paiement.data.repartition.length).toBe(2);
+    const versReliquat = paiement.data.repartition.find((p) => p.frais_individuel_id);
+    const versScolarite = paiement.data.repartition.find((p) => p.frais_scolarite_id);
+    expect(Number(versReliquat.montant)).toBe(45000);
+    expect(Number(versScolarite.montant)).toBe(55000);
+
+    const solde = await appelApi(`/frais-scolarite/solde/${ELEVE_ID}`, { token: tokenDirection });
+    const ligneReliquat = solde.data.detail.find((f) => f.est_reliquat);
+    expect(ligneReliquat.reste).toBe(0);
+    const ligneScolarite = solde.data.detail.find((f) => f.libelle === "Frais de scolarité");
+    expect(ligneScolarite.montant_paye).toBe(55000);
+  });
+
+  test("l'excédent d'un versement réparti part comme montant non affecté", async () => {
+    await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES ($1, '6ème', 'Cantine', 30000, 'tous')`,
+      [ECOLE_ID]
+    );
+    const paiement = await appelApi("/paiements-scolarite/manuel", {
+      method: "POST", token: tokenDirection,
+      body: { eleve_id: ELEVE_ID, montant: 50000 },
+    });
+    const excedent = paiement.data.repartition.find((p) => !p.frais_scolarite_id && !p.frais_individuel_id);
+    expect(Number(excedent.montant)).toBe(20000);
+  });
 });
