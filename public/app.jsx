@@ -454,6 +454,10 @@ function App({ session, onLogout }) {
   // clics envoyés plus vite que ce rendu (double-clic, réseau qui traîne).
   // La réf, elle, est à jour immédiatement, avant même le premier appel API.
   const encaissementEnCoursRef = useRef(false);
+  // Même souci que l'encaissement : sans ce verrou, un double-clic ou un
+  // réseau lent peut envoyer deux fois la même tranche d'échéancier.
+  const ajoutEcheanceEnCoursRef = useRef(false);
+  const [ajoutEcheanceEnCours, setAjoutEcheanceEnCours] = useState(false);
   const [echeancierOuvertPourFraisId, setEcheancierOuvertPourFraisId] = useState(null);
   const [echeancesParFrais, setEcheancesParFrais] = useState({});
   const [nouvelleEcheance, setNouvelleEcheance] = useState({ libelle: "", montant: "", date_echeance: "" });
@@ -2068,7 +2072,9 @@ function App({ session, onLogout }) {
   }
 
   async function ajouterEcheance(fraisId) {
-    if (!nouvelleEcheance.libelle.trim() || !nouvelleEcheance.montant || !nouvelleEcheance.date_echeance) return;
+    if (!nouvelleEcheance.libelle.trim() || !nouvelleEcheance.montant || !nouvelleEcheance.date_echeance || ajoutEcheanceEnCoursRef.current) return;
+    ajoutEcheanceEnCoursRef.current = true;
+    setAjoutEcheanceEnCours(true);
     try {
       await api(`/frais-scolarite/${fraisId}/echeances`, { method: "POST", body: nouvelleEcheance });
       // Recharge plutôt que de mettre à jour localement — le reste à répartir
@@ -2076,7 +2082,7 @@ function App({ session, onLogout }) {
       const data = await api(`/frais-scolarite/${fraisId}/echeances`);
       setEcheancesParFrais((v) => ({ ...v, [fraisId]: data }));
       setNouvelleEcheance({ libelle: "", montant: "", date_echeance: "" });
-    } catch (e) { catchErr(e); }
+    } catch (e) { catchErr(e); } finally { ajoutEcheanceEnCoursRef.current = false; setAjoutEcheanceEnCours(false); }
   }
 
   async function supprimerEcheance(fraisId, echeanceId) {
@@ -4021,7 +4027,7 @@ function App({ session, onLogout }) {
                                     <Field label="Libellé"><input style={{ ...inputStyle, width: 130 }} value={nouvelleEcheance.libelle} onChange={(e) => setNouvelleEcheance((v) => ({ ...v, libelle: e.target.value }))} placeholder="1ère tranche" /></Field>
                                     <Field label={`Montant (max ${resteARepartir.toLocaleString("fr-FR")} F)`}><input type="number" max={resteARepartir} style={{ ...inputStyle, width: 130 }} value={nouvelleEcheance.montant} onChange={(e) => setNouvelleEcheance((v) => ({ ...v, montant: e.target.value }))} /></Field>
                                     <Field label="Date limite"><input type="date" style={{ ...inputStyle, width: 140 }} value={nouvelleEcheance.date_echeance} onChange={(e) => setNouvelleEcheance((v) => ({ ...v, date_echeance: e.target.value }))} /></Field>
-                                    <Button small variant="ghost" onClick={() => ajouterEcheance(f.id)} disabled={resteARepartir <= 0}>Ajouter</Button>
+                                    <Button small variant="ghost" onClick={() => ajouterEcheance(f.id)} disabled={resteARepartir <= 0 || ajoutEcheanceEnCours}>{ajoutEcheanceEnCours ? "Ajout en cours…" : "Ajouter"}</Button>
                                   </div>
                                 </div>
                               );
