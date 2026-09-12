@@ -448,6 +448,12 @@ function App({ session, onLogout }) {
   const [affectationCycle, setAffectationCycle] = useState("");
   const [affectationNiveau, setAffectationNiveau] = useState("");
   const [detailJourOuvert, setDetailJourOuvert] = useState(false);
+  const [encaissementEnCours, setEncaissementEnCours] = useState(false);
+  // Une réf en plus de l'état : l'état React ne se reflète dans le DOM
+  // (bouton désactivé) qu'au prochain rendu, ce qui laisse passer plusieurs
+  // clics envoyés plus vite que ce rendu (double-clic, réseau qui traîne).
+  // La réf, elle, est à jour immédiatement, avant même le premier appel API.
+  const encaissementEnCoursRef = useRef(false);
   const [echeancierOuvertPourFraisId, setEcheancierOuvertPourFraisId] = useState(null);
   const [echeancesParFrais, setEcheancesParFrais] = useState({});
   const [nouvelleEcheance, setNouvelleEcheance] = useState({ libelle: "", montant: "", date_echeance: "" });
@@ -2163,7 +2169,9 @@ function App({ session, onLogout }) {
   }
 
   async function encaisserEleveRapide() {
-    if (!encaisserEleveId || !encaisserMontant) return;
+    if (!encaisserEleveId || !encaisserMontant || encaissementEnCoursRef.current) return;
+    encaissementEnCoursRef.current = true;
+    setEncaissementEnCours(true);
     try {
       await api("/paiements-scolarite/manuel", {
         method: "POST",
@@ -2189,7 +2197,7 @@ function App({ session, onLogout }) {
       if (caisseSelectionneeId) { const data = await api(`/caisses/${caisseSelectionneeId}/solde`); setSoldeCaisseActuelle(data); }
       setGlobalInfo("Paiement encaissé avec succès.");
       setTimeout(() => setGlobalInfo(""), 4000);
-    } catch (e) { catchErr(e); }
+    } catch (e) { catchErr(e); } finally { encaissementEnCoursRef.current = false; setEncaissementEnCours(false); }
   }
 
   async function ajouterFraisIndividuel() {
@@ -2210,7 +2218,9 @@ function App({ session, onLogout }) {
   }
 
   async function enregistrerPaiementManuel() {
-    if (!soldeEleveId || !montantPaiement) return;
+    if (!soldeEleveId || !montantPaiement || encaissementEnCoursRef.current) return;
+    encaissementEnCoursRef.current = true;
+    setEncaissementEnCours(true);
     try {
       await api("/paiements-scolarite/manuel", {
         method: "POST",
@@ -2224,7 +2234,7 @@ function App({ session, onLogout }) {
       setMontantPaiement("");
       setFraisChoisiPourPaiement(null);
       chargerSoldeEleve();
-    } catch (e) { catchErr(e); }
+    } catch (e) { catchErr(e); } finally { encaissementEnCoursRef.current = false; setEncaissementEnCours(false); }
   }
 
   async function genererLienPaiementScolarite() {
@@ -3907,7 +3917,7 @@ function App({ session, onLogout }) {
                     );
                   })()}
                   <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                    <Button small onClick={encaisserEleveRapide} style={{ flex: 1 }} disabled={!encaisserEleveId || !encaisserMontant}>Encaisser en espèces</Button>
+                    <Button small onClick={encaisserEleveRapide} style={{ flex: 1 }} disabled={!encaisserEleveId || !encaisserMontant || encaissementEnCours}>{encaissementEnCours ? "Encaissement en cours…" : "Encaisser en espèces"}</Button>
                     <Button small variant="ghost" onClick={() => setShowEncaisserEleve(false)}>Annuler</Button>
                   </div>
                 </div>
@@ -4108,7 +4118,7 @@ function App({ session, onLogout }) {
                               )}
                               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
                                 <Field label="Montant (F CFA)"><input type="number" style={{ ...inputStyle, width: 130 }} value={montantPaiement} onChange={(e) => setMontantPaiement(e.target.value)} /></Field>
-                                <Button small variant="ghost" onClick={enregistrerPaiementManuel}>Encaisser en espèces</Button>
+                                <Button small variant="ghost" onClick={enregistrerPaiementManuel} disabled={encaissementEnCours}>{encaissementEnCours ? "Encaissement en cours…" : "Encaisser en espèces"}</Button>
                                 <Button small icon={P.check} onClick={genererLienPaiementScolarite}>Générer un lien de paiement</Button>
                                 <Button small variant="ghost" icon={P.scan} onClick={() => imprimerRecuScolarite(soldeEleveId, soldeData, dernierPaiementRecu)}>Imprimer le reçu</Button>
                               </div>
