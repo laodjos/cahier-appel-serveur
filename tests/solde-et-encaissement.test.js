@@ -152,4 +152,42 @@ describe("Solde d'un élève", () => {
     const verif = await pool.query("SELECT frais_scolarite_id FROM paiements_scolarite WHERE id = $1", [paiement.data.id]);
     expect(verif.rows[0].frais_scolarite_id).toBeNull();
   });
+
+  // Revenu en arrière sur demande explicite : l'échéancier reste PAR FRAIS
+  // (pas consolidé par promotion), pour que la fiche de relance précise
+  // QUEL frais est en retard et de combien — l'information par frais est
+  // jugée plus utile qu'un seul total générique.
+  test("l'échéancier par frais donne un retard précis, propre à CE frais", async () => {
+    const fraisScolarite = await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES
+        ($1, '6ème', 'Frais de scolarité', 200000, 'tous') RETURNING id`,
+      [ECOLE_ID]
+    );
+    const fraisCantine = await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES ($1, '6ème', 'Cantine', 50000, 'tous') RETURNING id`,
+      [ECOLE_ID]
+    );
+    await pool.query(
+      `INSERT INTO echeances_frais (frais_scolarite_id, libelle, montant, date_echeance) VALUES ($1, '1ère tranche', 100000, '2025-10-15')`,
+      [fraisScolarite.rows[0].id]
+    );
+    await pool.query(
+      `INSERT INTO echeances_frais (frais_scolarite_id, libelle, montant, date_echeance) VALUES ($1, 'Tranche unique', 50000, '2025-10-15')`,
+      [fraisCantine.rows[0].id]
+    );
+    // Paye 80000 sur la scolarité (en retard de 20000), rien sur la cantine
+    // (en retard de 50000) — deux frais en retard, chacun avec son montant.
+    await appelApi("/paiements-scolarite/manuel", {
+      method: "POST", token: tokenDirection,
+      body: { eleve_id: ELEVE_ID, montant: 80000, frais_scolarite_id: fraisScolarite.rows[0].id },
+    });
+
+    const solde = await appelApi(`/frais-scolarite/solde/${ELEVE_ID}`, { token: tokenDirection });
+    const ligneScolarite = solde.data.detail.find((f) => f.libelle === "Frais de scolarité");
+    const ligneCantine = solde.data.detail.find((f) => f.libelle === "Cantine");
+    expect(ligneScolarite.echeancier.en_retard).toBe(true);
+    expect(ligneScolarite.echeancier.montant_retard).toBe(20000);
+    expect(ligneCantine.echeancier.en_retard).toBe(true);
+    expect(ligneCantine.echeancier.montant_retard).toBe(50000);
+  });
 });

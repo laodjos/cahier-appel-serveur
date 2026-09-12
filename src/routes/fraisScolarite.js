@@ -58,8 +58,9 @@ async function calculerSoldeEleve(eleve) {
   const { rows: paiements } = await pool.query(
     "SELECT montant, frais_scolarite_id, frais_individuel_id FROM paiements_scolarite WHERE eleve_id = $1 AND statut = 'reussi'", [eleve.id]
   );
-  // Échéancier éventuel (paramétré par frais) — permet de savoir si l'élève
-  // est en retard sur SA tranche du moment, pas seulement sur le total.
+  // Échéancier par frais — indique précisément QUEL frais est en retard et
+  // de combien, pour que la fiche de relance liste chaque frais concerné
+  // plutôt qu'un seul chiffre générique.
   const idsFraisApplicables = fraisApplicablesNiveau.map((f) => f.id);
   const { rows: echeancesRows } = idsFraisApplicables.length > 0
     ? await pool.query("SELECT * FROM echeances_frais WHERE frais_scolarite_id = ANY($1::uuid[]) ORDER BY date_echeance", [idsFraisApplicables])

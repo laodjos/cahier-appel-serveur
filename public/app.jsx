@@ -2353,7 +2353,7 @@ function App({ session, onLogout }) {
             <div class="fiche">
               <h1>${ecoleNom}</h1>
               <div class="sous-titre">Fiche de relance — ${new Date().toLocaleDateString("fr-FR")}</div>
-              <div class="titre-relance">⚠ Échéance(s) dépassée(s)</div>
+              <div class="titre-relance">⚠ Cet élève n'est pas à jour — détail des frais en retard :</div>
               <table>
                 <tr><td><strong>Élève</strong></td><td class="montant">${[r.eleve.nom, r.eleve.prenoms].filter(Boolean).join(" ")}</td></tr>
                 <tr><td><strong>Classe</strong></td><td class="montant">${r.eleve.classe_nom || ""}</td></tr>

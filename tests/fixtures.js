@@ -24,6 +24,7 @@ async function preparerJeuDeTest() {
   await pool.query("DELETE FROM frais_individuels WHERE eleve_id = $1", [ELEVE_ID]);
   await pool.query("DELETE FROM frais_scolarite WHERE ecole_id = $1", [ECOLE_ID]);
   await pool.query("DELETE FROM caisses WHERE ecole_id = $1", [ECOLE_ID]);
+  await pool.query("DELETE FROM echeances_promotion WHERE ecole_id = $1", [ECOLE_ID]);
   await pool.query("DELETE FROM attendance_events WHERE student_id = $1", [ELEVE_ID]);
   await pool.query("DELETE FROM students WHERE id = $1", [ELEVE_ID]);
   await pool.query("DELETE FROM classes WHERE id = $1", [CLASSE_ID]);

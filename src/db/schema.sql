@@ -721,3 +721,20 @@ ALTER TABLE paiements_scolarite ADD CONSTRAINT paiements_scolarite_frais_scolari
 -- personnel, mérite... Un motif optionnel garde la trace de la raison.
 ALTER TABLE students ADD COLUMN IF NOT EXISTS reduction_pourcentage NUMERIC NOT NULL DEFAULT 0 CHECK (reduction_pourcentage >= 0 AND reduction_pourcentage <= 100);
 ALTER TABLE students ADD COLUMN IF NOT EXISTS reduction_motif TEXT;
+-- --------------------------------------------------------------------------
+-- Échéancier au niveau de la PROMOTION (pas frais par frais) — un seul
+-- échéancier par niveau, qui porte sur le TOTAL des frais de ce niveau.
+-- Remplace l'échéancier par frais individuel (echeances_frais, laissée en
+-- place mais plus utilisée) : sinon, un élève en retard sur plusieurs frais
+-- à la fois génère une relance par frais au lieu d'une seule vue d'ensemble.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS echeances_promotion (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ecole_id UUID REFERENCES ecoles(id),
+  niveau TEXT NOT NULL,
+  libelle TEXT NOT NULL,
+  montant NUMERIC NOT NULL,
+  date_echeance DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_echeances_promotion_ecole_niveau ON echeances_promotion(ecole_id, niveau);
