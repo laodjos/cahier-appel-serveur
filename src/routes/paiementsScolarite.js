@@ -61,6 +61,7 @@ router.post("/manuel", authRequired, requireErpActif, requireRole("direction", "
   }
 
   let lignesInserees;
+  let renduMonnaie = 0;
   if (frais_scolarite_id || frais_individuel_id) {
     // Un frais précis a été choisi (clic sur une ligne) — le versement va
     // entièrement dessus, comme avant.
@@ -94,9 +95,11 @@ router.post("/manuel", authRequired, requireErpActif, requireRole("direction", "
       });
       resteAVerser -= montantAlloue;
     }
-    // Ce qui reste après avoir soldé tous les frais connus part comme
-    // versement générique (excédent) — jamais perdu, juste non affecté.
-    if (resteAVerser > 0) repartition.push({ frais_scolarite_id: null, frais_individuel_id: null, montant: resteAVerser });
+    // Ce qui reste après avoir soldé tous les frais connus n'est PAS encaissé
+    // — c'est du rendu monnaie, remis en main propre. L'enregistrer comme un
+    // paiement gonflerait le solde de la caisse d'un argent qui n'y reste
+    // en réalité jamais.
+    renduMonnaie = resteAVerser > 0 ? resteAVerser : 0;
 
     lignesInserees = [];
     for (const part of repartition) {
@@ -107,6 +110,10 @@ router.post("/manuel", authRequired, requireErpActif, requireRole("direction", "
       );
       lignesInserees.push(rows[0]);
     }
+    if (lignesInserees.length === 0) {
+      // Tout est déjà réglé — rien à encaisser, tout part en rendu monnaie.
+      return res.status(400).json({ error: "Cet élève n'a plus aucun frais impayé — rien à encaisser sur ce versement.", rendu_monnaie: renduMonnaie });
+    }
   }
 
   try {
@@ -115,7 +122,9 @@ router.post("/manuel", authRequired, requireErpActif, requireRole("direction", "
     );
     if (eleveRows[0]) {
       const solde = await calculerSoldeEleve(eleveRows[0]);
-      await programmerNotificationPaiement(eleve_id, montant, Math.max(0, solde.solde ?? 0));
+      // Notifie sur le montant réellement encaissé, pas sur ce que le parent
+      // a remis en main (qui peut inclure du rendu monnaie jamais encaissé).
+      await programmerNotificationPaiement(eleve_id, Number(montant) - renduMonnaie, Math.max(0, solde.solde ?? 0));
     }
   } catch (err) {
     console.error("Notification de paiement non envoyée (paiement déjà enregistré) :", err.message);
@@ -123,7 +132,7 @@ router.post("/manuel", authRequired, requireErpActif, requireRole("direction", "
   // Renvoie la première ligne créée (pour compatibilité avec le code
   // existant qui attend un seul paiement) et le détail complet de la
   // répartition, pour que l'interface puisse l'afficher si besoin.
-  res.status(201).json({ ...lignesInserees[0], repartition: lignesInserees });
+  res.status(201).json({ ...lignesInserees[0], repartition: lignesInserees, rendu_monnaie: renduMonnaie });
 });
 
 // POST /api/paiements-scolarite/initier  { eleve_id, montant }

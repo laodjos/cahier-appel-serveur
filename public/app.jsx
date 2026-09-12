@@ -2196,17 +2196,23 @@ function App({ session, onLogout }) {
       setEncaisserMatricule("");
       if (caisseSelectionneeId) { const data = await api(`/caisses/${caisseSelectionneeId}/solde`); setSoldeCaisseActuelle(data); }
       // Si le versement a été réparti automatiquement (aucun frais précis
-      // choisi), le dire clairement plutôt que le message générique.
+      // choisi), le dire clairement plutôt que le message générique — et
+      // signaler le rendu monnaie s'il y en a un, information essentielle
+      // pour le caissier.
       if (!encaisserFraisChoisi && resultat.repartition?.length > 1) {
         const detailParId = {};
         (soldeAJour?.detail || []).forEach((f) => { detailParId[f.id] = f.libelle; });
         const lignes = resultat.repartition.map((p) => {
           const id = p.frais_scolarite_id || p.frais_individuel_id;
-          const libelle = id ? (detailParId[id] || "Frais") : "Excédent (non affecté)";
+          const libelle = detailParId[id] || "Frais";
           return `${libelle} : ${Number(p.montant).toLocaleString("fr-FR")} F`;
         });
-        setGlobalInfo(`Versement réparti automatiquement — ${lignes.join(" · ")}`);
-        setTimeout(() => setGlobalInfo(""), 8000);
+        const suffixeRendu = resultat.rendu_monnaie > 0 ? ` · Rendu monnaie : ${Number(resultat.rendu_monnaie).toLocaleString("fr-FR")} F` : "";
+        setGlobalInfo(`Versement réparti automatiquement — ${lignes.join(" · ")}${suffixeRendu}`);
+        setTimeout(() => setGlobalInfo(""), 9000);
+      } else if (resultat.rendu_monnaie > 0) {
+        setGlobalInfo(`Paiement encaissé — Rendu monnaie : ${Number(resultat.rendu_monnaie).toLocaleString("fr-FR")} F`);
+        setTimeout(() => setGlobalInfo(""), 6000);
       } else {
         setGlobalInfo("Paiement encaissé avec succès.");
         setTimeout(() => setGlobalInfo(""), 4000);
@@ -2247,16 +2253,22 @@ function App({ session, onLogout }) {
       // Si aucun frais précis n'avait été choisi, le versement a été réparti
       // automatiquement sur les frais restants — on l'affiche clairement,
       // plutôt que de laisser croire que tout est parti sur un seul frais.
+      // Le rendu monnaie, s'il y en a, est signalé à part : cet argent n'est
+      // jamais encaissé, juste remis en main propre.
       if (!fraisChoisiPourPaiement && resultat.repartition?.length > 1) {
         const detailParId = {};
         (soldeData?.detail || []).forEach((f) => { detailParId[f.id] = f.libelle; });
         const lignes = resultat.repartition.map((p) => {
           const id = p.frais_scolarite_id || p.frais_individuel_id;
-          const libelle = id ? (detailParId[id] || "Frais") : "Excédent (non affecté)";
+          const libelle = detailParId[id] || "Frais";
           return `${libelle} : ${Number(p.montant).toLocaleString("fr-FR")} F`;
         });
-        setGlobalInfo(`Versement réparti automatiquement — ${lignes.join(" · ")}`);
-        setTimeout(() => setGlobalInfo(""), 8000);
+        const suffixeRendu = resultat.rendu_monnaie > 0 ? ` · Rendu monnaie : ${Number(resultat.rendu_monnaie).toLocaleString("fr-FR")} F` : "";
+        setGlobalInfo(`Versement réparti automatiquement — ${lignes.join(" · ")}${suffixeRendu}`);
+        setTimeout(() => setGlobalInfo(""), 9000);
+      } else if (resultat.rendu_monnaie > 0) {
+        setGlobalInfo(`Paiement encaissé — Rendu monnaie : ${Number(resultat.rendu_monnaie).toLocaleString("fr-FR")} F`);
+        setTimeout(() => setGlobalInfo(""), 6000);
       }
       setDernierPaiementRecu({ montant: montantPaiement, libelle: fraisChoisiPourPaiement?.libelle || null });
       setMontantPaiement("");

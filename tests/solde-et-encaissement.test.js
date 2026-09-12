@@ -222,16 +222,41 @@ describe("Solde d'un élève", () => {
     expect(ligneScolarite.montant_paye).toBe(55000);
   });
 
-  test("l'excédent d'un versement réparti part comme montant non affecté", async () => {
-    await pool.query(
-      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES ($1, '6ème', 'Cantine', 30000, 'tous')`,
+  test("l'excédent d'un versement réparti part en rendu monnaie, jamais encaissé", async () => {
+    const frais = await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES ($1, '6ème', 'Cantine', 30000, 'tous') RETURNING id`,
       [ECOLE_ID]
     );
     const paiement = await appelApi("/paiements-scolarite/manuel", {
       method: "POST", token: tokenDirection,
       body: { eleve_id: ELEVE_ID, montant: 50000 },
     });
-    const excedent = paiement.data.repartition.find((p) => !p.frais_scolarite_id && !p.frais_individuel_id);
-    expect(Number(excedent.montant)).toBe(20000);
+    expect(paiement.status).toBe(201);
+    // Le rendu monnaie est signalé mais jamais inséré comme paiement.
+    expect(Number(paiement.data.rendu_monnaie)).toBe(20000);
+    expect(paiement.data.repartition.length).toBe(1);
+    expect(Number(paiement.data.repartition[0].montant)).toBe(30000);
+
+    const verif = await pool.query(
+      "SELECT COALESCE(SUM(montant), 0) AS total FROM paiements_scolarite WHERE eleve_id = $1", [ELEVE_ID]
+    );
+    expect(Number(verif.rows[0].total)).toBe(30000);
+  });
+
+  test("verser sur un élève déjà entièrement à jour est refusé (rien à encaisser)", async () => {
+    await pool.query(
+      `INSERT INTO frais_scolarite (ecole_id, niveau, libelle, montant_total, applicable_a) VALUES ($1, '6ème', 'Cantine', 30000, 'tous')`,
+      [ECOLE_ID]
+    );
+    await appelApi("/paiements-scolarite/manuel", {
+      method: "POST", token: tokenDirection,
+      body: { eleve_id: ELEVE_ID, montant: 30000 },
+    });
+    const second = await appelApi("/paiements-scolarite/manuel", {
+      method: "POST", token: tokenDirection,
+      body: { eleve_id: ELEVE_ID, montant: 10000 },
+    });
+    expect(second.status).toBe(400);
+    expect(Number(second.data.rendu_monnaie)).toBe(10000);
   });
 });
