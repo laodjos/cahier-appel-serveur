@@ -2295,7 +2295,7 @@ function App({ session, onLogout }) {
             `).join("")}
             <tr><td>Total scolarité</td><td style="text-align:right">${data.montant_total != null ? data.montant_total.toLocaleString("fr-FR") + " F" : "—"}</td></tr>
             <tr><td>Déjà payé</td><td style="text-align:right">${data.montant_paye.toLocaleString("fr-FR")} F</td></tr>
-            <tr><td class="solde-restant">Reste à payer</td><td style="text-align:right" class="solde-restant">${data.solde != null ? data.solde.toLocaleString("fr-FR") + " F" : "—"}</td></tr>
+            <tr><td class="solde-restant">${data.solde != null && data.solde < 0 ? "Excédent versé" : "Reste à payer"}</td><td style="text-align:right" class="solde-restant">${data.solde != null ? Math.abs(data.solde).toLocaleString("fr-FR") + " F" : "—"}</td></tr>
           </table>
           ${data.reliquat_impaye ? `<div style="background:#fdecea; color:#c0392b; padding:8px 10px; border-radius:6px; font-size:11.5px; font-weight:bold; margin-bottom:14px;">⚠ Reliquat impayé de l'année précédente — à régler en priorité.</div>` : ""}
           <div class="codes">
@@ -4085,11 +4085,19 @@ function App({ session, onLogout }) {
                           <div style={{ display: "flex", gap: 20, marginBottom: 16, flexWrap: "wrap" }}>
                             <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Total dû</div><div style={{ fontSize: 16, fontWeight: 600 }}>{soldeData.montant_total.toLocaleString("fr-FR")} F</div></div>
                             <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Payé</div><div style={{ fontSize: 16, fontWeight: 600, color: COLORS.success }}>{soldeData.montant_paye.toLocaleString("fr-FR")} F</div></div>
-                            <div><div style={{ fontSize: 11, color: COLORS.craieDim }}>Reste à payer</div><div style={{ fontSize: 16, fontWeight: 700, color: soldeData.a_jour ? COLORS.success : COLORS.alert }}>{soldeData.solde.toLocaleString("fr-FR")} F</div></div>
+                            <div>
+                              <div style={{ fontSize: 11, color: COLORS.craieDim }}>{soldeData.solde < 0 ? "Excédent versé" : "Reste à payer"}</div>
+                              <div style={{ fontSize: 16, fontWeight: 700, color: soldeData.a_jour ? COLORS.success : COLORS.alert }}>{Math.abs(soldeData.solde).toLocaleString("fr-FR")} F</div>
+                            </div>
                             <span style={{ alignSelf: "center", fontSize: 11, fontWeight: 700, color: soldeData.a_jour ? COLORS.success : COLORS.alert, background: soldeData.a_jour ? COLORS.successBg : COLORS.alertBg, borderRadius: 6, padding: "6px 10px" }}>
-                              {soldeData.a_jour ? "✔ À jour" : "⚠ Solde restant"}
+                              {soldeData.solde < 0 ? "✔ Payé en trop — à vérifier" : soldeData.a_jour ? "✔ À jour" : "⚠ Solde restant"}
                             </span>
                           </div>
+                          {soldeData.solde < 0 && (
+                            <div style={{ fontSize: 11.5, color: COLORS.alert, marginTop: -10, marginBottom: 16 }}>
+                              ⚠ Cet élève a payé {Math.abs(soldeData.solde).toLocaleString("fr-FR")} F de plus que ce qui est dû — vérifie qu'il n'y a pas eu d'erreur de saisie ou de double encaissement sur un des frais ci-dessus.
+                            </div>
+                          )}
                           {(role === "direction" || role === "super_admin") && (
                             <div style={{ paddingTop: 14, borderTop: `1px solid ${COLORS.line}` }}>
                               {fraisChoisiPourPaiement && (
