@@ -4164,6 +4164,21 @@ function App({ session, onLogout }) {
                     <SelectClasseParNiveau classes={classes} value={soldeClasseId} onChange={(e) => setSoldeClasseId(e.target.value)} style={inputStyle} />
                   </div>
                   {!soldeClasseData && <div style={{ padding: 18, fontSize: 12.5, color: COLORS.craieDim }}>Choisis une classe pour voir le solde de chaque élève.</div>}
+                  {soldeClasseData && (() => {
+                    const avecMontant = soldeClasseData.eleves.filter((r) => r.montant_total != null);
+                    const totalDu = avecMontant.reduce((s, r) => s + Number(r.montant_total), 0);
+                    const totalPaye = avecMontant.reduce((s, r) => s + Number(r.montant_paye), 0);
+                    // Le reste de chaque élève est plafonné à 0 avant d'être additionné — sinon
+                    // un élève ayant trop payé masquerait ce que d'autres doivent encore.
+                    const totalReste = avecMontant.reduce((s, r) => s + Math.max(0, Number(r.solde)), 0);
+                    return (
+                      <div style={{ display: "flex", gap: 20, padding: "10px 18px", borderBottom: `1px solid ${COLORS.line}`, flexWrap: "wrap", background: "rgba(255,255,255,0.02)" }}>
+                        <div><div style={{ fontSize: 10.5, color: COLORS.craieDim, textTransform: "uppercase" }}>Total scolarité (classe)</div><div style={{ fontSize: 15, fontWeight: 700 }}>{totalDu.toLocaleString("fr-FR")} F</div></div>
+                        <div><div style={{ fontSize: 10.5, color: COLORS.craieDim, textTransform: "uppercase" }}>Total payé</div><div style={{ fontSize: 15, fontWeight: 700, color: COLORS.success }}>{totalPaye.toLocaleString("fr-FR")} F</div></div>
+                        <div><div style={{ fontSize: 10.5, color: COLORS.craieDim, textTransform: "uppercase" }}>Reste à payer (classe)</div><div style={{ fontSize: 15, fontWeight: 700, color: totalReste > 0 ? COLORS.alert : COLORS.success }}>{totalReste.toLocaleString("fr-FR")} F</div></div>
+                      </div>
+                    );
+                  })()}
                   {soldeClasseData && soldeClasseData.eleves.map((r, i) => (
                     <div key={r.eleve.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: i < soldeClasseData.eleves.length - 1 ? `1px solid ${COLORS.line}` : "none", fontSize: 13 }}>
                       <span style={{ flex: 1 }}>{nomCompletEleve(r.eleve)}</span>
@@ -4173,7 +4188,7 @@ function App({ session, onLogout }) {
                         <React.Fragment>
                           <span style={{ fontSize: 11.5, color: COLORS.craieDim }}>{r.montant_paye.toLocaleString("fr-FR")} / {r.montant_total.toLocaleString("fr-FR")} F</span>
                           <span style={{ fontSize: 11, fontWeight: 700, color: r.a_jour ? COLORS.success : COLORS.alert, background: r.a_jour ? COLORS.successBg : COLORS.alertBg, borderRadius: 6, padding: "4px 9px" }}>
-                            {r.a_jour ? "À jour" : `${r.solde.toLocaleString("fr-FR")} F restant`}
+                            {r.solde < 0 ? `✔ Excédent ${Math.abs(r.solde).toLocaleString("fr-FR")} F` : r.a_jour ? "À jour" : `${r.solde.toLocaleString("fr-FR")} F restant`}
                           </span>
                         </React.Fragment>
                       )}
