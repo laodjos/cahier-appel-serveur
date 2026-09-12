@@ -2401,7 +2401,9 @@ function App({ session, onLogout }) {
           .titre-relance { font-size: 13px; font-weight: bold; color: #b33; margin-bottom: 8px; }
           table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
           td { padding: 5px 0; border-bottom: 1px solid #eee; font-size: 12px; }
-          .montant { text-align: right; font-weight: bold; color: #b33; }
+          .montant { text-align: right; }
+          .en-retard { color: #b33; font-weight: bold; }
+          .total-ligne td { border-top: 2px solid #333; border-bottom: none; font-weight: bold; padding-top: 7px; }
           .note { font-size: 11px; color: #555; margin-top: 10px; }
         </style></head>
         <body onload="window.print()">
@@ -2409,13 +2411,27 @@ function App({ session, onLogout }) {
             <div class="fiche">
               <h1>${ecoleNom}</h1>
               <div class="sous-titre">Fiche de relance — ${new Date().toLocaleDateString("fr-FR")}</div>
-              <div class="titre-relance">⚠ Cet élève n'est pas à jour — détail des frais en retard :</div>
+              <div class="titre-relance">⚠ Cet élève n'est pas à jour — détail de l'ensemble des frais :</div>
               <table>
                 <tr><td><strong>Élève</strong></td><td class="montant">${[r.eleve.nom, r.eleve.prenoms].filter(Boolean).join(" ")}</td></tr>
                 <tr><td><strong>Classe</strong></td><td class="montant">${r.eleve.classe_nom || ""}</td></tr>
               </table>
               <table>
-                ${r.lignes.map((l) => `<tr><td>${l.libelle}</td><td class="montant">${Number(l.montant_retard).toLocaleString("fr-FR")} F</td></tr>`).join("")}
+                <tr><td><strong>Frais</strong></td><td class="montant"><strong>Dû</strong></td><td class="montant"><strong>Payé</strong></td><td class="montant"><strong>Reste</strong></td></tr>
+                ${r.lignes.map((l) => `
+                  <tr class="${l.en_retard ? "en-retard" : ""}">
+                    <td>${l.en_retard ? "⚠ " : ""}${l.libelle}</td>
+                    <td class="montant">${Number(l.montant).toLocaleString("fr-FR")} F</td>
+                    <td class="montant">${Number(l.montant_paye).toLocaleString("fr-FR")} F</td>
+                    <td class="montant">${l.reste > 0 ? Number(l.reste).toLocaleString("fr-FR") + " F" : "Réglé"}</td>
+                  </tr>
+                `).join("")}
+                <tr class="total-ligne">
+                  <td>Total</td>
+                  <td class="montant">${Number(r.montant_total).toLocaleString("fr-FR")} F</td>
+                  <td class="montant">${Number(r.montant_paye).toLocaleString("fr-FR")} F</td>
+                  <td class="montant">${Number(r.solde).toLocaleString("fr-FR")} F</td>
+                </tr>
               </table>
               <div class="note">Merci de régulariser cette situation dans les meilleurs délais auprès de la caisse de l'établissement.</div>
             </div>

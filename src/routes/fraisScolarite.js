@@ -300,11 +300,22 @@ router.get("/classe/:classeId/relances", async (req, res) => {
     const relances = [];
     for (const eleve of eleves) {
       const solde = await calculerSoldeEleve(eleve);
-      const lignesEnRetard = (solde.detail || []).filter((f) => f.echeancier?.en_retard);
-      if (lignesEnRetard.length > 0) {
+      const auMoinsUnRetard = (solde.detail || []).some((f) => f.echeancier?.en_retard);
+      if (auMoinsUnRetard) {
+        // Le déclencheur reste "au moins une échéance en retard", mais la
+        // fiche montre TOUS les frais (pas seulement celui en retard) — sinon
+        // le parent voit une seule ligne et peut croire, à tort, que le
+        // reste de sa scolarité est réglé.
         relances.push({
           eleve: { id: eleve.id, nom: eleve.nom, prenoms: eleve.prenoms, classe_nom: eleve.classe_nom },
-          lignes: lignesEnRetard.map((f) => ({ libelle: f.libelle, montant_retard: f.echeancier.montant_retard })),
+          montant_total: solde.montant_total,
+          montant_paye: solde.montant_paye,
+          solde: solde.solde,
+          lignes: (solde.detail || []).map((f) => ({
+            libelle: f.libelle, montant: f.montant, montant_paye: f.montant_paye, reste: f.reste,
+            en_retard: !!f.echeancier?.en_retard,
+            montant_retard: f.echeancier?.en_retard ? f.echeancier.montant_retard : null,
+          })),
         });
       }
     }
