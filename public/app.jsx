@@ -2397,34 +2397,33 @@ function App({ session, onLogout }) {
       w.document.write(`
         <html><head><title>Fiches de relance</title>
         <style>
-          @page { size: A5 portrait; margin: 10mm; }
-          body { font-family: Arial, sans-serif; color: #222; font-size: 13px; margin: 0; }
-          .fiche { page-break-after: always; padding: 6mm; border: 1px dashed #999; border-radius: 6px; margin-bottom: 10mm; }
-          .fiche:last-child { page-break-after: auto; }
-          h1 { font-size: 15px; margin: 0 0 2px; }
-          .sous-titre { font-size: 11px; color: #555; margin-bottom: 10px; }
-          .titre-relance { font-size: 13px; font-weight: bold; color: #b33; margin-bottom: 8px; }
-          .date-limite { font-size: 12px; font-weight: bold; background: #fdecea; color: #b33; padding: 5px 8px; border-radius: 4px; margin-bottom: 10px; display: inline-block; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-          td { padding: 5px 0; border-bottom: 1px solid #eee; font-size: 12px; }
+          @page { size: A4 portrait; margin: 8mm; }
+          body { font-family: Arial, sans-serif; color: #222; font-size: 9.5px; margin: 0; }
+          .fiche { height: 54mm; padding: 3mm 4mm; border: 1px dashed #999; box-sizing: border-box; overflow: hidden; }
+          .fiche:nth-child(5n) { page-break-after: always; }
+          h1 { font-size: 11px; margin: 0 0 1px; }
+          .ligne-entete { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
+          .sous-titre { font-size: 8px; color: #555; }
+          .eleve-classe { font-size: 10.5px; font-weight: bold; margin-bottom: 2px; }
+          .titre-relance { font-size: 9.5px; font-weight: bold; color: #b33; margin-bottom: 1px; }
+          .date-limite { font-size: 9.5px; font-weight: bold; color: #b33; margin-bottom: 3px; }
+          table { width: 100%; border-collapse: collapse; }
+          td { padding: 1px 0; border-bottom: 1px solid #eee; font-size: 9px; }
           .montant { text-align: right; }
           .en-retard { color: #b33; font-weight: bold; }
-          .total-ligne td { border-top: 2px solid #333; border-bottom: none; font-weight: bold; padding-top: 7px; }
-          .note { font-size: 11px; color: #555; margin-top: 10px; }
+          .total-ligne td { border-top: 1.5px solid #333; border-bottom: none; font-weight: bold; padding-top: 2px; }
         </style></head>
         <body onload="window.print()">
           ${relances.map((r) => `
             <div class="fiche">
-              <h1>${ecoleNom}</h1>
-              <div class="sous-titre">Fiche de relance — ${new Date().toLocaleDateString("fr-FR")}</div>
-              <div class="titre-relance">⚠ Cet élève n'est pas à jour — détail de l'ensemble des frais :</div>
-              <div class="date-limite">📅 À régulariser avant le <strong>${dateLimiteTexte}</strong></div>
+              <div class="ligne-entete">
+                <h1>${ecoleNom}</h1>
+                <span class="sous-titre">${new Date().toLocaleDateString("fr-FR")}</span>
+              </div>
+              <div class="eleve-classe">${[r.eleve.nom, r.eleve.prenoms].filter(Boolean).join(" ")} — ${r.eleve.classe_nom || ""}</div>
+              <div class="titre-relance">⚠ Élève non à jour — détail des frais :</div>
+              <div class="date-limite">📅 À régulariser avant le ${dateLimiteTexte}</div>
               <table>
-                <tr><td><strong>Élève</strong></td><td class="montant">${[r.eleve.nom, r.eleve.prenoms].filter(Boolean).join(" ")}</td></tr>
-                <tr><td><strong>Classe</strong></td><td class="montant">${r.eleve.classe_nom || ""}</td></tr>
-              </table>
-              <table>
-                <tr><td><strong>Frais</strong></td><td class="montant"><strong>Dû</strong></td><td class="montant"><strong>Payé</strong></td><td class="montant"><strong>Reste</strong></td></tr>
                 ${r.lignes.map((l) => `
                   <tr class="${l.en_retard ? "en-retard" : ""}">
                     <td>${l.en_retard ? "⚠ " : ""}${l.libelle}</td>
@@ -2440,7 +2439,6 @@ function App({ session, onLogout }) {
                   <td class="montant">${Number(r.solde).toLocaleString("fr-FR")} F</td>
                 </tr>
               </table>
-              <div class="note">Merci de régulariser cette situation dans les meilleurs délais auprès de la caisse de l'établissement.</div>
             </div>
           `).join("")}
         </body></html>
