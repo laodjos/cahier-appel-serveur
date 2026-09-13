@@ -2393,6 +2393,9 @@ function App({ session, onLogout }) {
       const aujourdhui = new Date();
       const dateLimite = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth() + (aujourdhui.getDate() > 5 ? 1 : 0), 5);
       const dateLimiteTexte = dateLimite.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+      // Le titre de signature s'adapte à qui génère la fiche — direction ou
+      // caissier — plutôt que d'afficher toujours le même intitulé.
+      const titreSignataire = session.user.role === "caissier" ? "Le Comptable" : "Le Chef d'établissement";
       const w = window.open("", "_blank");
       w.document.write(`
         <html><head><title>Fiches de relance</title>
@@ -2412,6 +2415,8 @@ function App({ session, onLogout }) {
           .montant { text-align: right; }
           .en-retard { color: #b33; font-weight: bold; }
           .total-ligne td { border-top: 1.5px solid #333; border-bottom: none; font-weight: bold; padding-top: 2px; }
+          .mention { font-size: 9px; margin: 3px 0; font-style: italic; }
+          .signature { display: flex; justify-content: flex-end; margin-top: 3px; font-size: 8.5px; text-align: center; }
         </style></head>
         <body onload="window.print()">
           ${relances.map((r) => `
@@ -2421,7 +2426,6 @@ function App({ session, onLogout }) {
                 <span class="sous-titre">${new Date().toLocaleDateString("fr-FR")}</span>
               </div>
               <div class="eleve-classe">${[r.eleve.nom, r.eleve.prenoms].filter(Boolean).join(" ")} — ${r.eleve.classe_nom || ""}</div>
-              <div class="titre-relance">⚠ Élève non à jour — détail des frais :</div>
               <div class="date-limite">📅 À régulariser avant le ${dateLimiteTexte}</div>
               <table>
                 ${r.lignes.map((l) => `
@@ -2439,6 +2443,8 @@ function App({ session, onLogout }) {
                   <td class="montant">${Number(r.solde).toLocaleString("fr-FR")} F</td>
                 </tr>
               </table>
+              <div class="mention">Chers parents, sauf erreur ou omission de notre part, l'élève ${[r.eleve.nom, r.eleve.prenoms].filter(Boolean).join(" ")} reste devoir la somme de : <strong>${Number(r.solde).toLocaleString("fr-FR")} F</strong>.</div>
+              <div class="signature">${titreSignataire}<br/>${session.user.nom || ""}</div>
             </div>
           `).join("")}
         </body></html>
